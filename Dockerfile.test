@@ -1,0 +1,25 @@
+FROM ghcr.io/translatorsri/renci-python-image:3.11.5
+
+# Add image info
+LABEL org.opencontainers.image.source /github.com/TranslatorSRI/TestHarness
+
+# set up requirements
+WORKDIR /app
+
+# Normal requirements
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Runner requirements
+COPY requirements-runners.txt .
+RUN pip install -r requirements-runners.txt
+
+# Test requirements
+COPY requirements-test.txt .
+RUN pip install -r requirements-test.txt
+
+# Copy in files
+COPY . .
+
+# set up default command
+CMD pytest

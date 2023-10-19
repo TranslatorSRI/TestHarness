@@ -1,0 +1,36 @@
+name: 'Pull Request Feedback'
+
+on: 
+  pull_request:
+
+jobs:
+  test:
+    name: Run pytest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v2
+
+      # Cache docker layers for faster build
+      - uses: satackey/action-docker-layer-caching@v0.0.8
+        # Ignore the failure of a step and avoid terminating the job.
+        continue-on-error: true
+
+      - name: Build
+        run: docker build -t harness-testing -f Dockerfile.test .
+
+      - name: Run tests and get output
+        run: |
+          echo 'TEST_OUTPUT<<EOF' >> $GITHUB_ENV
+          echo "$(docker run harness-testing)" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Exit if there are any test failures
+        run: '[[ $TEST_OUTPUT != *FAILED* ]]'
+
+  check-format:
+    name: Check that code matches Black formatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: psf/black@stable
