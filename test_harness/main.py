@@ -1,8 +1,6 @@
 """Translator SRI Automated Test Harness."""
 from argparse import ArgumentParser
 import json
-from pathlib import Path
-from typing import Union, List
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -61,7 +59,7 @@ def cli():
 
     download_parser.add_argument(
         "suite",
-        type=Union[str, List[str]],
+        type=str,
         help="The name/id of the suite(s) to run. Once tests have been downloaded, the test cases in this suite(s) will be run.",
     )
 
