@@ -2,6 +2,8 @@
 from argparse import ArgumentParser
 import json
 from pathlib import Path
+from typing import Union, List
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from .run import run_tests
@@ -11,14 +13,20 @@ from .logging import get_logger, setup_logger
 setup_logger()
 
 
+def url_type(arg):
+    url = urlparse(arg)
+    if all((url.scheme, url.netloc)):
+        return arg
+    raise TypeError("Invalid URL")
+
+
 def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     tests = []
     if "tests_url" in args:
-        logger.info("Downloading tests...")
-        tests = download_tests(args["tests_url"])
+        tests = download_tests(args["suite"], args["tests_url"], logger)
     elif "tests" in args:
         tests = args["tests"]
     else:
@@ -26,8 +34,7 @@ def main(args):
             "Please run this command with `-h` to see the available options."
         )
 
-    logger.info("Running tests...")
-    report = run_tests(tests)
+    report = run_tests(tests, logger)
 
     if args["save_to_dashboard"]:
         logger.info("Saving to Testing Dashboard...")
@@ -53,7 +60,16 @@ def cli():
     )
 
     download_parser.add_argument(
-        "tests_url", type=Path, help="URL to download in order to find the test files"
+        "suite",
+        type=Union[str, List[str]],
+        help="The name/id of the suite(s) to run. Once tests have been downloaded, the test cases in this suite(s) will be run.",
+    )
+
+    download_parser.add_argument(
+        "--tests_url",
+        type=url_type,
+        default="https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip",
+        help="URL to download in order to find the test files",
     )
 
     run_parser = subparsers.add_parser("run", help="Run a given set of tests")
