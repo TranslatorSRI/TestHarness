@@ -68,7 +68,7 @@ class Tests(BaseModel):
 class TestSuite(BaseModel):
     """
     Test Suite containing the ids of Test Cases.
-    
+
     id: int
     case_ids: List[int]
     """

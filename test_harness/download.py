@@ -11,7 +11,9 @@ import zipfile
 from .models import TestCase, TestSuite
 
 
-def download_tests(suite: Union[str, List[str]], url: Path, logger: logging.Logger) -> List[TestCase]:
+def download_tests(
+    suite: Union[str, List[str]], url: Path, logger: logging.Logger
+) -> List[TestCase]:
     """Download tests from specified location."""
     assert Path(url).suffix == ".zip"
     logger.info(f"Downloading tests from {url}...")
