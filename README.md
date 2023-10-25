@@ -5,7 +5,7 @@ Automated Test Harness that downloads Translator Tests and executes them via Tra
 The Test Harness is a lightweight wrapper around the Test Runners. Its job is to retrieve automated tests, pass them along to test runners, and then send the report to a test dashboard, all while being easily and automatically instantiated.
 
 ### Test Runners
-The Test Harness incorporates Test Runners that do the actual runninng of the automated tests. These Runners must be pip installable and take a test input that is defined by this Test Harness. The list of current Test Runners can be found in `requirements-runners.txt`.
+The Test Harness incorporates Test Runners that do the actual running of the automated tests. These Runners must be pip installable and take a test input that is defined by this Test Harness. The list of current Test Runners can be found in `requirements-runners.txt`.
 
 ### Test Schema
 *_WARNING:_* This schema is likely to change as the Test Cases are finalized
