@@ -1,22 +1,21 @@
 """Run tests through the Test Runners."""
 import logging
-from pydantic import validate_arguments
-from typing import List, Dict
+from tqdm import tqdm
+from typing import Dict
 
 from ui_test_runner import run_ui_test
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 
-from .models import TestCase
-
-logger = logging.getLogger(__name__)
+from .models import Tests
 
 
-@validate_arguments
-def run_tests(tests: List[TestCase]) -> Dict:
+def run_tests(tests: Tests, logger: logging.Logger) -> Dict:
     """Send tests through the Test Runners."""
+    tests = Tests.parse_obj(tests)
+    logger.info(f"Running {len(tests)} tests...")
     full_report = {}
     # loop over all tests
-    for test in tests:
+    for test in tqdm(tests):
         # check if acceptance test
         if test.type == "acceptance":
             full_report[test.input_curie] = {}
