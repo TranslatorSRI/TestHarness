@@ -1,21 +1,25 @@
 """Run tests through the Test Runners."""
 import logging
 from tqdm import tqdm
-from typing import Dict
+from typing import Dict, List
 
 from ui_test_runner import run_ui_test
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 
+from .models import TestCase
 from .models import Tests
+from .reporter import Reporter
 
 
-def run_tests(tests: Tests, logger: logging.Logger) -> Dict:
+async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.Logger) -> Dict:
     """Send tests through the Test Runners."""
-    tests = Tests.parse_obj(tests)
+    tests = [TestCase.parse_obj(test) for test in tests]
     logger.info(f"Running {len(tests)} tests...")
     full_report = {}
     # loop over all tests
     for test in tqdm(tests):
+        # create test in Test Dashboard
+        test_id = await reporter.create_test(test)
         # check if acceptance test
         if test.type == "acceptance":
             full_report[test.input_curie] = {}
@@ -48,5 +52,7 @@ def run_tests(tests: Tests, logger: logging.Logger) -> Dict:
             logger.warning("Quantitative tests are not supported yet.")
         else:
             logger.warning(f"Unsupported test type: {test.type}")
+        
+        await reporter.finish_test(test_id, "PASSED")
 
     return full_report

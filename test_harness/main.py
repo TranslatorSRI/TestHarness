@@ -1,5 +1,6 @@
 """Translator SRI Automated Test Harness."""
 from argparse import ArgumentParser
+import asyncio
 import json
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -7,6 +8,7 @@ from uuid import uuid4
 from .run import run_tests
 from .download import download_tests
 from .logging import get_logger, setup_logger
+from .reporter import Reporter
 
 setup_logger()
 
@@ -18,7 +20,7 @@ def url_type(arg):
     raise TypeError("Invalid URL")
 
 
-def main(args):
+async def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
@@ -32,11 +34,14 @@ def main(args):
             "Please run this command with `-h` to see the available options."
         )
 
-    report = run_tests(tests, logger)
+    # Create test run in the Information Radiator
+    reporter = Reporter(base_url=args.get("reporter_url"), refresh_token=args.get("reporter_access_token"))
+    await reporter.get_auth()
+    await reporter.create_test_run()
+    report = await run_tests(reporter, tests, logger)
 
-    if args["save_to_dashboard"]:
-        logger.info("Saving to Testing Dashboard...")
-        raise NotImplementedError()
+    logger.info("Saving to Testing Dashboard...")
+    await reporter.finish_test_run()
 
     if args["json_output"]:
         logger.info("Saving report as JSON...")
@@ -79,6 +84,18 @@ def cli():
     )
 
     parser.add_argument(
+        "--reporter_url",
+        type=url_type,
+        help="URL of the Testing Dashboard",
+    )
+
+    parser.add_argument(
+        "--reporter_access_token",
+        type=str,
+        help="Access token for authentication with the Testing Dashboard",
+    )
+
+    parser.add_argument(
         "--save_to_dashboard",
         action="store_true",
         help="Have the Test Harness send the test results to the Testing Dashboard",
@@ -99,7 +116,7 @@ def cli():
     )
 
     args = parser.parse_args()
-    main(vars(args))
+    asyncio.run(main(vars(args)))
 
 
 if __name__ == "__main__":
