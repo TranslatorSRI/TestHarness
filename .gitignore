@@ -3,6 +3,8 @@ __pycache__
 *.egg-info
 logs/
 Translator-Tests/
+build/
+test_ars.log
 
 # PyCharms IDE metadata to be ignored
 .idea/
