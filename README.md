@@ -21,5 +21,8 @@ The Test Harness is a CLI that you need to install:
 - `pip install -r requirements-runners.txt` to install the Test Runners
 - `pip install .` to install the Test Harness CLI
 
+Create a local 'logs' directory (the repository doesn't track or commit this...):
+- `mkdir logs`
+
 Once everything is installed, you can call
 - `test-harness -h` to see available options
