@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from .run import run_tests
 from .download import download_tests
-from .logging import get_logger, setup_logger
+from .logger import get_logger, setup_logger
 from .reporter import Reporter
 
 setup_logger()
@@ -33,6 +33,9 @@ async def main(args):
         return logger.error(
             "Please run this command with `-h` to see the available options."
         )
+    
+    if len(tests) < 1:
+        return logger.info("No tests to run. Exiting.")
 
     # Create test run in the Information Radiator
     reporter = Reporter(base_url=args.get("reporter_url"), refresh_token=args.get("reporter_access_token"))
@@ -48,7 +51,7 @@ async def main(args):
         with open("test_report.json", "w") as f:
             json.dump(report, f)
 
-    logger.info("All testing has completed!")
+    return logger.info("All tests have completed!")
 
 
 def cli():
@@ -86,12 +89,14 @@ def cli():
     parser.add_argument(
         "--reporter_url",
         type=url_type,
+        default="http://informationradiator.apps.renci.org",
         help="URL of the Testing Dashboard",
     )
 
     parser.add_argument(
         "--reporter_access_token",
         type=str,
+        default="fillthisin",
         help="Access token for authentication with the Testing Dashboard",
     )
 
@@ -112,7 +117,7 @@ def cli():
         type=str,
         choices=["ERROR", "WARNING", "INFO", "DEBUG"],
         help="Level of the logs.",
-        default="WARNING",
+        default="DEBUG",
     )
 
     args = parser.parse_args()

@@ -9,7 +9,7 @@ import tempfile
 from typing import List, Union
 import zipfile
 
-from .models import TestCase, TestSuite
+from translator_testing_model.datamodel.pydanticmodel import TestCase, TestSuite
 
 
 def download_tests(
@@ -41,21 +41,41 @@ def download_tests(
             with open(test_path, "r") as f:
                 test_json = json.load(f)
                 try:
-                    test_suite = TestSuite.parse_obj(test_json)
-                    if test_suite.id in suites:
-                        # if suite is selected, grab all its test cases
-                        test_case_ids.extend(test_suite.case_ids)
+                    # test_suite = TestSuite.parse_obj(test_json)
+                    # if test_suite.id in suites:
+                    # if test_json["test_case_type"] == "acceptance":
+                    #     # if suite is selected, grab all its test cases
+                    #     # test_case_ids.extend(test_suite.case_ids)
+                    #     all_tests.append(test_json)
+                    #     continue
+                    if test_json.get("test_env"):
+                        # only grab Test Cases and not Test Assets
+                        all_tests.append(test_json)
                 except Exception as e:
                     # not a Test Suite
                     pass
-                try:
-                    test_case = TestCase.parse_obj(test_json)
-                    all_tests.append(test_case)
-                except Exception as e:
-                    # not a Test Case
-                    pass
+                # try:
+                #     # test_case = TestCase.parse_obj(test_json)
+                #     if test_json["test_case_type"] == "quantitative":
+                #         all_tests.append(test_json)
+                #         continue
+                #     # all_tests.append(test_json)
+                # except Exception as e:
+                #     # not a Test Case
+                #     print(e)
+                #     pass
 
     # only return the tests from the specified suites
-    tests = list(filter(lambda x: x in test_case_ids, all_tests))
+    # tests = list(filter(lambda x: x in test_case_ids, all_tests))
+    # tests = [
+    #     test
+    #     for test in all_tests
+    #     for asset in test.test_assets
+    #     if asset.output_id
+    # ]
+    # for test in tests:
+    #     test.test_case_type = "acceptance"
+    tests = all_tests
+    # tests = list(filter((lambda x: x for x in all_tests for asset in x.test_assets if asset.output_id), all_tests))
     logger.info(f"Passing along {len(tests)} tests")
     return tests

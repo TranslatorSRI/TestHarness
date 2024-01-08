@@ -4,8 +4,10 @@ import httpx
 import json
 import os
 from pathlib import Path
+from typing import List, Dict
 
-from .models import TestCase
+# from .models import TestCase
+from translator_testing_model.datamodel.pydanticmodel import TestCase
 
 
 class Reporter():
@@ -39,7 +41,7 @@ class Reporter():
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
             json={
-                "name": "Test",
+                "name": f"Test Harness Automated Tests: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
             },
@@ -49,20 +51,81 @@ class Reporter():
         self.test_run_id = res_json["id"]
         return self.test_run_id
     
-    async def create_test(self, test: TestCase):
+    async def create_test(self, test: TestCase, asset):
         """Create a test in the IR."""
+        name = f"{asset['name'] if asset['name'] else asset['description']}"
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
             json={
-                "name": test.type,
-                "className": test.type,
-                "methodName": test.type,
+                "name": name,
+                "className": test["name"],
+                "methodName": asset["name"],
                 "startedAt": datetime.now().astimezone().isoformat(),
+                "labels": [
+                    {
+                        "key": "TestCase",
+                        "value": test["id"],
+                    },
+                    {
+                        "key": "TestAsset",
+                        "value": asset["id"],
+                    },
+                ],
             },
         )
         res.raise_for_status()
         res_json = res.json()
         return res_json["id"]
+
+    async def upload_logs(self, test_id: int, logs: List[str]):
+        """Upload logs to the IR."""
+        res = await self.authenticated_client.post(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
+            json=[
+                {
+                    "testId": f"{test_id}",
+                    "level": "INFO",
+                    "timestamp": datetime.now().timestamp(),
+                    "message": message,
+                }
+                for message in logs
+            ],
+        )
+        res.raise_for_status()
+    
+    async def upload_artifact_references(self, test_id, artifact_references):
+        """Upload artifact references to the IR."""
+        res = await self.authenticated_client.put(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/artifact-references",
+            json=artifact_references,
+        )
+        res.raise_for_status()
+
+    async def upload_screenshot(self, test_id, screenshot):
+        """Upload screenshots to the IR."""
+        res = await self.authenticated_client.post(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/screenshots",
+            headers={
+                "Content-Type": "image/png",
+            },
+            data=screenshot,
+        )
+        res.raise_for_status()
+    
+    async def upload_log(self, test_id, message):
+        """Upload logs to the IR."""
+        res = await self.authenticated_client.post(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
+            json=[
+                {
+                    "testId": f"{test_id}",
+                    "level": "INFO",
+                    "timestamp": datetime.now().timestamp(),
+                    "message": message,
+                },
+            ],
+        )
+        res.raise_for_status()
     
     async def finish_test(self, test_id, result):
         """Set the final status of a test."""
