@@ -8,7 +8,7 @@ from typing import Dict, List
 
 # from ui_test_runner import run_ui_test
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
-from benchmarks_runner import run_benchmarks
+# from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
 from .reporter import Reporter
