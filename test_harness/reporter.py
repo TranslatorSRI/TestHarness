@@ -2,6 +2,7 @@
 from datetime import datetime
 import httpx
 import json
+import logging
 import os
 from pathlib import Path
 from typing import List, Dict
@@ -13,11 +14,12 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase
 class Reporter():
     """Reports tests and statuses to the Information Radiator."""
 
-    def __init__(self, base_url = None, refresh_token = None):
+    def __init__(self, base_url = None, refresh_token = None, logger: logging.Logger = logging.getLogger()):
         self.base_path = base_url if base_url else os.getenv("ZE_BASE_URL")
         self.refresh_token = refresh_token if refresh_token else os.getenv("ZE_REFRESH_TOKEN")
         self.authenticated_client = None
         self.test_run_id = None
+        self.logger = logger
     
     async def get_auth(self):
         """Get access token for subsequent calls."""

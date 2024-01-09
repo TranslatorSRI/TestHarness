@@ -7,10 +7,10 @@ from uuid import uuid4
 
 from .run import run_tests
 from .download import download_tests
-# from .logger import get_logger, setup_logger
+from .logger import get_logger, setup_logger
 from .reporter import Reporter
 
-# setup_logger()
+setup_logger()
 
 
 def url_type(arg):
@@ -23,27 +23,31 @@ def url_type(arg):
 async def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
-    # logger = get_logger(qid, args["log_level"])
+    logger = get_logger(qid, args["log_level"])
     tests = []
     if "tests_url" in args:
-        tests = download_tests(args["suite"], args["tests_url"])
+        tests = download_tests(args["suite"], args["tests_url"], logger)
     elif "tests" in args:
         tests = args["tests"]
     else:
-        return print(
+        return logger.error(
             "Please run this command with `-h` to see the available options."
         )
     
     if len(tests) < 1:
-        return print("No tests to run. Exiting.")
+        return logger.warning("No tests to run. Exiting.")
 
     # Create test run in the Information Radiator
-    reporter = Reporter(base_url=args.get("reporter_url"), refresh_token=args.get("reporter_access_token"))
+    reporter = Reporter(
+        base_url=args.get("reporter_url"),
+        refresh_token=args.get("reporter_access_token"),
+        logger=logger,
+    )
     await reporter.get_auth()
     await reporter.create_test_run()
-    report = await run_tests(reporter, tests)
+    report = await run_tests(reporter, tests, logger)
 
-    print("Saving to Testing Dashboard...")
+    logger.info("Finishing up test run...")
     await reporter.finish_test_run()
 
     if args["json_output"]:
@@ -51,7 +55,7 @@ async def main(args):
         with open("test_report.json", "w") as f:
             json.dump(report, f)
 
-    return print("All tests have completed!")
+    return logger.info("All tests have completed!")
 
 
 def cli():

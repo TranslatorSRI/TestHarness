@@ -13,11 +13,11 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase, TestSuite
 
 
 def download_tests(
-    suite: Union[str, List[str]], url: Path,
+    suite: Union[str, List[str]], url: Path, logger: logging.Logger,
 ) -> List[TestCase]:
     """Download tests from specified location."""
     assert Path(url).suffix == ".zip"
-    print(f"Downloading tests from {url}...")
+    logger.info(f"Downloading tests from {url}...")
     # download file from internet
     with httpx.Client(follow_redirects=True) as client:
         tests_zip = client.get(url)
@@ -34,7 +34,7 @@ def download_tests(
         suites = suite if type(suite) == list else [suite]
         test_case_ids = []
 
-        print(f"Reading in {len(tests_paths)} tests...")
+        logger.info(f"Reading in {len(tests_paths)} tests...")
 
         # do the reading of the tests and make a tests list
         for test_path in tests_paths:
@@ -77,5 +77,5 @@ def download_tests(
     #     test.test_case_type = "acceptance"
     tests = all_tests
     # tests = list(filter((lambda x: x for x in all_tests for asset in x.test_assets if asset.output_id), all_tests))
-    print(f"Passing along {len(tests)} tests")
+    logger.info(f"Passing along {len(tests)} tests")
     return tests

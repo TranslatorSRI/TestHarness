@@ -1,7 +1,7 @@
 """Run tests through the Test Runners."""
 from collections import defaultdict
 import json
-# import logging
+import logging
 from tqdm import tqdm
 import traceback
 from typing import Dict, List
@@ -14,17 +14,17 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase
 from .reporter import Reporter
 
 
-async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
+async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.Logger) -> Dict:
     """Send tests through the Test Runners."""
     # tests = [TestCase.parse_obj(test) for test in tests]
-    print(f"Running {len(tests)} tests...")
+    logger.info(f"Running {len(tests)} tests...")
     full_report = {}
     # loop over all tests
     for test in tqdm(tests):
         status = "PASSED"
         # check if acceptance test
         if not test.get("test_assets") or not test.get("test_case_objective"):
-            print(f"Test has missing required fields: {test['id']}")
+            logger.warning(f"Test has missing required fields: {test['id']}")
             continue
         if test["test_case_objective"] == "AcceptanceTest":
             # full_report[test["test_case_input_id"]] = {}
@@ -50,7 +50,7 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
                     test_id = await reporter.create_test(test, asset)
                     test_ids.append(test_id)
                 except Exception:
-                    print(f"Failed to create test: {test['id']}")
+                    logger.error(f"Failed to create test: {test['id']}")
                 try:
                     test_input = json.dumps({
                         # "environment": test["test_env"],
@@ -65,8 +65,8 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
                         test_input=test_input
                     ))
                 except Exception as e:
-                    print(str(e))
-                    print(f"Failed to upload logs to test: {test['id']}, {test_id}")
+                    logger.error(str(e))
+                    logger.error(f"Failed to upload logs to test: {test['id']}, {test_id}")
 
             # group all outputs together to make one Translator query
             output_ids = [asset["output_id"] for asset in assets]
@@ -84,7 +84,7 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
                 ars_result = await run_ars_test(*test_inputs)
             except Exception as e:
                 err_msg = f"ARS Test Runner failed with {traceback.format_exc()}"
-                print(f"[{test['id']}] {err_msg}")
+                logger.error(f"[{test['id']}] {err_msg}")
                 ars_result = {
                     "pks": {},
                     # this will effectively act as a list that we access by index down below
@@ -103,7 +103,7 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
                     await reporter.upload_log(test_id, json.dumps(test_result, indent=4))
                     await reporter.finish_test(test_id, status)
                 except Exception as e:
-                    print(f"[{test['id']}] failed to upload logs and finished status.")
+                    logger.error(f"[{test['id']}] failed to upload logs and finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
         elif test["test_case_objective"] == "QuantitativeTest":
             continue
@@ -111,7 +111,7 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
             try:
                 test_id = await reporter.create_test(test, assets)
             except Exception:
-                print(f"Failed to create test: {test['id']}")
+                logger.error(f"Failed to create test: {test['id']}")
             try:
                 test_inputs = [
                     assets["id"],
@@ -126,20 +126,20 @@ async def run_tests(reporter: Reporter, tests: List[TestCase]) -> Dict:
                     await reporter.upload_screenshot(test_id, screenshot)
                 await reporter.finish_test(test_id, "PASSED")
             except Exception as e:
-                print(f"Benchmarks failed with {e}: {traceback.format_exc()}")
+                logger.error(f"Benchmarks failed with {e}: {traceback.format_exc()}")
                 try:
                     await reporter.upload_log(test_id, traceback.format_exc())
                 except Exception:
-                    print(f"Failed to upload fail logs for test {test_id}: {traceback.format_exc()}")
+                    logger.error(f"Failed to upload fail logs for test {test_id}: {traceback.format_exc()}")
                 await reporter.finish_test(test_id, "FAILED")
         else:
             try:
                 test_id = await reporter.create_test(test, test)
-                print(f"Unsupported test type: {test['id']}")
+                logger.error(f"Unsupported test type: {test['id']}")
                 await reporter.upload_log(test_id, f"Unsupported test type in test: {test['id']}")
                 status = "FAILED"
                 await reporter.finish_test(test_id, status)
             except Exception:
-                print(f"Failed to report errors with: {test['id']}")
+                logger.error(f"Failed to report errors with: {test['id']}")
 
     return full_report
