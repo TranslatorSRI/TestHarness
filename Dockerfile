@@ -20,5 +20,4 @@ USER nru
 # set up source
 COPY . .
 
-# set up entrypoint
-ENTRYPOINT ["./main.sh"]
+RUN pip install .
