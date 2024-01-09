@@ -1,3 +1,4 @@
 httpx==0.25.0
 pydantic==1.10.2
+reasoner_pydantic==4.1.6
 translator-testing-model==0.2.0
