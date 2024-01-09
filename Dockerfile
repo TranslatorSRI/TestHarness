@@ -14,10 +14,10 @@ COPY requirements-runners.txt .
 RUN pip install -r requirements.txt
 RUN pip install -r requirements-runners.txt
 
-# switch to the non-root user (nru). defined in the base image
-USER nru
-
 # set up source
 COPY . .
 
 RUN pip install .
+
+# switch to the non-root user (nru). defined in the base image
+USER nru
