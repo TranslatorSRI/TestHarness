@@ -1,4 +1,5 @@
 """Information Radiator Reporter."""
+
 from datetime import datetime
 import httpx
 import logging

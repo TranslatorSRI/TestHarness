@@ -1,4 +1,5 @@
 """Example tests for the Test Harness."""
+
 from translator_testing_model.datamodel.pydanticmodel import TestSuite
 
 example_test_cases = TestSuite.parse_obj(

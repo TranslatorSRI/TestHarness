@@ -1,4 +1,5 @@
 """Translator SRI Automated Test Harness."""
+
 from argparse import ArgumentParser
 import asyncio
 import json

@@ -1,4 +1,5 @@
 """Download tests."""
+
 import glob
 import httpx
 import io

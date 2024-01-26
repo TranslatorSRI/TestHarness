@@ -1,4 +1,5 @@
 """Setup file for SRI Test Harness package."""
+
 from setuptools import setup
 
 with open("README.md", encoding="utf-8") as readme_file:
