@@ -1,14 +1,11 @@
 """Information Radiator Reporter."""
 from datetime import datetime
 import httpx
-import json
 import logging
 import os
-from pathlib import Path
-from typing import List, Dict
+from typing import List
 
-# from .models import TestCase
-from translator_testing_model.datamodel.pydanticmodel import TestCase
+from translator_testing_model.datamodel.pydanticmodel import TestCase, TestAsset
 
 
 class Reporter():
@@ -53,24 +50,28 @@ class Reporter():
         self.test_run_id = res_json["id"]
         return self.test_run_id
     
-    async def create_test(self, test: TestCase, asset):
+    async def create_test(self, test: TestCase, asset: TestAsset):
         """Create a test in the IR."""
-        name = f"{asset['name'] if asset['name'] else asset['description']}"
+        name = f"{asset.name if asset.name else asset.description}"
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
             json={
                 "name": name,
-                "className": test["name"],
-                "methodName": asset["name"],
+                "className": test.name,
+                "methodName": asset.name,
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "labels": [
                     {
                         "key": "TestCase",
-                        "value": test["id"],
+                        "value": test.id,
                     },
                     {
                         "key": "TestAsset",
-                        "value": asset["id"],
+                        "value": asset.id,
+                    },
+                    {
+                        "key": "Environment",
+                        "value": test.test_env,
                     },
                 ],
             },
@@ -78,6 +79,17 @@ class Reporter():
         res.raise_for_status()
         res_json = res.json()
         return res_json["id"]
+    
+    async def upload_labels(self, test_id: int, labels: List[dict]):
+        """Upload labels to the IR."""
+        self.logger.info(labels)
+        res = await self.authenticated_client.put(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/labels",
+            json={
+                "items": labels,
+            }
+        )
+        res.raise_for_status()
 
     async def upload_logs(self, test_id: int, logs: List[str]):
         """Upload logs to the IR."""
