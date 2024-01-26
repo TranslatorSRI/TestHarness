@@ -2,6 +2,7 @@
 from collections import defaultdict
 import json
 import logging
+import time
 from tqdm import tqdm
 import traceback
 from typing import Dict, List
@@ -12,13 +13,19 @@ from benchmarks_runner import run_benchmarks
 from translator_testing_model.datamodel.pydanticmodel import TestCase
 
 from .reporter import Reporter
+from .slacker import Slacker
 
 
-async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.Logger) -> Dict:
+async def run_tests(reporter: Reporter, slacker: Slacker, tests: Dict[str, TestCase], logger: logging.Logger = logging.getLogger(__name__)) -> Dict:
     """Send tests through the Test Runners."""
-    # tests = [TestCase.parse_obj(test) for test in tests]
+    start_time = time.time()
     logger.info(f"Running {len(tests)} tests...")
-    full_report = {}
+    full_report = {
+        "PASSED": 0,
+        "FAILED": 0,
+        "SKIPPED": 0,
+    }
+    await slacker.post_notification(messages=[f"Running {len(tests)} tests...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"])
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
@@ -86,6 +93,7 @@ async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.L
                 }
                 # grab only ars result if it exists, otherwise default to failed
                 status = test_result["result"].get("ars", {}).get("status", "FAILED")
+                full_report[status] += 1
                 if not err_msg:
                     # only upload ara labels if the test ran successfully
                     try:
@@ -126,8 +134,10 @@ async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.L
                 for screenshot in screenshots.values():
                     await reporter.upload_screenshot(test_id, screenshot)
                 await reporter.finish_test(test_id, "PASSED")
+                full_report["PASSED"] += 1
             except Exception as e:
                 logger.error(f"Benchmarks failed with {e}: {traceback.format_exc()}")
+                full_report["FAILED"] += 1
                 try:
                     await reporter.upload_log(test_id, traceback.format_exc())
                 except Exception:
@@ -142,4 +152,16 @@ async def run_tests(reporter: Reporter, tests: List[TestCase], logger: logging.L
                 await reporter.finish_test(test_id, status)
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
+
+    await slacker.post_notification(messages=[
+        """Test Suite: {test_suite_id}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
+            test_suite_id=1,
+            duration=round(time.time() - start_time, 2),
+            env="ci",
+            ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
+            num_passed=full_report["PASSED"],
+            num_failed=full_report["FAILED"],
+            num_skipped=full_report["SKIPPED"],
+        )
+    ])
     return full_report

@@ -9,6 +9,7 @@ from test_harness.run import run_tests
 from test_harness.download import download_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.reporter import Reporter
+from test_harness.slacker import Slacker
 
 setup_logger()
 
@@ -45,7 +46,8 @@ async def main(args):
     )
     await reporter.get_auth()
     await reporter.create_test_run()
-    report = await run_tests(reporter, tests, logger)
+    slacker = Slacker()
+    report = await run_tests(reporter, slacker, tests, logger)
 
     logger.info("Finishing up test run...")
     await reporter.finish_test_run()
