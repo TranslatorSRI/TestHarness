@@ -5,10 +5,10 @@ import json
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from .run import run_tests
-from .download import download_tests
-from .logger import get_logger, setup_logger
-from .reporter import Reporter
+from test_harness.run import run_tests
+from test_harness.download import download_tests
+from test_harness.logger import get_logger, setup_logger
+from test_harness.reporter import Reporter
 
 setup_logger()
 
@@ -93,14 +93,12 @@ def cli():
     parser.add_argument(
         "--reporter_url",
         type=url_type,
-        default="http://informationradiator.apps.renci.org",
         help="URL of the Testing Dashboard",
     )
 
     parser.add_argument(
         "--reporter_access_token",
         type=str,
-        default="fillthisin",
         help="Access token for authentication with the Testing Dashboard",
     )
 
