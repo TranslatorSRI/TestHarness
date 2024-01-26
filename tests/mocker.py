@@ -1,4 +1,4 @@
-class MockReporter():
+class MockReporter:
     def __init__(self, base_url=None, refresh_token=None, logger=None):
         self.base_path = base_url
         self.test_run_id = 1
@@ -6,13 +6,13 @@ class MockReporter():
 
     async def get_auth(self):
         pass
-    
+
     async def create_test_run(self):
         return 1
-    
+
     async def create_test(self, test, asset):
         return 2
-    
+
     async def upload_labels(self, test_id, labels):
         pass
 
@@ -30,12 +30,12 @@ class MockReporter():
 
     async def finish_test(self, test_id, result):
         return result
-    
+
     async def finish_test_run(self):
         pass
 
 
-class MockSlacker():
+class MockSlacker:
     def __init__(self):
         pass
 

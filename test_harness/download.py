@@ -13,7 +13,9 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase, TestSuite
 
 
 def download_tests(
-    suite: Union[str, List[str]], url: Path, logger: logging.Logger,
+    suite: Union[str, List[str]],
+    url: Path,
+    logger: logging.Logger,
 ) -> Dict[str, TestCase]:
     """Download tests from specified location."""
     assert Path(url).suffix == ".zip"
@@ -31,10 +33,10 @@ def download_tests(
         # tests_paths = glob.glob(f"{tmpdir}/**/*.json", recursive=True)
 
         tests_paths = glob.glob(f"{tmpdir}/*/test_suites/test_suite_output.json")
-        
+
         with open(tests_paths[0]) as f:
             test_suite = TestSuite.parse_obj(json.load(f))
-        
+
         # all_tests = []
         # suites = suite if type(suite) == list else [suite]
         # test_case_ids = []
@@ -44,29 +46,29 @@ def download_tests(
         # do the reading of the tests and make a tests list
         # for test_case in test_suite.test_cases:
         #     try:
-                # test_suite = TestSuite.parse_obj(test_json)
-                # if test_suite.id in suites:
-                # if test_json["test_case_type"] == "acceptance":
-                #     # if suite is selected, grab all its test cases
-                #     # test_case_ids.extend(test_suite.case_ids)
-                #     all_tests.append(test_json)
-                #     continue
-            #     if test_json.get("test_env"):
-            #         # only grab Test Cases and not Test Assets
-            #         all_tests.append(test_json)
-            # except Exception as e:
-            #     # not a Test Suite
-            #     pass
-            # try:
-            #     # test_case = TestCase.parse_obj(test_json)
-            #     if test_json["test_case_type"] == "quantitative":
-            #         all_tests.append(test_json)
-            #         continue
-            #     # all_tests.append(test_json)
-            # except Exception as e:
-            #     # not a Test Case
-            #     print(e)
-            #     pass
+        # test_suite = TestSuite.parse_obj(test_json)
+        # if test_suite.id in suites:
+        # if test_json["test_case_type"] == "acceptance":
+        #     # if suite is selected, grab all its test cases
+        #     # test_case_ids.extend(test_suite.case_ids)
+        #     all_tests.append(test_json)
+        #     continue
+        #     if test_json.get("test_env"):
+        #         # only grab Test Cases and not Test Assets
+        #         all_tests.append(test_json)
+        # except Exception as e:
+        #     # not a Test Suite
+        #     pass
+        # try:
+        #     # test_case = TestCase.parse_obj(test_json)
+        #     if test_json["test_case_type"] == "quantitative":
+        #         all_tests.append(test_json)
+        #         continue
+        #     # all_tests.append(test_json)
+        # except Exception as e:
+        #     # not a Test Case
+        #     print(e)
+        #     pass
 
     # only return the tests from the specified suites
     # tests = list(filter(lambda x: x in test_case_ids, all_tests))

@@ -34,7 +34,7 @@ async def main(args):
         return logger.error(
             "Please run this command with `-h` to see the available options."
         )
-    
+
     if len(tests) < 1:
         return logger.warning("No tests to run. Exiting.")
 
