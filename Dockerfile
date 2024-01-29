@@ -5,20 +5,19 @@ LABEL org.opencontainers.image.source /github.com/TranslatorSRI/TestHarness
 
 WORKDIR /app
 
-# make sure all is writeable for the nru USER later on
-RUN chmod -R 777 .
-
 # set up requirements
 COPY requirements.txt .
 COPY requirements-runners.txt .
 RUN pip install -r requirements.txt
 RUN pip install -r requirements-runners.txt
 
-# switch to the non-root user (nru). defined in the base image
-USER nru
-
 # set up source
 COPY . .
 
-# set up entrypoint
-ENTRYPOINT ["./main.sh"]
+# make sure all is writeable for the nru USER later on
+RUN chmod -R 777 .
+
+RUN pip install .
+
+# switch to the non-root user (nru). defined in the base image
+USER nru

@@ -1,4 +1,5 @@
 """Setup file for SRI Test Harness package."""
+
 from setuptools import setup
 
 with open("README.md", encoding="utf-8") as readme_file:
@@ -6,7 +7,7 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="sri-test-harness",
-    version="0.0.1",
+    version="0.1.0",
     author="Max Wang",
     author_email="max@covar.com",
     url="https://github.com/TranslatorSRI/TestHarness",
