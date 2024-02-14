@@ -58,8 +58,7 @@ async def run_tests(
                 try:
                     test_input = json.dumps(
                         {
-                            # "environment": test.test_env,
-                            "environment": "test",
+                            "environment": test.test_env,
                             "predicate": test.test_case_predicate_name,
                             "runner_settings": test.test_case_runner_settings,
                             "expected_output": asset.expected_output,
@@ -82,8 +81,7 @@ async def run_tests(
             output_ids = [asset.output_id for asset in assets]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
-                # test.test_env,
-                "test",
+                test.test_env,
                 test.test_case_predicate_name,
                 test.test_case_runner_settings,
                 expected_outputs,

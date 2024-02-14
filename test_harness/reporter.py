@@ -43,7 +43,7 @@ class Reporter:
             }
         )
 
-    async def create_test_run(self):
+    async def create_test_run(self, test: TestCase):
         """Create a test run in the IR."""
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
@@ -51,6 +51,9 @@ class Reporter:
                 "name": f"Test Harness Automated Tests: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
+                "config": {
+                    "environment": test.test_env,
+                },
             },
         )
         res.raise_for_status()
@@ -76,10 +79,6 @@ class Reporter:
                     {
                         "key": "TestAsset",
                         "value": asset.id,
-                    },
-                    {
-                        "key": "Environment",
-                        "value": test.test_env,
                     },
                 ],
             },

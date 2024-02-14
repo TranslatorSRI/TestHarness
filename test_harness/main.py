@@ -46,7 +46,7 @@ async def main(args):
         logger=logger,
     )
     await reporter.get_auth()
-    await reporter.create_test_run()
+    await reporter.create_test_run(next(iter(tests.values())))
     slacker = Slacker()
     report = await run_tests(reporter, slacker, tests, logger)
 
