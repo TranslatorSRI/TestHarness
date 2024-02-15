@@ -132,7 +132,7 @@ async def run_tests(
                 except Exception as e:
                     logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
-        elif test["test_case_objective"] == "QuantitativeTest":
+        elif test.test_case_objective == "QuantitativeTest":
             assets = test.test_assets[0]
             try:
                 test_id = await reporter.create_test(test, assets)
@@ -151,8 +151,15 @@ async def run_tests(
                 )
                 benchmark_results, screenshots = await run_benchmarks(*test_inputs)
                 await reporter.upload_log(test_id, ("\n").join(benchmark_results))
-                for screenshot in screenshots.values():
-                    await reporter.upload_screenshot(test_id, screenshot)
+                # ex:
+                # {
+                #   "aragorn": {
+                #     "precision": screenshot
+                #   }
+                # }
+                for target_screenshots in screenshots.values():
+                    for screenshot in target_screenshots.values():
+                        await reporter.upload_screenshot(test_id, screenshot)
                 await reporter.finish_test(test_id, "PASSED")
                 full_report["PASSED"] += 1
             except Exception as e:
