@@ -7,7 +7,7 @@ class MockReporter:
     async def get_auth(self):
         pass
 
-    async def create_test_run(self):
+    async def create_test_run(self, test):
         return 1
 
     async def create_test(self, test, asset):
