@@ -31,6 +31,7 @@ async def run_tests(
         "FAILED": 0,
         "SKIPPED": 0,
     }
+    env = "None"
     await slacker.post_notification(
         messages=[
             f"Running {len(tests)} tests...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
@@ -39,6 +40,7 @@ async def run_tests(
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
+        env = test.test_env
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
@@ -132,7 +134,7 @@ async def run_tests(
                 except Exception as e:
                     logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
-        elif test["test_case_objective"] == "QuantitativeTest":
+        elif test.test_case_objective == "QuantitativeTest":
             assets = test.test_assets[0]
             try:
                 test_id = await reporter.create_test(test, assets)
@@ -151,8 +153,15 @@ async def run_tests(
                 )
                 benchmark_results, screenshots = await run_benchmarks(*test_inputs)
                 await reporter.upload_log(test_id, ("\n").join(benchmark_results))
-                for screenshot in screenshots.values():
-                    await reporter.upload_screenshot(test_id, screenshot)
+                # ex:
+                # {
+                #   "aragorn": {
+                #     "precision": screenshot
+                #   }
+                # }
+                for target_screenshots in screenshots.values():
+                    for screenshot in target_screenshots.values():
+                        await reporter.upload_screenshot(test_id, screenshot)
                 await reporter.finish_test(test_id, "PASSED")
                 full_report["PASSED"] += 1
             except Exception as e:
@@ -182,7 +191,7 @@ async def run_tests(
             """Test Suite: {test_suite_id}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
                 test_suite_id=1,
                 duration=round(time.time() - start_time, 2),
-                env="ci",
+                env=env,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
                 num_passed=full_report["PASSED"],
                 num_failed=full_report["FAILED"],
