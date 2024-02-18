@@ -130,6 +130,7 @@ class Reporter:
                 "Content-Type": "image/png",
             },
             data=screenshot,
+            timeout=30,
         )
         res.raise_for_status()
 
