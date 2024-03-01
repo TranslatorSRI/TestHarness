@@ -2,7 +2,5 @@
 __pycache__
 *.egg-info
 logs/
-Translator-Tests/
-
-# PyCharms IDE metadata to be ignored
-.idea/
+scripts/
+.env
