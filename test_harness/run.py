@@ -1,5 +1,5 @@
 """Run tests through the Test Runners."""
-
+from typing import Union
 from collections import defaultdict
 import json
 import logging
@@ -9,9 +9,10 @@ import traceback
 from typing import Dict, List
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
+from one_hop_tests import run_onehop_tests
 from benchmarks_runner import run_benchmarks
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase
+from translator_testing_model.datamodel.pydanticmodel import TestCase, KnowledgeGraphNavigationTestCase
 
 from .reporter import Reporter
 from .slacker import Slacker
@@ -20,7 +21,9 @@ from .slacker import Slacker
 async def run_tests(
     reporter: Reporter,
     slacker: Slacker,
-    tests: Dict[str, TestCase],
+
+    # TODO: How can we generalize the test list to send back diverse TestCase subclasses?
+    tests: Dict[str, Union[TestCase, KnowledgeGraphNavigationTestCase]],
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict:
     """Send tests through the Test Runners."""
@@ -134,6 +137,106 @@ async def run_tests(
                 except Exception as e:
                     logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
+
+        elif test.test_case_objective == "OneHopTests":
+            # One Hop Tests seem a bit different from other types of tests. Generally, a single OneHopTest TestAsset
+            # is single S-P-O triplet with categories, used internally to generate a half dozen distinct TestCases and
+            # a single KP or ARA TRAPI service is called several times, once for each generated TestCase.
+            # There is no external sense of "ExpectedOutput" rather, test pass, fail or skip status is an intrinsic
+            # outcome pertaining to the recovery of the input test asset values in the output of the various TestCases.
+            # A list of such TestAssets run against a given KP or ARA target service, could be deemed a "TestSuite".
+            # But a set of such TestSuites could be run in batch within a given TestSession. It is somewhat hard
+            # to align with this framework to the new Translator Test Harness, or at least, not as efficient to run.
+            # To make this work, we will do some violence to the testing model and wrap each input S-P-O triple as a
+            # single TestCase, extract a single associated TestAsset, which we'll feed in with the value of the
+            # TestCase 'components' field value, which will be taken as the 'infores' of the ARA or KP to be tested.
+            # Internally, we'll generate and run TRAPI queries of the actual TestCase instances against the 'infores'
+            # specified resources, then return the results, suitably indexed.  Alternately, if the specified target
+            # is the 'ars', then the returned results will be indexed by 'pks'(?)
+
+            # Explicitly indicate that our TestCase is a specialized kind
+            kgn_test_case: KnowledgeGraphNavigationTestCase = test
+
+            # As indicated above, we only expect a single TestAsset
+            asset = kgn_test_case.test_assets[0]
+
+            # Remapping fields semantically onto OneHopTest inputs
+            test_inputs = {
+                "environment": test.test_env,
+                "components": test.components,
+                "trapi_version": test.trapi_version,
+                "biolink_version": test.biolink_version,
+                "runner_settings": test.test_case_runner_settings,
+
+                "subject_id": asset.input_id,
+                "subject_category": asset.input_category,
+                "predicate_id": asset.predicate_id,
+                "object_id": asset.output_id,
+                "object_category": asset.output_category
+
+                # TODO: not sure if or how to set any log_level here
+                # log_level: "?"
+            }
+            err_msg = ""
+
+            # create test in Test Dashboard
+            test_id = ""
+            try:
+                test_id = await reporter.create_test(test, asset)
+            except Exception:
+                logger.error(f"Failed to create test: {test.id}")
+            try:
+                test_input_json = json.dumps(test_inputs, indent=2)
+                await reporter.upload_log(
+                    test_id,
+                    "Calling One Hop Tests with: {test_input}".format(test_input=test_input_json)
+                )
+            except Exception as e:
+                logger.error(str(e))
+                logger.error(f"Failed to upload logs to test: {test.id}")
+            try:
+                # we pass the test arguments as named parameters,
+                # instead of a simple argument sequence.
+                oht_result = await run_onehop_tests(**test_inputs)
+
+            except Exception as e:
+                err_msg = f"One Hop Tests Test Runner failed with {traceback.format_exc()}"
+                logger.error(f"[{test.id}] {err_msg}")
+                oht_result = {
+                    "pks": {},
+                    # this will effectively act as a list that we access by index down below
+                    "results": defaultdict(lambda: {"error": err_msg}),
+                }
+
+            test_result = {
+                "pks": oht_result["pks"],
+                "result": oht_result["results"],
+            }
+            full_report[status] += 1
+            if not err_msg:
+                # only upload ara labels if the test ran successfully
+                try:
+                    labels = [
+                        {
+                            "key": ara,
+                            "value": result["status"],
+                        }
+                        for ara, result in test_result["result"].items()
+                    ]
+                    await reporter.upload_labels(test_id, labels)
+                except Exception as e:
+                    logger.warning(f"[{test.id}] failed to upload labels: {e}")
+            try:
+                await reporter.upload_log(
+                    test_id, json.dumps(test_result, indent=4)
+                )
+            except Exception as e:
+                logger.error(f"[{test.id}] failed to upload logs.")
+            try:
+                await reporter.finish_test(test_id, status)
+            except Exception as e:
+                logger.error(f"[{test.id}] failed to upload finished status.")
+
         elif test.test_case_objective == "QuantitativeTest":
             assets = test.test_assets[0]
             try:

@@ -2,4 +2,5 @@ httpx==0.25.0
 pydantic==1.10.13
 reasoner_pydantic==4.1.6
 tqdm==4.66.1
-translator-testing-model==0.2.3
+# translator-testing-model==0.2.3
+-e 'git+https://github.com/TranslatorSRI/TranslatorTestingModel.git@add-new-test-object-enum#egg=translator-testing-model'
