@@ -44,6 +44,10 @@ async def run_tests(
     for test in tqdm(tests.values()):
         status = "PASSED"
         environment = test.test_env
+
+        components: List[str] = test.components
+        assert components, "Need at least one component to test!"
+
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
@@ -160,7 +164,7 @@ async def run_tests(
             # Remapping fields semantically onto OneHopTest inputs
             test_inputs = {
                 "environment": environment,
-                "components": test.components,
+                "components": components,
                 "trapi_version": trapi_version,
                 "biolink_version": biolink_version,
                 "runner_settings": asset.test_runner_settings,
@@ -235,16 +239,16 @@ async def run_tests(
                 logger.error(f"[{test.id}] failed to upload finished status.")
 
         elif test.test_case_objective == "StandardsValidation":
-            # Standards Validation TestRunner uses the reasoner-validator module
-            # to test TRAPI and Biolink Model compliance of templated TRAPI queries.
+            # Standards Validation TestRunner uses the "reasoner-validator" package
+            # to validate TRAPI and Biolink Model compliance of templated TRAPI queries.
 
-            # As indicated above, we only expect a single TestAsset
+            # we only expect a single TestAsset per test(?)
             asset = test.test_assets[0]
 
             # Remapping fields semantically onto OneHopTest inputs
             test_inputs = {
                 "environment": environment,
-                "components": test.components,
+                "components": components,
                 "trapi_version": trapi_version,
                 "biolink_version": biolink_version,
                 "runner_settings": test.test_runner_settings,
@@ -329,7 +333,7 @@ async def run_tests(
                 test_inputs = [
                     assets.id,
                     # TODO: update this. Assumes is going to be ARS
-                    test.components[0],
+                    components[0],
                 ]
                 await reporter.upload_log(
                     test_id,
