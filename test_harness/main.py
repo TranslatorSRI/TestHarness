@@ -80,7 +80,13 @@ async def main(args):
     slacker = Slacker()
 
     trapi_version: Optional[str] = None
+    if("trapi_version" in args):
+        trapi_version = args["trapi_version"]
+
     biolink_version: Optional[str] = None
+    if("biolink_version" in args):
+        biolink_version = args["biolink_version"]
+
     report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger)
 
     logger.info("Finishing up test run...")

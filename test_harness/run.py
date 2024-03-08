@@ -34,7 +34,7 @@ async def run_tests(
         "FAILED": 0,
         "SKIPPED": 0,
     }
-    env = "None"
+    environment = "None"
     await slacker.post_notification(
         messages=[
             f"Running {len(tests)} tests...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
@@ -43,7 +43,7 @@ async def run_tests(
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
-        env = test.test_env
+        environment = test.test_env
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
@@ -63,9 +63,9 @@ async def run_tests(
                 try:
                     test_input = json.dumps(
                         {
-                            "environment": test.test_env,
+                            "environment": environment,
                             "predicate": test.test_case_predicate_name,
-                            "runner_settings": test.test_case_runner_settings,
+                            "runner_settings": test.test_runner_settings,
                             "expected_output": asset.expected_output,
                             "input_curie": test.test_case_input_id,
                             "output_curie": asset.output_id,
@@ -86,9 +86,9 @@ async def run_tests(
             output_ids = [asset.output_id for asset in assets]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
-                test.test_env,
+                environment,
                 test.test_case_predicate_name,
-                test.test_case_runner_settings,
+                test.test_runner_settings,
                 expected_outputs,
                 test.test_case_input_id,
                 output_ids,
@@ -159,11 +159,11 @@ async def run_tests(
 
             # Remapping fields semantically onto OneHopTest inputs
             test_inputs = {
-                "environment": test.test_env,
+                "environment": environment,
                 "components": test.components,
-                "trapi_version": test.trapi_version,
-                "biolink_version": test.biolink_version,
-                "runner_settings": test.test_case_runner_settings,
+                "trapi_version": trapi_version,
+                "biolink_version": biolink_version,
+                "runner_settings": asset.test_runner_settings,
 
                 "subject_id": asset.input_id,
                 "subject_category": asset.input_category,
@@ -243,11 +243,11 @@ async def run_tests(
 
             # Remapping fields semantically onto OneHopTest inputs
             test_inputs = {
-                "environment": test.test_env,
+                "environment": environment,
                 "components": test.components,
-                "trapi_version": test.trapi_version,
-                "biolink_version": test.biolink_version,
-                "runner_settings": test.test_case_runner_settings,
+                "trapi_version": trapi_version,
+                "biolink_version": biolink_version,
+                "runner_settings": test.test_runner_settings,
 
                 "subject_id": asset.input_id,
                 "subject_category": asset.input_category,
@@ -375,7 +375,7 @@ async def run_tests(
             """Test Suite: {test_suite_id}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
                 test_suite_id=1,
                 duration=round(time.time() - start_time, 2),
-                env=env,
+                env=environment,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
                 num_passed=full_report["PASSED"],
                 num_failed=full_report["FAILED"],
