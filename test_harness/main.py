@@ -78,7 +78,7 @@ async def main(args):
     await reporter.get_auth()
     await reporter.create_test_run(next(iter(tests.values())))
     slacker = Slacker()
-    
+
     trapi_version: Optional[str] = None
     biolink_version: Optional[str] = None
     report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger)
