@@ -142,8 +142,14 @@ async def run_tests(
                     logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
 
-        elif test.test_case_objective == "OneHopTests":
-            # One Hop Tests seem a bit different from other types of tests. Generally, a single OneHopTest TestAsset
+        elif test.test_case_objective in ("StandardsValidationTest", "OneHopTest"):
+            # One Hop Tests and TRAPI/Biolink ("standards") validation test have comparable test inputs and
+            # configuration, except for the TestRunner that is executed, hence, are aggregated in this section.
+
+            # 1. Standards Validation TestRunner uses the "reasoner-validator" package to validate
+            # TRAPI and Biolink Model compliance of inputs and outputs templated TRAPI queries.
+
+            # 2. One Hop Tests seem a bit different from other types of tests. Generally, a single OneHopTest TestAsset
             # is single S-P-O triplet with categories, used internally to generate a half dozen distinct TestCases and
             # a single KP or ARA TRAPI service is called several times, once for each generated TestCase.
             # There is no external sense of "ExpectedOutput" rather, test pass, fail or skip status is an intrinsic
@@ -151,6 +157,7 @@ async def run_tests(
             # A list of such TestAssets run against a given KP or ARA target service, could be deemed a "TestSuite".
             # But a set of such TestSuites could be run in batch within a given TestSession. It is somewhat hard
             # to align with this framework to the new Translator Test Harness, or at least, not as efficient to run.
+            #
             # To make this work, we will do some violence to the testing model and wrap each input S-P-O triple as a
             # single TestCase, extract a single associated TestAsset, which we'll feed in with the value of the
             # TestCase 'components' field value, which will be taken as the 'infores' of the ARA or KP to be tested.
@@ -161,7 +168,7 @@ async def run_tests(
             # As indicated above, we only expect a single TestAsset
             asset = test.test_assets[0]
 
-            # Remapping fields semantically onto OneHopTest inputs
+            # Remapping fields semantically onto StandardsValidationTest/OneHopTest inputs
             test_inputs = {
                 "environment": environment,
                 "components": components,
@@ -185,117 +192,42 @@ async def run_tests(
             try:
                 test_id = await reporter.create_test(test, asset)
             except Exception:
-                logger.error(f"Failed to create test: {test.id}")
+                logger.error(
+                    f"Failed to create {test.test_case_objective}: {test.id}"
+                )
+
             try:
                 test_input_json = json.dumps(test_inputs, indent=2)
                 await reporter.upload_log(
                     test_id,
-                    "Calling One Hop Tests with: {test_input}".format(test_input=test_input_json)
+                    f"Calling {test.test_case_objective} with: {test_input_json}"
                 )
             except Exception as e:
                 logger.error(str(e))
-                logger.error(f"Failed to upload logs to test: {test.id}")
+                logger.error(f"Failed to upload logs to {test.test_case_objective}: {test.id}")
+
             try:
-                # we pass the test arguments as named parameters,
-                # instead of a simple argument sequence.
-                oht_result = await run_onehop_tests(**test_inputs)
+                if test.test_case_objective == "StandardsValidationTest":
+                    raise NotImplementedError("'StandardsValidationTest' not implemented yet")
+                elif test.test_case_objective in ("StandardsValidationTest", "OneHopTest"):
+                    # we pass the test arguments as named parameters,
+                    # instead of a simple argument sequence.
+                    test_result = await run_onehop_tests(**test_inputs)
+                else:
+                    raise NotImplementedError(f"Unknown test case_objective: {test.test_case_objective}")
 
             except Exception as e:
-                err_msg = f"One Hop Tests Test Runner failed with {traceback.format_exc()}"
+                err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
-                oht_result = {
+                test_result = {
                     "pks": {},
                     # this will effectively act as a list that we access by index down below
                     "results": defaultdict(lambda: {"error": err_msg}),
                 }
 
             test_result = {
-                "pks": oht_result["pks"],
-                "result": oht_result["results"],
-            }
-            full_report[status] += 1
-            if not err_msg:
-                # only upload ara labels if the test ran successfully
-                try:
-                    labels = [
-                        {
-                            "key": ara,
-                            "value": result["status"],
-                        }
-                        for ara, result in test_result["result"].items()
-                    ]
-                    await reporter.upload_labels(test_id, labels)
-                except Exception as e:
-                    logger.warning(f"[{test.id}] failed to upload labels: {e}")
-            try:
-                await reporter.upload_log(
-                    test_id, json.dumps(test_result, indent=4)
-                )
-            except Exception as e:
-                logger.error(f"[{test.id}] failed to upload logs.")
-            try:
-                await reporter.finish_test(test_id, status)
-            except Exception as e:
-                logger.error(f"[{test.id}] failed to upload finished status.")
-
-        elif test.test_case_objective == "StandardsValidation":
-            # Standards Validation TestRunner uses the "reasoner-validator" package
-            # to validate TRAPI and Biolink Model compliance of templated TRAPI queries.
-
-            # we only expect a single TestAsset per test(?)
-            asset = test.test_assets[0]
-
-            # Remapping fields semantically onto OneHopTest inputs
-            test_inputs = {
-                "environment": environment,
-                "components": components,
-                "trapi_version": trapi_version,
-                "biolink_version": biolink_version,
-                "runner_settings": test.test_runner_settings,
-
-                "subject_id": asset.input_id,
-                "subject_category": asset.input_category,
-                "predicate_id": asset.predicate_id,
-                "object_id": asset.output_id,
-                "object_category": asset.output_category
-
-                # TODO: not sure if or how to set any log_level here
-                # log_level: "?"
-            }
-            err_msg = ""
-
-            # create test in Test Dashboard
-            test_id = ""
-            try:
-                test_id = await reporter.create_test(test, asset)
-            except Exception:
-                logger.error(f"Failed to create test: {test.id}")
-            try:
-                test_input_json = json.dumps(test_inputs, indent=2)
-                await reporter.upload_log(
-                    test_id,
-                    "Calling One Hop Tests with: {test_input}".format(test_input=test_input_json)
-                )
-            except Exception as e:
-                logger.error(str(e))
-                logger.error(f"Failed to upload logs to test: {test.id}")
-            try:
-                # we pass the test arguments as named parameters,
-                # instead of a simple argument sequence.
-                oht_result = await run_onehop_tests(**test_inputs)
-
-            except Exception as e:
-                err_msg = f"One Hop Tests Test Runner failed with {traceback.format_exc()}"
-                logger.error(f"[{test.id}] {err_msg}")
-                oht_result = {
-                    "pks": {},
-                    # this will effectively act as a list that we access by index down below
-                    "results": defaultdict(lambda: {"error": err_msg}),
-                }
-
-            test_result = {
-                "pks": oht_result["pks"],
-                "result": oht_result["results"],
+                "pks": test_result["pks"],
+                "result": test_result["results"],
             }
             full_report[status] += 1
             if not err_msg:
