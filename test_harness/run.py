@@ -17,6 +17,16 @@ from .reporter import Reporter
 from .slacker import Slacker
 
 
+def get_tag(result):
+    """Given a result, get the correct tag for the label."""
+    tag = result.get("status", "FAILED")
+    if tag != "PASSED":
+        message = result.get("message")
+        if message:
+            tag = message
+    return tag
+
+
 async def run_tests(
     reporter: Reporter,
     slacker: Slacker,
@@ -103,36 +113,49 @@ async def run_tests(
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
             # grab individual results for each asset
             for index, (test_id, asset) in enumerate(zip(test_ids, assets)):
-                test_result = {
-                    "pks": ars_result["pks"],
-                    "result": ars_result["results"][index],
-                }
-                # grab only ars result if it exists, otherwise default to failed
-                status = test_result["result"].get("ars", {}).get("status", "FAILED")
-                full_report[status] += 1
-                if not err_msg:
-                    # only upload ara labels if the test ran successfully
+                try:
+                    results = ars_result.get("results", [])
+                    test_result = {
+                        "pks": ars_result.get("pks", {}),
+                        "result": results[index],
+                    }
+                    # grab only ars result if it exists, otherwise default to failed
+                    if test_result["result"].get("error") is not None:
+                        status = "SKIPPED"
+                    else:
+                        status = test_result["result"].get("ars", {}).get("status", "FAILED")
+                    full_report[status] += 1
+                    if not err_msg and status != "SKIPPED":
+                        # only upload ara labels if the test ran successfully
+                        try:
+                            labels = [
+                                {
+                                    "key": ara,
+                                    "value": get_tag(result),
+                                }
+                                for ara, result in test_result["result"].items()
+                            ]
+                            await reporter.upload_labels(test_id, labels)
+                        except Exception as e:
+                            logger.warning(f"[{test.id}] failed to upload labels: {e}")
                     try:
-                        labels = [
-                            {
-                                "key": ara,
-                                "value": result["status"],
-                            }
-                            for ara, result in test_result["result"].items()
-                        ]
-                        await reporter.upload_labels(test_id, labels)
+                        await reporter.upload_log(
+                            test_id, json.dumps(test_result, indent=4)
+                        )
                     except Exception as e:
-                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                try:
-                    await reporter.upload_log(
-                        test_id, json.dumps(test_result, indent=4)
-                    )
+                        logger.error(f"[{test.id}] failed to upload logs.")
+                    try:
+                        await reporter.finish_test(test_id, status)
+                    except Exception as e:
+                        logger.error(f"[{test.id}] failed to upload finished status.")
                 except Exception as e:
-                    logger.error(f"[{test.id}] failed to upload logs.")
-                try:
-                    await reporter.finish_test(test_id, status)
-                except Exception as e:
-                    logger.error(f"[{test.id}] failed to upload finished status.")
+                    logger.error(f"[{test.id}] failed to parse test results.")
+                    try:
+                        await reporter.upload_log(
+                            test_id, f"Failed to parse results: {json.dumps(ars_result)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"[{test.id}] failed to upload failure log.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
         elif test.test_case_objective == "QuantitativeTest":
             assets = test.test_assets[0]
