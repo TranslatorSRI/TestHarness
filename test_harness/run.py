@@ -97,6 +97,9 @@ async def run_tests(
                 test.test_case_predicate_name,
                 test.test_case_runner_settings,
                 expected_outputs,
+                "",
+                "",
+                "",
                 test.test_case_input_id,
                 output_ids,
             ]
