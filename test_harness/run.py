@@ -13,7 +13,7 @@ from standards_validation_test import run_validation_test
 from one_hop_test import run_one_hop_test
 from benchmarks_runner import run_benchmarks
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase
+from translator_testing_model.datamodel.pydanticmodel import TestCase, TestEnvEnum
 
 from .reporter import Reporter
 from .slacker import Slacker
@@ -44,7 +44,7 @@ async def run_tests(
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
-        environment = test.test_env
+        environment: TestEnvEnum = test.test_env
 
         components: List[str] = test.components
         assert components, "Need at least one component to test!"
