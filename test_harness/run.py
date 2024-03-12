@@ -9,8 +9,8 @@ import traceback
 from typing import Dict, List
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
-from standards_validation_test import run_validation_test
-from one_hop_test import run_one_hop_test
+from standards_validation_test import StandardsValidationTest
+from one_hop_test import OneHopTest
 from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase, TestEnvEnum
@@ -213,9 +213,9 @@ async def run_tests(
                 # we pass the test arguments as named parameters,
                 # instead than as a simple argument sequence.
                 if test.test_case_objective == "StandardsValidationTest":
-                    test_result = await run_validation_test(**test_inputs)
+                    test_result = await StandardsValidationTest.run_test(**test_inputs)
                 else:  # test.test_case_objective == "OneHopTest"
-                    test_result = await run_one_hop_test(**test_inputs)
+                    test_result = await OneHopTest.run_test(**test_inputs)
             except Exception as e:
                 err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
