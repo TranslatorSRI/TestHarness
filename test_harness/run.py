@@ -9,7 +9,8 @@ import traceback
 from typing import Dict, List
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
-from one_hop_tests import run_onehop_tests
+from standards_validation_test import run_validation_test
+from one_hop_test import run_one_hop_test
 from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
@@ -152,7 +153,8 @@ async def run_tests(
             # 2. One Hop Tests seem a bit different from other types of tests. Generally, a single OneHopTest TestAsset
             # is single S-P-O triplet with categories, used internally to generate a half dozen distinct TestCases and
             # a single KP or ARA TRAPI service is called several times, once for each generated TestCase.
-            # There is no external sense of "ExpectedOutput" rather, test pass, fail or skip status is an intrinsic
+            #
+            # There is no sense of "ExpectedOutput" in the tests rather, test pass, fail or skip status is an intrinsic
             # outcome pertaining to the recovery of the input test asset values in the output of the various TestCases.
             # A list of such TestAssets run against a given KP or ARA target service, could be deemed a "TestSuite".
             # But a set of such TestSuites could be run in batch within a given TestSession. It is somewhat hard
@@ -161,6 +163,7 @@ async def run_tests(
             # To make this work, we will do some violence to the testing model and wrap each input S-P-O triple as a
             # single TestCase, extract a single associated TestAsset, which we'll feed in with the value of the
             # TestCase 'components' field value, which will be taken as the 'infores' of the ARA or KP to be tested.
+            #
             # Internally, we'll generate and run TRAPI queries of the actual TestCase instances against the 'infores'
             # specified resources, then return the results, suitably indexed.  Alternately, if the specified target
             # is the 'ars', then the returned results will be indexed by 'pks'(?)
@@ -168,22 +171,22 @@ async def run_tests(
             # As indicated above, we only expect a single TestAsset
             asset = test.test_assets[0]
 
-            # Remapping fields semantically onto StandardsValidationTest/OneHopTest inputs
+            # Remapping fields semantically onto
+            # StandardsValidationTest/OneHopTest inputs
             test_inputs = {
                 "environment": environment,
                 "components": components,
                 "trapi_version": trapi_version,
                 "biolink_version": biolink_version,
                 "runner_settings": asset.test_runner_settings,
+                "logger": logger,
 
+                # One test edge (asset)
                 "subject_id": asset.input_id,
                 "subject_category": asset.input_category,
                 "predicate_id": asset.predicate_id,
                 "object_id": asset.output_id,
                 "object_category": asset.output_category
-
-                # TODO: not sure if or how to set any log_level here
-                # log_level: "?"
             }
             err_msg = ""
 
@@ -207,15 +210,12 @@ async def run_tests(
                 logger.error(f"Failed to upload logs to {test.test_case_objective}: {test.id}")
 
             try:
+                # we pass the test arguments as named parameters,
+                # instead than as a simple argument sequence.
                 if test.test_case_objective == "StandardsValidationTest":
-                    raise NotImplementedError("'StandardsValidationTest' not implemented yet")
-                elif test.test_case_objective in ("StandardsValidationTest", "OneHopTest"):
-                    # we pass the test arguments as named parameters,
-                    # instead of a simple argument sequence.
-                    test_result = await run_onehop_tests(**test_inputs)
-                else:
-                    raise NotImplementedError(f"Unknown test case_objective: {test.test_case_objective}")
-
+                    test_result = await run_validation_test(**test_inputs)
+                else:  # test.test_case_objective == "OneHopTest"
+                    test_result = await run_one_hop_test(**test_inputs)
             except Exception as e:
                 err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
