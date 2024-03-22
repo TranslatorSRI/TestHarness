@@ -1,6 +1,7 @@
 """Run tests through the Test Runners."""
 
 from collections import defaultdict
+import httpx
 import json
 import logging
 import time
@@ -58,6 +59,18 @@ async def run_tests(
         if test.test_case_objective == "AcceptanceTest":
             assets = test.test_assets
             test_ids = []
+            biolink_object_aspect_qualifier = ""
+            biolink_object_direction_qualifier = ""
+            # TODO: move qualifiers to TestCase as all the assets should have the same one
+            for qualifier in assets[0].qualifiers:
+                if qualifier.parameter == "biolink_object_aspect_qualifier":
+                    biolink_object_aspect_qualifier = qualifier.value
+                elif qualifier.parameter == "biolink_object_direction_qualifier":
+                    biolink_object_direction_qualifier = qualifier.value
+            # TODO: move input category up as well
+            input_category = assets[0].input_category
+            if not biolink_object_aspect_qualifier:
+                continue
             err_msg = ""
             for asset in assets:
                 # create test in Test Dashboard
@@ -67,6 +80,7 @@ async def run_tests(
                     test_ids.append(test_id)
                 except Exception:
                     logger.error(f"Failed to create test: {test.id}")
+
                 try:
                     test_input = json.dumps(
                         {
@@ -74,6 +88,9 @@ async def run_tests(
                             "predicate": test.test_case_predicate_name,
                             "runner_settings": test.test_case_runner_settings,
                             "expected_output": asset.expected_output,
+                            "biolink_object_aspect_qualifier": biolink_object_aspect_qualifier,
+                            "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
+                            "input_category": input_category,
                             "input_curie": test.test_case_input_id,
                             "output_curie": asset.output_id,
                         },
@@ -97,14 +114,14 @@ async def run_tests(
                 test.test_case_predicate_name,
                 test.test_case_runner_settings,
                 expected_outputs,
-                "",
-                "",
-                "",
+                biolink_object_aspect_qualifier,
+                biolink_object_direction_qualifier,
+                input_category,
                 test.test_case_input_id,
                 output_ids,
             ]
             try:
-                ars_result = await run_ars_test(*test_inputs)
+                ars_result, ars_url = await run_ars_test(*test_inputs)
             except Exception as e:
                 err_msg = f"ARS Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
@@ -114,8 +131,16 @@ async def run_tests(
                     "results": defaultdict(lambda: {"error": err_msg}),
                 }
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
+            try:
+                ars_pk = ars_result["pks"].get("parent_pk")
+                if ars_pk:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(f"{ars_url}retain/{ars_pk}")
+            except Exception as e:
+                logger.error(f"Failed to retain PK on ARS.")
             # grab individual results for each asset
             for index, (test_id, asset) in enumerate(zip(test_ids, assets)):
+                status = "PASSED"
                 try:
                     results = ars_result.get("results", [])
                     test_result = {
