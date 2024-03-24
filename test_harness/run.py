@@ -69,8 +69,6 @@ async def run_tests(
                     biolink_object_direction_qualifier = qualifier.value
             # TODO: move input category up as well
             input_category = assets[0].input_category
-            if not biolink_object_aspect_qualifier:
-                continue
             err_msg = ""
             for asset in assets:
                 # create test in Test Dashboard
