@@ -1,7 +1,10 @@
 .DS_Store
 __pycache__
 *.egg-info
+*venv/
 logs/
+!logs/.gitkeep
+
 Translator-Tests/
 
 # PyCharms IDE metadata to be ignored

@@ -1,0 +1,11 @@
+ARS_Test_Runner==0.0.8
+benchmarks-runner==0.1.2
+ui-test-runner==0.0.2
+# graph-validation-tests==0.0.2
+-e 'git+https://github.com/TranslatorSRI/graph-validation-tests.git@main#egg=graph-validation-tests'
+
+# the standard 'jq' pypi distribution doesn't directly support Windoze,
+# causing a pip build error, but there is a potential source (with author-given
+# caveats, see https://github.com/mwilliamson/jq.py/issues/20#issuecomment-1411157736)
+# of built Windoze wheels, at https://jeffreyknockel.com/jq/. Here we use one of them:
+./dist/jq-1.6.0-cp312-cp312-win_amd64.whl

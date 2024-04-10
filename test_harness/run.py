@@ -35,7 +35,7 @@ async def run_tests(
         "FAILED": 0,
         "SKIPPED": 0,
     }
-    environment = "None"
+    environment: Optional[TestEnvEnum] = None
     await slacker.post_notification(
         messages=[
             f"Running {len(tests)} tests...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"

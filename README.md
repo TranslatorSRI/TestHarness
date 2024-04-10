@@ -16,9 +16,9 @@ The Test Harness incorporates Test Runners that do the actual running of the aut
 - output_curie: curie checked for in the results
 
 ## How to use:
-The Test Harness is a CLI that you need to install:
+The Test Harness is a CLI that you need to install (preferably within a suitable Python Virtual Environment):
 - `pip install -r requirements.txt` to install normal dependencies
-- `pip install -r requirements-runners.txt` to install the Test Runners
+- `pip install -r requirements-runners.txt` (or requirements-runners-win64.txt) to install the Test Runners 
 - `pip install .` to install the Test Harness CLI
 
 Once everything is installed, you can call
