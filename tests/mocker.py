@@ -1,5 +1,9 @@
-class MockReporter:
+from test_harness.reporter import Reporter
+from test_harness.slacker import Slacker
+
+class MockReporter(Reporter):
     def __init__(self, base_url=None, refresh_token=None, logger=None):
+        Reporter.__init__(self, base_url, refresh_token, logger)
         self.base_path = base_url
         self.test_run_id = 1
         pass
@@ -35,8 +39,9 @@ class MockReporter:
         pass
 
 
-class MockSlacker:
+class MockSlacker(Slacker):
     def __init__(self):
+        Slacker.__init__(self)
         pass
 
     async def post_notification(self, messages):

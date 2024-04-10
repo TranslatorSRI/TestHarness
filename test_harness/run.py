@@ -23,11 +23,12 @@ async def run_tests(
     reporter: Reporter,
     slacker: Slacker,
     tests: Dict[str, TestCase],
-    trapi_version: Optional[str],
-    biolink_version: Optional[str],
+    trapi_version: Optional[str] = None,
+    biolink_version: Optional[str] = None,
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict:
-    """Send tests through the Test Runners."""
+    """Send tests through the Test Runners.
+    """
     start_time = time.time()
     logger.info(f"Running {len(tests)} tests...")
     full_report = {
