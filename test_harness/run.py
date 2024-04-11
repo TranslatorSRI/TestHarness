@@ -175,19 +175,22 @@ async def run_tests(
             # Remapping fields semantically onto
             # StandardsValidationTest/OneHopTest inputs
             test_inputs = {
-                "environment": environment,
-                "components": components,
-                "trapi_version": trapi_version,
-                "biolink_version": biolink_version,
-                "runner_settings": asset.test_runner_settings,
-                "logger": logger,
-
                 # One test edge (asset)
                 "subject_id": asset.input_id,
                 "subject_category": asset.input_category,
                 "predicate_id": asset.predicate_id,
                 "object_id": asset.output_id,
-                "object_category": asset.output_category
+                "object_category": asset.output_category,
+
+                "environment": environment,
+                "components": components,
+                "trapi_version": trapi_version,
+                "biolink_version": biolink_version,
+                "runner_settings": asset.test_runner_settings,
+                # TODO: kwargs are optional but intended here to provide a means to
+                #       configure the reasoner-validator BiolinkValidator class with
+                #       additional parameters like target_provenance and strict_validation
+                "kwargs": {}
             }
             err_msg = ""
 
