@@ -2,7 +2,6 @@ import pytest
 
 from test_harness.run import run_tests
 from .example_tests import example_test_cases
-from test_harness.reporter import Reporter
 from .mocker import (
     MockReporter,
     MockSlacker,

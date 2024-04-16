@@ -1,6 +1,7 @@
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 
+
 class MockReporter(Reporter):
     def __init__(self, base_url=None, refresh_token=None, logger=None):
         Reporter.__init__(self, base_url, refresh_token, logger)
