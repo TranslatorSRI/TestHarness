@@ -1,7 +1,7 @@
 import pytest
 
 from test_harness.main import main
-from .example_tests import example_test_cases
+from .example_tests import example_acceptance_test_cases
 
 from .mocker import (
     MockReporter,
@@ -19,7 +19,7 @@ async def test_main(mocker):
     mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
     await main(
         {
-            "tests": example_test_cases,
+            "tests": example_acceptance_test_cases,
             "save_to_dashboard": False,
             "json_output": False,
             "log_level": "ERROR",

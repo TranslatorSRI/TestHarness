@@ -1,7 +1,7 @@
 import pytest
 
 from test_harness.run import run_tests
-from .example_tests import example_test_cases
+from .example_tests import example_acceptance_test_cases
 from .mocker import (
     MockReporter,
     MockSlacker,
@@ -40,7 +40,7 @@ async def test_run_tests(mocker):
             base_url="http://test",
         ),
         slacker=MockSlacker(),
-        tests=example_test_cases,
+        tests=example_acceptance_test_cases,
     )
     # run_ui_test.assert_called_once()
     run_ars_test.assert_called_once()

@@ -2,7 +2,7 @@
 
 from translator_testing_model.datamodel.pydanticmodel import TestSuite
 
-example_test_cases = TestSuite.parse_obj(
+example_acceptance_test_cases = TestSuite.parse_obj(
     {
         "id": "TestSuite_1",
         "name": None,
