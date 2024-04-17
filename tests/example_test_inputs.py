@@ -108,3 +108,81 @@ example_acceptance_test_cases = TestSuite.parse_obj(
         }
     }
 ).test_cases
+
+
+example_one_hop_test_cases = TestSuite.parse_obj(
+    {
+        "id": "TestSuite_2",
+        "name": None,
+        "description": None,
+        "tags": [],
+        "test_runner_settings": None,
+        "test_metadata": {
+            "id": "1",
+            "name": None,
+            "description": None,
+            "tags": [],
+            "test_source": "TranslatorTeam",
+            "test_reference": None,
+            "test_objective": "OneHopTest",
+            "test_annotations": [],
+        },
+        "test_cases": {
+            "TestCase_1": {
+                "id": "TestCase_1",
+                "name": "iron side effects",
+                "description": "High iron is a symptom of Aceruloplasminemia",
+                "tags": [],
+                "test_env": "prod",
+                # "trapi_version": trapi_version,  # Optional[str] = None; latest community release if not given
+                # "biolink_version": biolink_version,  # Optional[str] = None;  Biolink Toolkit default if not given
+                "query_type": None,
+                "test_assets": [
+                    {
+
+                        "id": "Asset_3",
+                        "name": "Iron and Aceruloplasminemia",
+                        "description": "High iron is a symptom of Aceruloplasminemia",
+                        "tags": [],
+                        "input_id": "DRUGBANK:DB01592",
+                        "input_name": "Iron",
+                        "input_category": "biolink:SmallMolecule",
+                        "predicate_id": "biolink:has_side_effect",
+                        "predicate_name": "has side effect",
+                        "output_id": "MONDO:0011426",
+                        "output_name": "Aceruloplasminemia",
+                        "output_category": "biolink:Disease",
+                        "association": "biolink:ChemicalToDiseaseOrPhenotypicFeatureAssociation",
+                        "qualifiers": [],
+                        "expected_output": "Acceptable",
+                        "test_issue": None,
+                        "semantic_severity": None,
+                        "in_v1": None,
+                        "well_known": False,
+                        "test_reference": None,
+                        "test_runner_settings": None,
+                        "test_metadata": {
+                            "id": "1",
+                            "name": None,
+                            "description": None,
+                            "tags": [],
+                            "test_source": "TranslatorTeam",
+                            "test_reference": "https://github.com/NCATSTranslator/Feedback/issues/506",
+                            "test_objective": "OneHopTest",
+                            "test_annotations": [],
+                        },
+                    },
+                ],
+                "preconditions": [],
+                "trapi_template": None,
+                "components": ["arax", "molepro"],
+                "test_case_objective": "AcceptanceTest",
+                "test_case_source": None,
+                "test_case_predicate_name": "has side effect",
+                "test_case_predicate_id": "biolink:has_side_effect",
+                "test_case_input_id": "DRUGBANK:DB01592",
+                "test_runner_settings": None,
+            }
+        }
+    }
+).test_cases

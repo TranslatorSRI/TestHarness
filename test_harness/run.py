@@ -47,8 +47,7 @@ async def run_tests(
         status = "PASSED"
         environment: TestEnvEnum = test.test_env
 
-        components: List[str] = test.components
-        assert components, "Need at least one component to test!"
+        components: Optional[List[str]] = test.components
 
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
@@ -218,8 +217,10 @@ async def run_tests(
                 # instead than as a simple argument sequence.
                 if test.test_case_objective == "StandardsValidationTest":
                     test_result = await run_standards_validation_tests(**test_inputs)
-                else:  # test.test_case_objective == "OneHopTest"
+                elif test.test_case_objective == "OneHopTest":
                     test_result = await run_one_hop_tests(**test_inputs)
+                else:
+                    raise NotImplementedError(f"Unexpected test_case_objective: {test.test_case_objective}?")
             except Exception as e:
                 err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
@@ -269,7 +270,7 @@ async def run_tests(
                 test_inputs = [
                     assets.id,
                     # TODO: update this. Assumes is going to be ARS
-                    components[0],
+                    components[0] if components else "ars",
                 ]
                 await reporter.upload_log(
                     test_id,
