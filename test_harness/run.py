@@ -191,10 +191,11 @@ async def run_tests(
                 "trapi_version": trapi_version,
                 "biolink_version": biolink_version,
                 "runner_settings": asset.test_runner_settings,
-                # TODO: kwargs are optional but intended here to provide
-                #       a means to configure the reasoner-validator BiolinkValidator class with
-                #       additional parameters like target_provenance and strict_validation
-                "kwargs": {}
+                # TODO: in principle, additional (optional) keyword arguments could be given in
+                #       the test_inputs as a means to configure the BiolinkValidator class in reasoner-validator
+                #        with additional parameters like target_provenance and strict_validation; however,
+                #        it is unclear at this moment where and how these can or should be specified.
+                # **kwargs
             }
             err_msg = ""
 
@@ -202,22 +203,13 @@ async def run_tests(
             test_id = ""
             try:
                 test_id = await reporter.create_test(test, asset)
-            except Exception:
-                logger.error(
-                    f"Failed to create {test.test_case_objective}: {test.id}"
-                )
 
-            try:
                 test_input_json = json.dumps(test_inputs, indent=2)
                 await reporter.upload_log(
                     test_id,
                     f"Calling {test.test_case_objective} with: {test_input_json}"
                 )
-            except Exception as e:
-                logger.error(str(e))
-                logger.error(f"Failed to upload logs to {test.test_case_objective}: {test.id}")
 
-            try:
                 # we pass the test arguments as named parameters,
                 # instead than as a simple argument sequence.
                 if test.test_case_objective == "StandardsValidationTest":
@@ -226,7 +218,15 @@ async def run_tests(
                     test_result = await run_one_hop_tests(**test_inputs)
                 else:
                     raise NotImplementedError(f"Unexpected test_case_objective: {test.test_case_objective}?")
+
+                test_result = {
+                    "pks": test_result["pks"],
+                    "result": test_result["results"]
+                }
+                full_report[status] += 1
+
             except Exception as e:
+
                 err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
                 test_result = {
@@ -235,22 +235,18 @@ async def run_tests(
                     "results": defaultdict(lambda: {"error": err_msg}),
                 }
 
-            test_result = {
-                "pks": test_result["pks"],
-                "result": test_result["results"],
-            }
-            full_report[status] += 1
             if not err_msg:
-                # only upload ara labels if the test ran successfully
+                # only upload component labels if the test ran successfully
                 try:
                     labels = [
                         {
-                            "key": ara,
+                            "key": component,
                             "value": result["status"],
                         }
-                        for ara, result in test_result["result"].items()
+                        for component, result in test_result["result"].items()
                     ]
                     await reporter.upload_labels(test_id, labels)
+
                 except Exception as e:
                     logger.warning(f"[{test.id}] failed to upload labels: {e}")
             try:
