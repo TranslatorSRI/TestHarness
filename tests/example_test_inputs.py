@@ -176,7 +176,7 @@ example_one_hop_test_cases = TestSuite.parse_obj(
                 "preconditions": [],
                 "trapi_template": None,
                 "components": ["arax", "molepro"],
-                "test_case_objective": "AcceptanceTest",
+                "test_case_objective": "OneHopTest",
                 "test_case_source": None,
                 "test_case_predicate_name": "has side effect",
                 "test_case_predicate_id": "biolink:has_side_effect",
