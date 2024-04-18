@@ -8,7 +8,11 @@ from tqdm import tqdm
 import traceback
 from typing import Dict, List
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, TestEnvEnum
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    TestEnvEnum,
+    ComponentEnum
+)
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 from standards_validation_test import run_standards_validation_tests
@@ -47,12 +51,13 @@ async def run_tests(
         status = "PASSED"
         environment: TestEnvEnum = test.test_env
 
-        components: Optional[List[str]] = test.components
+        components: Optional[List[ComponentEnum]] = test.components
 
-        # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
             continue
+
+        # check if acceptance test
         if test.test_case_objective == "AcceptanceTest":
             assets = test.test_assets
             test_ids = []
@@ -270,14 +275,14 @@ async def run_tests(
                 test_inputs = [
                     assets.id,
                     # TODO: update this. Assumes is going to be ARS
-                    components[0] if components else "ars",
+                    components[0] if components else ComponentEnum("ars"),
                 ]
                 await reporter.upload_log(
                     test_id,
                     f"Calling Benchmark Test Runner with: {json.dumps(test_inputs, indent=4)}",
                 )
                 benchmark_results, screenshots = await run_benchmarks(*test_inputs)
-                await reporter.upload_log(test_id, ("\n").join(benchmark_results))
+                await reporter.upload_log(test_id, "\n".join(benchmark_results))
                 # ex:
                 # {
                 #   "aragorn": {
