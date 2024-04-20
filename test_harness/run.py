@@ -141,10 +141,21 @@ async def run_tests(
                 status = "PASSED"
                 try:
                     results = ars_result.get("results", [])
-                    test_result = {
-                        "pks": ars_result.get("pks", {}),
-                        "result": results[index],
-                    }
+                    if isinstance(results, list):
+                        test_result = {
+                            "pks": ars_result.get("pks", {}),
+                            "result": results[index],
+                        }
+                    elif isinstance(results, dict):
+                        # make sure it has a single error message
+                        assert "error" in results
+                        test_result = {
+                            "pks": ars_result.get("pks", {}),
+                            "result": results,
+                        }
+                    else:
+                        # got something completely unexpected from the ARS Test Runner
+                        raise Exception()
                     # grab only ars result if it exists, otherwise default to failed
                     if test_result["result"].get("error") is not None:
                         status = "SKIPPED"
@@ -170,18 +181,18 @@ async def run_tests(
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload logs.")
-                    try:
-                        await reporter.finish_test(test_id, status)
-                    except Exception as e:
-                        logger.error(f"[{test.id}] failed to upload finished status.")
                 except Exception as e:
-                    logger.error(f"[{test.id}] failed to parse test results.")
+                    logger.error(f"[{test.id}] failed to parse test results: {ars_result}")
                     try:
                         await reporter.upload_log(
                             test_id, f"Failed to parse results: {json.dumps(ars_result)}"
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload failure log.")
+                try:
+                    await reporter.finish_test(test_id, status)
+                except Exception as e:
+                    logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
         elif test.test_case_objective == "QuantitativeTest":
             assets = test.test_assets[0]
