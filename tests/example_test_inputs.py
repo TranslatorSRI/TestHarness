@@ -1,6 +1,6 @@
 """Example tests for the Test Harness."""
 
-from translator_testing_model.datamodel.pydanticmodel import TestSuite
+from translator_testing_model.datamodel.pydanticmodel import TestSuite, ComponentEnum
 
 example_acceptance_test_cases = TestSuite.parse_obj(
     {
@@ -97,7 +97,7 @@ example_acceptance_test_cases = TestSuite.parse_obj(
                 ],
                 "preconditions": [],
                 "trapi_template": None,
-                "components": ["ars"],
+                "components": [ComponentEnum("ars")],
                 "test_case_objective": "AcceptanceTest",
                 "test_case_source": None,
                 "test_case_predicate_name": "treats",
@@ -174,7 +174,7 @@ example_one_hop_test_cases = TestSuite.parse_obj(
                 ],
                 "preconditions": [],
                 "trapi_template": None,
-                "components": ["molepro"],
+                "components": [ComponentEnum("molepro")],
                 "test_case_objective": "OneHopTest",
                 "test_case_source": None,
                 "test_case_predicate_name": "affects",
