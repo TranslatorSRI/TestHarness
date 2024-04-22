@@ -8,7 +8,6 @@ Translator-Tests/
 scripts/
 .env
 
+build/*
 # PyCharms IDE metadata to be ignored
 .idea/
-
-
