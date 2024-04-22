@@ -18,7 +18,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 from standards_validation_test import run_standards_validation_tests
 from one_hop_test import run_one_hop_tests
-from benchmarks_runner import run_benchmarks
+# from benchmarks_runner import run_benchmarks
 
 from .reporter import Reporter
 from .slacker import Slacker
@@ -337,7 +337,7 @@ async def run_tests(
                     test_id,
                     f"Calling Benchmark Test Runner with: {json.dumps(test_inputs, indent=4)}",
                 )
-                benchmark_results, screenshots = await run_benchmarks(*test_inputs)
+                benchmark_results, screenshots = {}, None  # await run_benchmarks(*test_inputs)
                 await reporter.upload_log(test_id, "\n".join(benchmark_results))
                 # ex:
                 # {

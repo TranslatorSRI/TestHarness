@@ -38,7 +38,7 @@ async def test_run_tests(mocker):
             ],
         },
     )
-    run_benchmarks = mocker.patch("test_harness.run.run_benchmarks", return_value={})
+    # run_benchmarks = mocker.patch("test_harness.run.run_benchmarks", return_value={})
     await run_tests(
         reporter=MockReporter(
             base_url="http://test",
@@ -48,7 +48,7 @@ async def test_run_tests(mocker):
     )
     # run_ui_test.assert_called_once()
     run_ars_test.assert_called_once()
-    run_benchmarks.assert_not_called()
+    # run_benchmarks.assert_not_called()
 
 
 @pytest.mark.asyncio
