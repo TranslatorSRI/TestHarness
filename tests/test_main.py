@@ -1,7 +1,7 @@
 import pytest
 
 from test_harness.main import main
-from .example_tests import example_acceptance_test_cases
+from .example_test_inputs import example_acceptance_test_cases
 
 from .mocker import (
     MockReporter,
