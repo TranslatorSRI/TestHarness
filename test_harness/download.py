@@ -33,7 +33,7 @@ def download_tests(
         # Find all json files in the downloaded zip
         # tests_paths = glob.glob(f"{tmpdir}/**/*.json", recursive=True)
 
-        tests_paths = glob.glob(f"{tmpdir}/*/test_suites/test_suite_output.json")
+        tests_paths = glob.glob(f"{tmpdir}/*/test_suites/{suite}.json")
 
         with open(tests_paths[0]) as f:
             test_suite = TestSuite.parse_obj(json.load(f))

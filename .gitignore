@@ -2,11 +2,13 @@
 __pycache__
 *.egg-info
 *venv/
-
 logs/**
 !logs/.gitkeep
-
 Translator-Tests/
+scripts/
+.env
 
 # PyCharms IDE metadata to be ignored
 .idea/
+
+

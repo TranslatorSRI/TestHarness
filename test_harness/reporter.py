@@ -63,7 +63,8 @@ class Reporter:
 
     async def create_test(self, test: TestCase, asset: TestAsset):
         """Create a test in the IR."""
-        name = f"{asset.name if asset.name else asset.description}"
+        name = asset.name if asset.name else asset.description
+        # name = f"{asset.name if asset.name else asset.description}"
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
             json={

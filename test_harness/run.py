@@ -1,6 +1,7 @@
 """Run tests through the Test Runners."""
 from typing import Optional
 from collections import defaultdict
+import httpx
 import json
 import logging
 import time
@@ -21,6 +22,16 @@ from benchmarks_runner import run_benchmarks
 
 from .reporter import Reporter
 from .slacker import Slacker
+
+
+def get_tag(result):
+    """Given a result, get the correct tag for the label."""
+    tag = result.get("status", "FAILED")
+    if tag != "PASSED":
+        message = result.get("message")
+        if message:
+            tag = message
+    return tag
 
 
 async def run_tests(
@@ -61,6 +72,16 @@ async def run_tests(
         if test.test_case_objective == "AcceptanceTest":
             assets = test.test_assets
             test_ids = []
+            biolink_object_aspect_qualifier = ""
+            biolink_object_direction_qualifier = ""
+            # TODO: move qualifiers to TestCase as all the assets should have the same one
+            for qualifier in assets[0].qualifiers:
+                if qualifier.parameter == "biolink_object_aspect_qualifier":
+                    biolink_object_aspect_qualifier = qualifier.value
+                elif qualifier.parameter == "biolink_object_direction_qualifier":
+                    biolink_object_direction_qualifier = qualifier.value
+            # TODO: move input category up as well
+            input_category = assets[0].input_category
             err_msg = ""
             for asset in assets:
                 # create test in Test Dashboard
@@ -70,6 +91,7 @@ async def run_tests(
                     test_ids.append(test_id)
                 except Exception:
                     logger.error(f"Failed to create test: {test.id}")
+
                 try:
                     test_input = json.dumps(
                         {
@@ -77,6 +99,9 @@ async def run_tests(
                             "predicate": test.test_case_predicate_name,
                             "runner_settings": test.test_runner_settings,
                             "expected_output": asset.expected_output,
+                            "biolink_object_aspect_qualifier": biolink_object_aspect_qualifier,
+                            "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
+                            "input_category": input_category,
                             "input_curie": test.test_case_input_id,
                             "output_curie": asset.output_id,
                         },
@@ -100,11 +125,14 @@ async def run_tests(
                 test.test_case_predicate_name,
                 test.test_runner_settings,
                 expected_outputs,
+                biolink_object_aspect_qualifier,
+                biolink_object_direction_qualifier,
+                input_category,
                 test.test_case_input_id,
                 output_ids,
             ]
             try:
-                ars_result = await run_ars_test(*test_inputs)
+                ars_result, ars_url = await run_ars_test(*test_inputs)
             except Exception as e:
                 err_msg = f"ARS Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
@@ -114,34 +142,66 @@ async def run_tests(
                     "results": defaultdict(lambda: {"error": err_msg}),
                 }
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
+            try:
+                ars_pk = ars_result["pks"].get("parent_pk")
+                if ars_pk:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(f"{ars_url}retain/{ars_pk}")
+            except Exception as e:
+                logger.error(f"Failed to retain PK on ARS.")
             # grab individual results for each asset
             for index, (test_id, asset) in enumerate(zip(test_ids, assets)):
-                test_result = {
-                    "pks": ars_result["pks"],
-                    "result": ars_result["results"][index],
-                }
-                # grab only ars result if it exists, otherwise default to failed
-                status = test_result["result"].get("ars", {}).get("status", "FAILED")
-                full_report[status] += 1
-                if not err_msg:
-                    # only upload ara labels if the test ran successfully
-                    try:
-                        labels = [
-                            {
-                                "key": ara,
-                                "value": result["status"],
-                            }
-                            for ara, result in test_result["result"].items()
-                        ]
-                        await reporter.upload_labels(test_id, labels)
-                    except Exception as e:
-                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
+                status = "PASSED"
                 try:
-                    await reporter.upload_log(
-                        test_id, json.dumps(test_result, indent=4)
-                    )
+                    results = ars_result.get("results", [])
+                    if isinstance(results, list):
+                        test_result = {
+                            "pks": ars_result.get("pks", {}),
+                            "result": results[index],
+                        }
+                    elif isinstance(results, dict):
+                        # make sure it has a single error message
+                        assert "error" in results
+                        test_result = {
+                            "pks": ars_result.get("pks", {}),
+                            "result": results,
+                        }
+                    else:
+                        # got something completely unexpected from the ARS Test Runner
+                        raise Exception()
+                    # grab only ars result if it exists, otherwise default to failed
+                    if test_result["result"].get("error") is not None:
+                        status = "SKIPPED"
+                    else:
+                        status = test_result["result"].get("ars", {}).get("status", "FAILED")
+                    full_report[status] += 1
+                    if not err_msg and status != "SKIPPED":
+                        # only upload ara labels if the test ran successfully
+                        try:
+                            labels = [
+                                {
+                                    "key": ara,
+                                    "value": get_tag(result),
+                                }
+                                for ara, result in test_result["result"].items()
+                            ]
+                            await reporter.upload_labels(test_id, labels)
+                        except Exception as e:
+                            logger.warning(f"[{test.id}] failed to upload labels: {e}")
+                    try:
+                        await reporter.upload_log(
+                            test_id, json.dumps(test_result, indent=4)
+                        )
+                    except Exception as e:
+                        logger.error(f"[{test.id}] failed to upload logs.")
                 except Exception as e:
-                    logger.error(f"[{test.id}] failed to upload logs.")
+                    logger.error(f"[{test.id}] failed to parse test results: {ars_result}")
+                    try:
+                        await reporter.upload_log(
+                            test_id, f"Failed to parse results: {json.dumps(ars_result)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"[{test.id}] failed to upload failure log.")
                 try:
                     await reporter.finish_test(test_id, status)
                 except Exception as e:
