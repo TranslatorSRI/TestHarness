@@ -240,6 +240,7 @@ async def run_tests(
             # StandardsValidationTest/OneHopTest inputs
             test_inputs = {
                 # One test edge (asset)
+                "test_asset_id": asset.id,
                 "subject_id": asset.input_id,
                 "subject_category": asset.input_category,
                 "predicate_id": asset.predicate_id,

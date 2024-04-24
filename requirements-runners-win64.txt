@@ -1,7 +1,7 @@
 ARS_Test_Runner==0.1.7
 # benchmarks-runner==0.1.3
 # ui-test-runner==0.0.2
-# graph-validation-tests==0.0.9
+# graph-validation-tests==0.0.10
 -e 'git+https://github.com/TranslatorSRI/graph-validation-tests.git@main#egg=graph-validation-tests'
 
 # the standard 'jq' pypi distribution doesn't directly support Windoze,
