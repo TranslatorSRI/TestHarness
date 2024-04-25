@@ -55,7 +55,7 @@ async def test_run_tests(mocker):
 async def test_one_hop_test_run_tests(mocker):
     """Test the run_tests function on Standards Validation TestRunner."""
     run_one_hop_tests = mocker.patch(
-        "test_harness.run.run_standards_validation_tests",
+        "test_harness.run.run_one_hop_tests",
         return_value=example_one_hops_test_output
     )
     await run_tests(

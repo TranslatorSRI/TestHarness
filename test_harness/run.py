@@ -1,5 +1,5 @@
 """Run tests through the Test Runners."""
-from typing import Optional
+from typing import Optional, Tuple, List, Dict
 from collections import defaultdict
 import httpx
 import json
@@ -7,12 +7,14 @@ import logging
 import time
 from tqdm import tqdm
 import traceback
-from typing import Dict, List
 
 from translator_testing_model.datamodel.pydanticmodel import (
+    TestAsset,
     TestCase,
+    TestObjectiveEnum,
     TestEnvEnum,
-    ComponentEnum
+    ComponentEnum,
+    TestCaseResultEnum
 )
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
@@ -32,6 +34,113 @@ def get_tag(result):
         if message:
             tag = message
     return tag
+
+
+def get_test_case_results(test_case_id: str, test_run_results: Dict) -> Dict[str, Dict]:
+    """
+    Reformats the output of 'graph-validation-tests' TestRunners
+    into a TestHarness summary of component/test status.
+
+    :param test_case_id: str, local identifier of the test case of interest.
+    :param test_run_results: Dict, raw test run results from the graph-validation-tests TestRunners.
+    :return: Dict[str, Dict], where the top-level keys are "pks" and "results" and
+             associated value dictionaries are the pks of the various component runs, and
+             the asset_id-test_name indexed status of each component test result
+    """
+    # Raw test result is something like this:
+    #
+    # {
+    #     # TODO: the value of the component pk ought to be a test run identifier of some sort
+    #     'pks': ['arax': 'molepro'],
+    #     'results': [
+    #         [
+    #             {
+    #                 'Asset_1-by_subject': {
+    #                     'molepro':
+    #                         (   # TODO: the returned data is a 2-tuple, but could easily be returned as a dictionary
+    #                             #       with { "status": 'PASSED', 'messages': {reasoner-validator messages...}
+    #                             <TestCaseResultEnum.PASSED: 'PASSED'>,
+    #                             {}
+    #                         )
+    #                 },
+    #                 'Asset_1-inverse_by_new_subject': {
+    #                     'molepro': (
+    #                         <TestCaseResultEnum.FAILED: 'FAILED'>,  # test case 'status' outcome
+    #                         {
+    #                             'error': {
+    #                                 'error.trapi.response.knowledge_graph.missing_expected_edge': {
+    #                                     'global': {
+    #                                         'Asset_1|(PUBCHEM.COMPOUND:4091#biolink:SmallMolecule)-[biolink:affects]->(NCBIGene:2475#biolink:Gene)': None
+    #                                     }
+    #                                 }
+    #                             }
+    #                         }
+    #                     )
+    #                 },
+    #                 'Asset_1-by_object': {
+    #                     # etc... 'molepro': (<TestCaseResultEnum.FAILED: 'FAILED'>, {'error': {'error.trapi.response.knowledge_graph.missing_expected_edge': {'global': {'Asset_1|(PUBCHEM.COMPOUND:4091#biolink:SmallMolecule)-[biolink:affects]->(NCBIGene:2475#biolink:Gene)': None}}}})
+    #                 },
+    #                 # etc...
+    #         ]
+    #     ]
+    # ]
+    #
+    # Sample return value:
+    # {
+    #     "pks": {
+    #         "aragorn": "14953570-7451-4d1b-a817-fc9e7879b477",
+    #         "arax": "8c88ead6-6cbf-4c9a-9570-ca76392ddb7a",
+    #         "molepro": "bd084e27-2a0e-4df4-843c-417bfac6f8c7",
+    #         "bte": "d28a4146-9486-4e98-973d-8cdd33270595",
+    #         "improving": "d8d3c905-ec07-491f-a078-7ef0f489a409"
+    #     },
+    #     "results": {
+    #         # TODO: the 'Asset_1-by_subject' is effectively the 'test_id' generated
+    #         #       from TestCase 'by_subject' and test_asset 'Asset_1'?
+    #         "Asset_1-by_subject": {
+    #             "aragorn": "PASSED",
+    #             "arax": "PASSED",
+    #             "molepro": "FAILED",
+    #         },
+    #         "Asset_1-inverse_by_new_subject": {
+    #             "aragorn": "FAILED",
+    #             "arax": "PASSED",
+    #             "molepro": "PASSED",
+    #         },
+    #         # etc...
+    #      }
+    # }
+    if test_case_id not in test_run_results["results"]:
+        return dict()
+    return test_run_results["results"][test_case_id]
+
+
+# TODO: this method should be moved and imported from the "graph-validation-tests" package/module.
+def get_compliance_tests(test: TestCase) -> List[str]:
+    # TODO: compliance 'test' names - e.g. 'by_subject', etc. - for 'graph-validation-tests'
+    #       are dynamically internally specified and constructed within the respective test runners.
+    #       In fact, each 'test' TestAsset is one-to-many mapped onto such TestCases.
+    #       So how can this test_id be generated in advance of running the test runner?
+    #       Two options: 1) expect a list of the test case identifiers in 'test_runner_settings' or
+    #                    2) retrieve a list of test case names from the test runner module
+    #       In both cases, these would be the values used to 'create' test instances in the IR.
+    #       Since this represents more than one test_id, we need to track them accordingly.
+    if test.test_runner_settings:
+        return test.test_runner_settings
+    if test.test_case_objective == "StandardsValidationTest":
+        return ["by_subject", "by_object"]
+    elif test.test_case_objective == "OneHopTest":
+        return [
+            "by_subject",
+            "inverse_by_new_subject",
+            "by_object",
+            "raise_subject_entity",
+            "raise_object_entity",
+            "raise_object_by_subject",
+            "raise_predicate_by_subject"
+        ]
+    else:
+        raise NotImplementedError(f"Unexpected test_case_objective: {test.case_objective}?")
 
 
 async def run_tests(
@@ -70,7 +179,7 @@ async def run_tests(
 
         # check if acceptance test
         if test.test_case_objective == "AcceptanceTest":
-            assets = test.test_assets
+            assets: List[TestAsset] = test.test_assets
             test_ids = []
             biolink_object_aspect_qualifier = ""
             biolink_object_direction_qualifier = ""
@@ -83,6 +192,7 @@ async def run_tests(
             # TODO: move input category up as well
             input_category = assets[0].input_category
             err_msg = ""
+            asset: TestAsset
             for asset in assets:
                 # create test in Test Dashboard
                 test_id = ""
@@ -131,6 +241,7 @@ async def run_tests(
                 test.test_case_input_id,
                 output_ids,
             ]
+            ars_url: str
             try:
                 ars_result, ars_url = await run_ars_test(*test_inputs)
             except Exception as e:
@@ -155,14 +266,14 @@ async def run_tests(
                 try:
                     results = ars_result.get("results", [])
                     if isinstance(results, list):
-                        test_result = {
+                        test_case_results = {
                             "pks": ars_result.get("pks", {}),
                             "result": results[index],
                         }
                     elif isinstance(results, dict):
                         # make sure it has a single error message
                         assert "error" in results
-                        test_result = {
+                        test_case_results = {
                             "pks": ars_result.get("pks", {}),
                             "result": results,
                         }
@@ -170,10 +281,10 @@ async def run_tests(
                         # got something completely unexpected from the ARS Test Runner
                         raise Exception()
                     # grab only ars result if it exists, otherwise default to failed
-                    if test_result["result"].get("error") is not None:
+                    if test_case_results["result"].get("error") is not None:
                         status = "SKIPPED"
                     else:
-                        status = test_result["result"].get("ars", {}).get("status", "FAILED")
+                        status = test_case_results["result"].get("ars", {}).get("status", "FAILED")
                     full_report[status] += 1
                     if not err_msg and status != "SKIPPED":
                         # only upload ara labels if the test ran successfully
@@ -183,14 +294,14 @@ async def run_tests(
                                     "key": ara,
                                     "value": get_tag(result),
                                 }
-                                for ara, result in test_result["result"].items()
+                                for ara, result in test_case_results["result"].items()
                             ]
                             await reporter.upload_labels(test_id, labels)
                         except Exception as e:
                             logger.warning(f"[{test.id}] failed to upload labels: {e}")
                     try:
                         await reporter.upload_log(
-                            test_id, json.dumps(test_result, indent=4)
+                            test_id, json.dumps(test_case_results, indent=4)
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload logs.")
@@ -254,75 +365,76 @@ async def run_tests(
                 "runner_settings": asset.test_runner_settings,
                 # TODO: in principle, additional (optional) keyword arguments could be given in
                 #       the test_inputs as a means to configure the BiolinkValidator class in reasoner-validator
-                #        with additional parameters like target_provenance and strict_validation; however,
-                #        it is unclear at this moment where and how these can or should be specified.
+                #       with additional parameters like target_provenance and strict_validation; however,
+                #       it is unclear at this moment where and how these can or should be specified.
                 # **kwargs
             }
             err_msg = ""
 
-            # create test in Test Dashboard
-            test_id = ""
+            # create tests in Test Dashboard
+            test_cases: Dict = dict()
+            for test_case_name in get_compliance_tests(test):
+                test_case_id: str
+                test_run_id: int
+                try:
+                    test_case_id, test_run_id = await reporter.create_compliant_test(test_case_name, asset)
+                    test_input_json = json.dumps(test_inputs, indent=2)
+                    await reporter.upload_log(
+                        test_run_id,
+                        f"Calling {test.test_case_objective} with: {test_input_json}"
+                    )
+                    test_cases[test_case_id] = test_run_id
+                except Exception as e:
+                    err_msg = (f"{test.test_case_objective} '{test_case_name}' test " +
+                               f"creation failed with {traceback.format_exc()}")
+                    logger.error(f"[{asset.id}] {err_msg}")
             try:
-                test_id = await reporter.create_test(test, asset)
-
-                test_input_json = json.dumps(test_inputs, indent=2)
-                await reporter.upload_log(
-                    test_id,
-                    f"Calling {test.test_case_objective} with: {test_input_json}"
-                )
-
                 # we pass the test arguments as named parameters,
                 # instead than as a simple argument sequence.
                 if test.test_case_objective == "StandardsValidationTest":
-                    test_result = await run_standards_validation_tests(**test_inputs)
+                    test_run_results = await run_standards_validation_tests(**test_inputs)
                 elif test.test_case_objective == "OneHopTest":
-                    test_result = await run_one_hop_tests(**test_inputs)
+                    test_run_results = await run_one_hop_tests(**test_inputs)
                 else:
                     raise NotImplementedError(f"Unexpected test_case_objective: {test.test_case_objective}?")
-
-                test_result = {
-                    "pks": test_result["pks"],
-                    "result": test_result["results"]
-                }
-                full_report[status] += 1
-
             except Exception as e:
-
                 err_msg = f"{test.test_case_objective} Test Runner failed with {traceback.format_exc()}"
-                logger.error(f"[{test.id}] {err_msg}")
-                test_result = {
+                logger.error(f"[{asset.id}] {err_msg}")
+                test_run_results = {
                     "pks": {},
                     # this will effectively act as a list that we access by index down below
                     "results": defaultdict(lambda: {"error": err_msg}),
                 }
-
             if not err_msg:
-                # only upload component labels if the test ran successfully
-                try:
-                    labels = [
-                        {
-                            "key": component,
-                            "value": result["status"],
-                        }
-                        for component, result in test_result["result"].items()
-                    ]
-                    await reporter.upload_labels(test_id, labels)
-
-                except Exception as e:
-                    logger.warning(f"[{test.id}] failed to upload labels: {e}")
-            try:
-                await reporter.upload_log(
-                    test_id, json.dumps(test_result, indent=4)
-                )
-            except Exception as e:
-                logger.error(f"[{test.id}] failed to upload logs.")
-            try:
-                await reporter.finish_test(test_id, status)
-            except Exception as e:
-                logger.error(f"[{test.id}] failed to upload finished status.")
+                # only upload component labels if the test run ran successfully
+                test_case_id: str
+                test_run_id: int
+                for test_case_id, test_run_id in test_cases.items():
+                    test_case_results = get_test_case_results(test_case_id, test_run_results)
+                    try:
+                        labels: List[Dict[str, str]] = list()
+                        for component, result in test_case_results.items():
+                            # TODO: maybe the 'graph-validation-tests' TestRunners should
+                            #       rather return a Dict with result["status"], not a Tuple?
+                            status: str = result[0] if isinstance(result, Tuple) else result
+                            # TODO: unsure if the status should be counted here (with respect to the test cases?)
+                            #       or whether it should be tallied somewhere else
+                            full_report[status] += 1
+                            labels.append({"key": component, "value": status})
+                            await reporter.upload_labels(test_run_id, labels)
+                    except Exception as e:
+                        logger.warning(f"[{test_run_id}] failed to upload labels: {e}")
+                    try:
+                        await reporter.upload_log(test_run_id, json.dumps(test_case_results, indent=4))
+                    except Exception as e:
+                        logger.error(f"[{test_run_id}] failed to upload logs.")
+                    try:
+                        await reporter.finish_test(test_run_id, status)
+                    except Exception as e:
+                        logger.error(f"[{test_run_id}] failed to upload finished status.")
 
         elif test.test_case_objective == "QuantitativeTest":
-            assets = test.test_assets[0]
+            assets: TestAsset = test.test_assets[0]
             try:
                 test_id = await reporter.create_test(test, assets)
             except Exception:
@@ -338,7 +450,7 @@ async def run_tests(
                     test_id,
                     f"Calling Benchmark Test Runner with: {json.dumps(test_inputs, indent=4)}",
                 )
-                benchmark_results, screenshots = {}, None  # await run_benchmarks(*test_inputs)
+                benchmark_results, screenshots = {}, {} # await run_benchmarks(*test_inputs)
                 await reporter.upload_log(test_id, "\n".join(benchmark_results))
                 # ex:
                 # {
@@ -363,7 +475,7 @@ async def run_tests(
                 await reporter.finish_test(test_id, "FAILED")
         else:
             try:
-                test_id = await reporter.create_test(test, test)
+                test_id = await reporter.create_test(test, assets)
                 logger.error(f"Unsupported test type: {test.id}")
                 await reporter.upload_log(
                     test_id, f"Unsupported test type in test: {test.id}"

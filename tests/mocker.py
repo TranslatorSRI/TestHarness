@@ -1,5 +1,7 @@
+from typing import Tuple
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
+from translator_testing_model.datamodel.pydanticmodel import TestCase, TestAsset
 
 
 class MockReporter(Reporter):
@@ -17,6 +19,13 @@ class MockReporter(Reporter):
 
     async def create_test(self, test, asset):
         return 2
+
+    _mock_test_run_id: int = 0
+
+    async def create_compliant_test(self, test_case_name: str, asset: TestAsset) -> Tuple[str, int]:
+        test_case_id: str = f"{asset.id}-{test_case_name}"
+        self._mock_test_run_id += 1
+        return test_case_id, self._mock_test_run_id
 
     async def upload_labels(self, test_id, labels):
         pass
