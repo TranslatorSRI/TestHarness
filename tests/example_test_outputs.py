@@ -3,262 +3,126 @@ Example output for specified tests
 """
 
 example_one_hops_test_output = {
-    "pks": [
-        "arax",
-        "molepro"
-    ],
-    "results": [
-        [
-            {
-                "arax": {
-                    "by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "inverse_by_new_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {},
-                        "critical": {
-                            "critical.trapi.response.unexpected_http_code": {
-                                "global": {
-                                    "400": None
-                                }
-                            }
+    "pks": {
+        "arax": "arax",
+        "molepro": "molepro"
+    },
+    "results": {
+        "TestAsset_1-by_subject": {
+            "molepro": {
+                "status": "PASSED",
+                "messages": {
+                    "info": {
+                        "info.compliant": {
+                            "global": None
                         }
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "by_object": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "raise_subject_entity": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {},
-                        "critical": {
-                            "critical.trapi.request.invalid": {
-                                "global": {
-                                    "subject 'DRUGBANK:DB01592[biolink:SmallMolecule]'": [
-                                        {
-                                            "context": "raise_subject_entity",
-                                            "reason": "has no 'is_a' parent since it is either not an ontology term or does not map onto a parent ontology term."
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "raise_object_entity": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "raise_object_by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "arax": {
-                    "raise_predicate_by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
                     }
                 }
             }
-        ],
-        [
-            {
-                "molepro": {
-                    "by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "molepro": {
-                    "inverse_by_new_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "molepro": {
-                    "by_object": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "molepro": {
-                    "raise_subject_entity": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {},
-                        "critical": {
-                            "critical.trapi.request.invalid": {
-                                "global": {
-                                    "subject 'DRUGBANK:DB01592[biolink:SmallMolecule]'": [
-                                        {
-                                            "context": "raise_subject_entity",
-                                            "reason": "has no 'is_a' parent since it is either not an ontology term or does not map onto a parent ontology term."
-                                        }
-                                    ]
-                                }
+        },
+        "TestAsset_1-inverse_by_new_subject": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "critical": {
+                        "critical.trapi.request.invalid": {
+                            "global": {
+                                "predicate 'biolink:is_active_metabolite_of'": [
+                                    {
+                                        "context": "inverse_by_new_subject",
+                                        "reason": "is an unknown or has no inverse?"
+                                    }
+                                ]
                             }
                         }
                     }
                 }
-            },
-            {
-                "molepro": {
-                    "raise_object_entity": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
+            }
+        },
+        "TestAsset_1-by_object": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "error": {
+                        "error.trapi.response.knowledge_graph.missing_expected_edge": {
+                            "global": {
+                                "TestAsset_1|(CHEBI:58579#biolink:SmallMolecule)-[biolink:is_active_metabolite_of]->(UniProtKB:Q9NQ88#biolink:Protein)": None
                             }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "molepro": {
-                    "raise_object_by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
-                    }
-                }
-            },
-            {
-                "molepro": {
-                    "raise_predicate_by_subject": {
-                        "info": {},
-                        "skipped": {},
-                        "warning": {},
-                        "error": {
-                            "error.trapi.response.knowledge_graph.missing_expected_edge": {
-                                "global": {
-                                    "TestAsset:00001|(DRUGBANK:DB01592#biolink:SmallMolecule)-[biolink:has_side_effect]->(MONDO:0011426#biolink:Disease)": None
-                                }
-                            }
-                        },
-                        "critical": {}
+                        }
                     }
                 }
             }
-        ]
-    ]
+        },
+        "TestAsset_1-raise_subject_entity": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "critical": {
+                        "critical.trapi.request.invalid": {
+                            "global": {
+                                "subject 'CHEBI:58579[biolink:SmallMolecule]'": [
+                                    {
+                                        "context": "raise_subject_entity",
+                                        "reason": "has no 'is_a' parent since it is either not an ontology term or does not map onto a parent ontology term."
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "TestAsset_1-raise_object_entity": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "critical": {
+                        "critical.trapi.request.invalid": {
+                            "global": {
+                                "object 'UniProtKB:Q9NQ88[biolink:Protein]'": [
+                                    {
+                                        "context": "raise_object_entity",
+                                        "reason": "has no 'is_a' parent since it is either not an ontology term or does not map onto a parent ontology term."
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "TestAsset_1-raise_object_by_subject": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "error": {
+                        "error.trapi.response.knowledge_graph.missing_expected_edge": {
+                            "global": {
+                                "TestAsset_1|(CHEBI:58579#biolink:SmallMolecule)-[biolink:is_active_metabolite_of]->(UniProtKB:Q9NQ88#biolink:Protein)": None
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "TestAsset_1-raise_predicate_by_subject": {
+            "molepro": {
+                "status": "FAILED",
+                "messages": {
+                    "critical": {
+                        "critical.trapi.request.invalid": {
+                            "global": {
+                                "predicate 'biolink:is_active_metabolite_of'": [
+                                    {
+                                        "context": "raise_predicate_by_subject",
+                                        "reason": "has no 'is_a' parent"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

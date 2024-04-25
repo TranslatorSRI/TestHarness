@@ -1,5 +1,5 @@
 """Run tests through the Test Runners."""
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, List, Dict
 from collections import defaultdict
 import httpx
 import json
@@ -11,10 +11,8 @@ import traceback
 from translator_testing_model.datamodel.pydanticmodel import (
     TestAsset,
     TestCase,
-    TestObjectiveEnum,
     TestEnvEnum,
-    ComponentEnum,
-    TestCaseResultEnum
+    ComponentEnum
 )
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
@@ -414,9 +412,7 @@ async def run_tests(
                     try:
                         labels: List[Dict[str, str]] = list()
                         for component, result in test_case_results.items():
-                            # TODO: maybe the 'graph-validation-tests' TestRunners should
-                            #       rather return a Dict with result["status"], not a Tuple?
-                            status: str = result[0] if isinstance(result, Tuple) else result
+                            status: str = result["status"] if "status" in result else "PASSED"
                             # TODO: unsure if the status should be counted here (with respect to the test cases?)
                             #       or whether it should be tallied somewhere else
                             full_report[status] += 1
