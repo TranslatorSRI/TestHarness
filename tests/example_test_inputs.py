@@ -2,7 +2,7 @@
 
 from translator_testing_model.datamodel.pydanticmodel import TestSuite, ComponentEnum
 
-example_acceptance_test_cases = TestSuite.parse_obj(
+example_acceptance_test_cases = TestSuite.model_validate(
     {
         "id": "TestSuite_1",
         "name": None,
@@ -110,7 +110,7 @@ example_acceptance_test_cases = TestSuite.parse_obj(
 ).test_cases
 
 
-example_one_hop_test_cases = TestSuite.parse_obj(
+example_one_hop_test_cases = TestSuite.model_validate(
     {
         "id": "TestSuite_2",
         "name": None,
@@ -139,7 +139,7 @@ example_one_hop_test_cases = TestSuite.parse_obj(
                 "query_type": None,
                 "test_assets": [
                     {
-                        "id": "Asset_1",
+                        "id": "TestAsset_1",
                         "name": "Metformin affects MTOR",
                         "description": "Metformin affects the MTOR mechanistic target of rapamycin kinase",
                         "tags": [],
