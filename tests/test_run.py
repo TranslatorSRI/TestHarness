@@ -1,8 +1,8 @@
 import pytest
 
 from test_harness.run import run_tests
-from .example_test_outputs import example_one_hops_test_output
-from .example_test_inputs import (
+from example_test_outputs import example_one_hops_test_output
+from example_test_inputs import (
     example_acceptance_test_cases,
     example_one_hop_test_cases
 )

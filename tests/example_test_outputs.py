@@ -92,7 +92,7 @@ example_one_hops_test_output = {
             }
         },
         "TestAsset_1-raise_object_by_subject": {
-            "molepro": {
+            "arax": {
                 "status": "FAILED",
                 "messages": {
                     "error": {
@@ -106,7 +106,7 @@ example_one_hops_test_output = {
             }
         },
         "TestAsset_1-raise_predicate_by_subject": {
-            "molepro": {
+            "arax": {
                 "status": "FAILED",
                 "messages": {
                     "critical": {
