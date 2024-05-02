@@ -10,7 +10,7 @@ import traceback
 from typing import Dict, List
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
-from benchmarks_runner import run_benchmarks
+# from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
 
@@ -61,8 +61,7 @@ async def run_tests(
             test_ids = []
             biolink_object_aspect_qualifier = ""
             biolink_object_direction_qualifier = ""
-            # TODO: move qualifiers to TestCase as all the assets should have the same one
-            for qualifier in assets[0].qualifiers:
+            for qualifier in test.qualifiers:
                 if qualifier.parameter == "biolink_object_aspect_qualifier":
                     biolink_object_aspect_qualifier = qualifier.value
                 elif qualifier.parameter == "biolink_object_direction_qualifier":
@@ -84,7 +83,7 @@ async def run_tests(
                         {
                             "environment": test.test_env,
                             "predicate": test.test_case_predicate_name,
-                            "runner_settings": test.test_case_runner_settings,
+                            "runner_settings": test.test_runner_settings,
                             "expected_output": asset.expected_output,
                             "biolink_object_aspect_qualifier": biolink_object_aspect_qualifier,
                             "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
@@ -110,7 +109,7 @@ async def run_tests(
             test_inputs = [
                 test.test_env,
                 test.test_case_predicate_name,
-                test.test_case_runner_settings,
+                test.test_runner_settings,
                 expected_outputs,
                 biolink_object_aspect_qualifier,
                 biolink_object_direction_qualifier,
@@ -130,7 +129,7 @@ async def run_tests(
                 }
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
             try:
-                ars_pk = ars_result["pks"].get("parent_pk")
+                ars_pk = ars_result.get("pks", {}).get("parent_pk")
                 if ars_pk:
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{ars_url}retain/{ars_pk}")
@@ -195,6 +194,7 @@ async def run_tests(
                     logger.error(f"[{test.id}] failed to upload finished status.")
             # full_report[test["test_case_input_id"]]["ars"] = ars_result
         elif test.test_case_objective == "QuantitativeTest":
+            continue
             assets = test.test_assets[0]
             try:
                 test_id = await reporter.create_test(test, assets)

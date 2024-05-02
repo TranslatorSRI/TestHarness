@@ -81,8 +81,7 @@ def cli():
     download_parser.add_argument(
         "--tests_url",
         type=url_type,
-        # default="https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip",
-        default="https://github.com/NCATSTranslator/Tests/archive/4387dc8f69331e8ecf6a3facf86e547cb4f7824e.zip",
+        default="https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip",
         help="URL to download in order to find the test files",
     )
 
