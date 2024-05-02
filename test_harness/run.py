@@ -16,6 +16,7 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase
 
 from .reporter import Reporter
 from .slacker import Slacker
+from .utils import normalize_curies
 
 
 def get_tag(result):
@@ -66,8 +67,15 @@ async def run_tests(
                     biolink_object_aspect_qualifier = qualifier.value
                 elif qualifier.parameter == "biolink_object_direction_qualifier":
                     biolink_object_direction_qualifier = qualifier.value
-            # TODO: move input category up as well
-            input_category = assets[0].input_category
+            
+            # normalize all the curies
+            curies = [asset.output_id for asset in assets]
+            curies.append(test.test_case_input_id)
+            normalized_curies = await normalize_curies(test, logger)
+            input_curie = normalized_curies[test.test_case_input_id]["id"]["identifier"]
+            # try and get normalized input category, but default to original
+            input_category = normalized_curies[test.test_case_input_id].get("type", [test.input_category])[0]
+
             err_msg = ""
             for asset in assets:
                 # create test in Test Dashboard
@@ -88,8 +96,8 @@ async def run_tests(
                             "biolink_object_aspect_qualifier": biolink_object_aspect_qualifier,
                             "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
                             "input_category": input_category,
-                            "input_curie": test.test_case_input_id,
-                            "output_curie": asset.output_id,
+                            "input_curie": input_curie,
+                            "output_curie": normalized_curies[asset.output_id]["id"]["identifier"],
                         },
                         indent=2,
                     )
@@ -104,7 +112,7 @@ async def run_tests(
                     logger.error(f"Failed to upload logs to test: {test.id}, {test_id}")
 
             # group all outputs together to make one Translator query
-            output_ids = [asset.output_id for asset in assets]
+            output_ids = [normalized_curies[asset.output_id]["id"]["identifier"] for asset in assets]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
                 test.test_env,
@@ -114,7 +122,7 @@ async def run_tests(
                 biolink_object_aspect_qualifier,
                 biolink_object_direction_qualifier,
                 input_category,
-                test.test_case_input_id,
+                input_curie,
                 output_ids,
             ]
             try:
