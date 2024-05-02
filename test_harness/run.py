@@ -10,6 +10,7 @@ import traceback
 from typing import Dict, List
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
+
 # from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
@@ -67,14 +68,16 @@ async def run_tests(
                     biolink_object_aspect_qualifier = qualifier.value
                 elif qualifier.parameter == "biolink_object_direction_qualifier":
                     biolink_object_direction_qualifier = qualifier.value
-            
+
             # normalize all the curies
             curies = [asset.output_id for asset in assets]
             curies.append(test.test_case_input_id)
             normalized_curies = await normalize_curies(test, logger)
             input_curie = normalized_curies[test.test_case_input_id]["id"]["identifier"]
             # try and get normalized input category, but default to original
-            input_category = normalized_curies[test.test_case_input_id].get("type", [test.input_category])[0]
+            input_category = normalized_curies[test.test_case_input_id].get(
+                "type", [test.input_category]
+            )[0]
 
             err_msg = ""
             for asset in assets:
@@ -97,7 +100,9 @@ async def run_tests(
                             "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
                             "input_category": input_category,
                             "input_curie": input_curie,
-                            "output_curie": normalized_curies[asset.output_id]["id"]["identifier"],
+                            "output_curie": normalized_curies[asset.output_id]["id"][
+                                "identifier"
+                            ],
                         },
                         indent=2,
                     )
@@ -112,7 +117,10 @@ async def run_tests(
                     logger.error(f"Failed to upload logs to test: {test.id}, {test_id}")
 
             # group all outputs together to make one Translator query
-            output_ids = [normalized_curies[asset.output_id]["id"]["identifier"] for asset in assets]
+            output_ids = [
+                normalized_curies[asset.output_id]["id"]["identifier"]
+                for asset in assets
+            ]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
                 test.test_env,
@@ -167,7 +175,9 @@ async def run_tests(
                     if test_result["result"].get("error") is not None:
                         status = "SKIPPED"
                     else:
-                        status = test_result["result"].get("ars", {}).get("status", "FAILED")
+                        status = (
+                            test_result["result"].get("ars", {}).get("status", "FAILED")
+                        )
                     full_report[status] += 1
                     if not err_msg and status != "SKIPPED":
                         # only upload ara labels if the test ran successfully
@@ -189,10 +199,13 @@ async def run_tests(
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload logs.")
                 except Exception as e:
-                    logger.error(f"[{test.id}] failed to parse test results: {ars_result}")
+                    logger.error(
+                        f"[{test.id}] failed to parse test results: {ars_result}"
+                    )
                     try:
                         await reporter.upload_log(
-                            test_id, f"Failed to parse results: {json.dumps(ars_result)}"
+                            test_id,
+                            f"Failed to parse results: {json.dumps(ars_result)}",
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload failure log.")

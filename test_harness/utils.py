@@ -1,4 +1,5 @@
 """General utilities for the Test Harness."""
+
 import httpx
 import logging
 from typing import Dict, Union, List
@@ -11,6 +12,7 @@ NODE_NORM_URL = {
     "test": "https://nodenorm.test.transltr.io/1.4",
     "prod": "https://nodenorm.transltr.io/1.4",
 }
+
 
 async def normalize_curies(
     test: TestCase,
