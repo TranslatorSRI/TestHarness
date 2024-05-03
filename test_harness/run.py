@@ -75,9 +75,11 @@ async def run_tests(
             normalized_curies = await normalize_curies(test, logger)
             input_curie = normalized_curies[test.test_case_input_id]["id"]["identifier"]
             # try and get normalized input category, but default to original
-            input_category = normalized_curies[test.test_case_input_id].get(
-                "type", [test.input_category]
-            )[0]
+            # input_category = normalized_curies[test.test_case_input_id].get(
+            #     "type", [test.input_category]
+            # )[0]
+            # TODO: figure out the right way to handle input category wrt normalization
+            input_category = test.input_category
 
             err_msg = ""
             for asset in assets:
