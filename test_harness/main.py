@@ -48,7 +48,7 @@ async def main(args):
     await reporter.get_auth()
     await reporter.create_test_run(next(iter(tests.values())))
     slacker = Slacker()
-    report = await run_tests(reporter, slacker, tests, logger)
+    report = await run_tests(reporter, slacker, tests, logger, args["suite"])
 
     logger.info("Finishing up test run...")
     await reporter.finish_test_run()
