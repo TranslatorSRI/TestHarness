@@ -48,7 +48,7 @@ async def run_tests(
     env = "None"
     await slacker.post_notification(
         messages=[
-            f"Running {suite_name} ({len(tests)} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
     # loop over all tests
