@@ -8,11 +8,9 @@ class Slacker:
     def __init__(self, url=None):
         self.url = url if url else os.getenv("SLACK_WEBHOOK_URL")
 
-    async def post_notification(self, messages=None):
+    async def post_notification(self, messages=()):
         """Post a notification to Slack."""
         # https://gist.github.com/mrjk/079b745c4a8a118df756b127d6499aa0
-        if messages is None:
-            messages = []
         blocks = []
         for message in messages:
             blocks.append(
