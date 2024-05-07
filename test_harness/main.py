@@ -136,14 +136,16 @@ def cli():
     parser.add_argument(
         "--trapi_version",
         type=str,
-        required=False,
+        required=True,
+        default=None,
         help="TRAPI (SemVer) version assumed for testing (latest release, if not given)",
     )
 
     parser.add_argument(
         "--biolink_version",
         type=str,
-        required=False,
+        required=True,
+        default=None,
         help="Biolink Model (SemVer) version assumed for testing (latest release, if not given)",
     )
 
