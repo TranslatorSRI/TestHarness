@@ -16,129 +16,16 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
-from standards_validation_test import run_standards_validation_tests
-from one_hop_test import run_one_hop_tests
+
+from graph_validation_test_runner.utils.unit_test_templates import get_compliance_tests
+from standards_validation_test_runner import run_standards_validation_tests
+from one_hop_test_runner import run_one_hop_tests
+
 # from benchmarks_runner import run_benchmarks
 
 from .reporter import Reporter
 from .slacker import Slacker
-
-
-def get_tag(result):
-    """Given a result, get the correct tag for the label."""
-    tag = result.get("status", "FAILED")
-    if tag != "PASSED":
-        message = result.get("message")
-        if message:
-            tag = message
-    return tag
-
-
-def get_test_case_results(test_case_id: str, test_run_results: Dict) -> Dict[str, Dict]:
-    """
-    Reformats the output of 'graph-validation-tests' TestRunners
-    into a TestHarness summary of component/test status.
-
-    :param test_case_id: str, local identifier of the test case of interest.
-    :param test_run_results: Dict, raw test run results from the graph-validation-tests TestRunners.
-    :return: Dict[str, Dict], where the top-level keys are "pks" and "results" and
-             associated value dictionaries are the pks of the various component runs, and
-             the asset_id-test_name indexed status of each component test result
-    """
-    # Raw test result is something like this:
-    #
-    # {
-    #     # TODO: the value of the component pk ought to be a test run identifier of some sort
-    #     'pks': ['arax': 'molepro'],
-    #     'results': [
-    #         [
-    #             {
-    #                 'Asset_1-by_subject': {
-    #                     'molepro':
-    #                         (   # TODO: the returned data is a 2-tuple, but could easily be returned as a dictionary
-    #                             #       with { "status": 'PASSED', 'messages': {reasoner-validator messages...}
-    #                             <TestCaseResultEnum.PASSED: 'PASSED'>,
-    #                             {}
-    #                         )
-    #                 },
-    #                 'Asset_1-inverse_by_new_subject': {
-    #                     'molepro': (
-    #                         <TestCaseResultEnum.FAILED: 'FAILED'>,  # test case 'status' outcome
-    #                         {
-    #                             'error': {
-    #                                 'error.trapi.response.knowledge_graph.missing_expected_edge': {
-    #                                     'global': {
-    #                                         'Asset_1|(PUBCHEM.COMPOUND:4091#biolink:SmallMolecule)-[biolink:affects]->(NCBIGene:2475#biolink:Gene)': None
-    #                                     }
-    #                                 }
-    #                             }
-    #                         }
-    #                     )
-    #                 },
-    #                 'Asset_1-by_object': {
-    #                     # etc... 'molepro': (<TestCaseResultEnum.FAILED: 'FAILED'>, {'error': {'error.trapi.response.knowledge_graph.missing_expected_edge': {'global': {'Asset_1|(PUBCHEM.COMPOUND:4091#biolink:SmallMolecule)-[biolink:affects]->(NCBIGene:2475#biolink:Gene)': None}}}})
-    #                 },
-    #                 # etc...
-    #         ]
-    #     ]
-    # ]
-    #
-    # Sample return value:
-    # {
-    #     "pks": {
-    #         "aragorn": "14953570-7451-4d1b-a817-fc9e7879b477",
-    #         "arax": "8c88ead6-6cbf-4c9a-9570-ca76392ddb7a",
-    #         "molepro": "bd084e27-2a0e-4df4-843c-417bfac6f8c7",
-    #         "bte": "d28a4146-9486-4e98-973d-8cdd33270595",
-    #         "improving": "d8d3c905-ec07-491f-a078-7ef0f489a409"
-    #     },
-    #     "results": {
-    #         # TODO: the 'Asset_1-by_subject' is effectively the 'test_id' generated
-    #         #       from TestCase 'by_subject' and test_asset 'Asset_1'?
-    #         "Asset_1-by_subject": {
-    #             "aragorn": "PASSED",
-    #             "arax": "PASSED",
-    #             "molepro": "FAILED",
-    #         },
-    #         "Asset_1-inverse_by_new_subject": {
-    #             "aragorn": "FAILED",
-    #             "arax": "PASSED",
-    #             "molepro": "PASSED",
-    #         },
-    #         # etc...
-    #      }
-    # }
-    if test_case_id not in test_run_results["results"]:
-        return dict()
-    return test_run_results["results"][test_case_id]
-
-
-# TODO: this method should be moved and imported from the "graph-validation-tests" package/module.
-def get_compliance_tests(test: TestCase) -> List[str]:
-    # TODO: compliance 'test' names - e.g. 'by_subject', etc. - for 'graph-validation-tests'
-    #       are dynamically internally specified and constructed within the respective test runners.
-    #       In fact, each 'test' TestAsset is one-to-many mapped onto such TestCases.
-    #       So how can this test_id be generated in advance of running the test runner?
-    #       Two options: 1) expect a list of the test case identifiers in 'test_runner_settings' or
-    #                    2) retrieve a list of test case names from the test runner module
-    #       In both cases, these would be the values used to 'create' test instances in the IR.
-    #       Since this represents more than one test_id, we need to track them accordingly.
-    if test.test_runner_settings:
-        return test.test_runner_settings
-    if test.test_case_objective == "StandardsValidationTest":
-        return ["by_subject", "by_object"]
-    elif test.test_case_objective == "OneHopTest":
-        return [
-            "by_subject",
-            "inverse_by_new_subject",
-            "by_object",
-            "raise_subject_entity",
-            "raise_object_entity",
-            "raise_object_by_subject",
-            "raise_predicate_by_subject"
-        ]
-    else:
-        raise NotImplementedError(f"Unexpected test_case_objective: {test.case_objective}?")
+from .utils import get_tag, get_graph_validation_test_case_results
 
 
 async def run_tests(
@@ -408,7 +295,7 @@ async def run_tests(
                 test_case_id: str
                 test_run_id: int
                 for test_case_id, test_run_id in test_cases.items():
-                    test_case_results = get_test_case_results(test_case_id, test_run_results)
+                    test_case_results = get_graph_validation_test_case_results(test_case_id, test_run_results)
                     try:
                         labels: List[Dict[str, str]] = list()
                         for component, result in test_case_results.items():
