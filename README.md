@@ -18,8 +18,10 @@ The Test Harness incorporates Test Runners that do the actual running of the aut
 ## How to use:
 The Test Harness is a CLI that you need to install (preferably within a suitable Python Virtual Environment):
 - `pip install -r requirements.txt` to install normal dependencies
-- `pip install -r requirements-runners.txt` (or **requirements-runners-win64.txt** using Python 3.12 for _jq_ module compatibility) to install the Test Runners 
+- `pip install -r requirements-runners.txt` to install the Test Runners 
 - `pip install .` to install the Test Harness CLI
 
 Once everything is installed, you can call
 - `test-harness -h` to see available options
+
+If you are attempting to work with this TestHarness under Microsoft Windows, see the [special notes for Microsoft Windows development](README_Windows.md).
