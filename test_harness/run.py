@@ -17,7 +17,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 
-from graph_validation_test_runner.utils.unit_test_templates import get_compliance_tests
+from graph_validation_tests.utils.unit_test_templates import get_compliance_tests
 from standards_validation_test_runner import run_standards_validation_tests
 from one_hop_test_runner import run_one_hop_tests
 
