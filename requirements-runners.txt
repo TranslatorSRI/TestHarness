@@ -1,4 +1,4 @@
 ARS_Test_Runner==0.1.7
 # benchmarks-runner==0.1.3
 # ui-test-runner==0.0.2
-graph-validation-test-runners==0.0.12
+graph-validation-test-runners==0.1.1
