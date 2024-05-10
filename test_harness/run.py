@@ -16,6 +16,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
+# from benchmarks_runner import run_benchmarks
 
 from graph_validation_tests.utils.unit_test_templates import get_compliance_tests
 from standards_validation_test_runner import run_standards_validation_tests
@@ -25,7 +26,8 @@ from one_hop_test_runner import run_one_hop_tests
 
 from .reporter import Reporter
 from .slacker import Slacker
-from .utils import get_tag, get_graph_validation_test_case_results
+
+from .utils import normalize_curies, get_tag, get_graph_validation_test_case_results
 
 
 async def run_tests(
@@ -35,6 +37,7 @@ async def run_tests(
     trapi_version: Optional[str] = None,
     biolink_version: Optional[str] = None,
     logger: logging.Logger = logging.getLogger(__name__),
+    suite_name: str = "automated tests",
 ) -> Dict:
     """Send tests through the Test Runners.
     """
@@ -48,7 +51,7 @@ async def run_tests(
     environment: Optional[TestEnvEnum] = None
     await slacker.post_notification(
         messages=[
-            f"Running {len(tests)} tests...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
     # loop over all tests
@@ -68,14 +71,24 @@ async def run_tests(
             test_ids = []
             biolink_object_aspect_qualifier = ""
             biolink_object_direction_qualifier = ""
-            # TODO: move qualifiers to TestCase as all the assets should have the same one
-            for qualifier in assets[0].qualifiers:
+            for qualifier in test.qualifiers:
                 if qualifier.parameter == "biolink_object_aspect_qualifier":
                     biolink_object_aspect_qualifier = qualifier.value
                 elif qualifier.parameter == "biolink_object_direction_qualifier":
                     biolink_object_direction_qualifier = qualifier.value
-            # TODO: move input category up as well
-            input_category = assets[0].input_category
+
+            # normalize all the curies
+            curies = [asset.output_id for asset in assets]
+            curies.append(test.test_case_input_id)
+            normalized_curies = await normalize_curies(test, logger)
+            input_curie = normalized_curies[test.test_case_input_id]["id"]["identifier"]
+            # try and get normalized input category, but default to original
+            # input_category = normalized_curies[test.test_case_input_id].get(
+            #     "type", [test.input_category]
+            # )[0]
+            # TODO: figure out the right way to handle input category wrt normalization
+            input_category = test.input_category
+
             err_msg = ""
             asset: TestAsset
             for asset in assets:
@@ -97,8 +110,10 @@ async def run_tests(
                             "biolink_object_aspect_qualifier": biolink_object_aspect_qualifier,
                             "biolink_object_direction_qualifier": biolink_object_direction_qualifier,
                             "input_category": input_category,
-                            "input_curie": test.test_case_input_id,
-                            "output_curie": asset.output_id,
+                            "input_curie": input_curie,
+                            "output_curie": normalized_curies[asset.output_id]["id"][
+                                "identifier"
+                            ],
                         },
                         indent=2,
                     )
@@ -113,7 +128,10 @@ async def run_tests(
                     logger.error(f"Failed to upload logs to test: {test.id}, {test_id}")
 
             # group all outputs together to make one Translator query
-            output_ids = [asset.output_id for asset in assets]
+            output_ids = [
+                normalized_curies[asset.output_id]["id"]["identifier"]
+                for asset in assets
+            ]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
                 environment,
@@ -123,7 +141,7 @@ async def run_tests(
                 biolink_object_aspect_qualifier,
                 biolink_object_direction_qualifier,
                 input_category,
-                test.test_case_input_id,
+                input_curie,
                 output_ids,
             ]
             ars_url: str
@@ -139,7 +157,7 @@ async def run_tests(
                 }
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
             try:
-                ars_pk = ars_result["pks"].get("parent_pk")
+                ars_pk = ars_result.get("pks", {}).get("parent_pk")
                 if ars_pk:
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{ars_url}retain/{ars_pk}")
@@ -191,10 +209,13 @@ async def run_tests(
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload logs.")
                 except Exception as e:
-                    logger.error(f"[{test.id}] failed to parse test results: {ars_result}")
+                    logger.error(
+                        f"[{test.id}] failed to parse test results: {ars_result}"
+                    )
                     try:
                         await reporter.upload_log(
-                            test_id, f"Failed to parse results: {json.dumps(ars_result)}"
+                            test_id,
+                            f"Failed to parse results: {json.dumps(ars_result)}",
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload failure log.")
@@ -370,8 +391,8 @@ async def run_tests(
 
     await slacker.post_notification(
         messages=[
-            """Test Suite: {test_suite_id}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
-                test_suite_id=1,
+            """Test Suite: {test_suite}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
+                test_suite=suite_name,
                 duration=round(time.time() - start_time, 2),
                 env=environment,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",

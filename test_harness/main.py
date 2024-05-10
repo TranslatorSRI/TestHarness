@@ -87,7 +87,7 @@ async def main(args):
     if("biolink_version" in args):
         biolink_version = args["biolink_version"]
 
-    report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger)
+    report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger, args["suite"])
 
     logger.info("Finishing up test run...")
     await reporter.finish_test_run()
@@ -120,8 +120,7 @@ def cli():
     download_parser.add_argument(
         "--tests_url",
         type=url_type,
-        # default="https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip",
-        default="https://github.com/NCATSTranslator/Tests/archive/4387dc8f69331e8ecf6a3facf86e547cb4f7824e.zip",
+        default="https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip",
         help="URL to download in order to find the test files",
     )
 

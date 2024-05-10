@@ -1,5 +1,5 @@
 httpx==0.27.0
-pydantic>=2
-tqdm==4.66.2
-translator-testing-model==0.3.1
+pydantic==2.7.1
+tqdm==4.66.4
+translator-testing-model==0.3.2
 
