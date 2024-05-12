@@ -54,7 +54,8 @@ async def run_tests(
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
-        env = test.test_env
+        # env = test.test_env
+        env = "test"
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
@@ -95,7 +96,7 @@ async def run_tests(
                 try:
                     test_input = json.dumps(
                         {
-                            "environment": test.test_env,
+                            "environment": env,
                             "predicate": test.test_case_predicate_name,
                             "runner_settings": test.test_runner_settings,
                             "expected_output": asset.expected_output,
@@ -126,7 +127,7 @@ async def run_tests(
             ]
             expected_outputs = [asset.expected_output for asset in assets]
             test_inputs = [
-                test.test_env,
+                env,
                 test.test_case_predicate_name,
                 test.test_runner_settings,
                 expected_outputs,

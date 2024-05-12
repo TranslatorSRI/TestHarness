@@ -46,7 +46,7 @@ async def main(args):
         logger=logger,
     )
     await reporter.get_auth()
-    await reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
+    await reporter.create_test_run("test", args["suite"])
     slacker = Slacker()
     report = await run_tests(reporter, slacker, tests, logger, args)
 
