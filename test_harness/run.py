@@ -35,7 +35,7 @@ async def run_tests(
     slacker: Slacker,
     tests: Dict[str, TestCase],
     logger: logging.Logger = logging.getLogger(__name__),
-    suite_name: str = "automated tests",
+    args: Dict[str, any] = {},
 ) -> Dict:
     """Send tests through the Test Runners."""
     start_time = time.time()
@@ -48,7 +48,7 @@ async def run_tests(
     env = "None"
     await slacker.post_notification(
         messages=[
-            f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
     # loop over all tests
@@ -273,7 +273,7 @@ async def run_tests(
     await slacker.post_notification(
         messages=[
             """Test Suite: {test_suite}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
-                test_suite=suite_name,
+                test_suite=args["suite"],
                 duration=round(time.time() - start_time, 2),
                 env=env,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
