@@ -4,7 +4,7 @@ from datetime import datetime
 import httpx
 import logging
 import os
-from typing import List
+from typing import Tuple, List
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase, TestAsset
 
@@ -43,16 +43,16 @@ class Reporter:
             }
         )
 
-    async def create_test_run(self, test: TestCase):
+    async def create_test_run(self, test_env, suite_name):
         """Create a test run in the IR."""
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
             json={
-                "name": f"Test Harness Automated Tests: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
+                "name": f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
                 "config": {
-                    "environment": test.test_env,
+                    "environment": test_env,
                 },
             },
         )
@@ -86,6 +86,38 @@ class Reporter:
         res.raise_for_status()
         res_json = res.json()
         return res_json["id"]
+
+    async def create_compliant_test(self, test_case_name: str, asset: TestAsset) -> Tuple[str, int]:
+        """
+        Create a graph-validation-tests ("compliance") test entry in the IR.
+        :param test_case_name: specific name of compliance test case.
+        :param asset: TestAsset being used to generate the test cases.
+        :return: 2-tuple of local test case identifier plus information radiator ("IR") assigned test id
+        """
+        name = asset.name if asset.name else asset.description
+        test_case_id: str = f"{asset.id}-{test_case_name}"
+        res = await self.authenticated_client.post(
+            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
+            json={
+                "name": name,
+                "className": test_case_name,
+                "methodName": asset.name,
+                "startedAt": datetime.now().astimezone().isoformat(),
+                "labels": [
+                    {
+                        "key": "TestCase",
+                        "value": test_case_id,
+                    },
+                    {
+                        "key": "TestAsset",
+                        "value": asset.id,
+                    },
+                ],
+            },
+        )
+        res.raise_for_status()
+        res_json = res.json()
+        return test_case_id, res_json["id"]
 
     async def upload_labels(self, test_id: int, labels: List[dict]):
         """Upload labels to the IR."""

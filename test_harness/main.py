@@ -1,5 +1,5 @@
 """Translator SRI Automated Test Harness."""
-
+from typing import Optional
 from argparse import ArgumentParser
 import asyncio
 import json
@@ -24,6 +24,36 @@ def url_type(arg):
 
 async def main(args):
     """Main Test Harness entrypoint."""
+    #
+    # The TranslatorTestingModel specifies a top level data model that
+    # specifies a given test run. As of March 7, 2024, this data model
+    # looks something like this:
+    #
+    #   TestRunSession:
+    #     description: >-
+    #       Single run of a TestRunner in a given environment, with a specified
+    #       set of test_entities (generally, one or more instances of TestSuite).
+    #     is_a: TestEntity
+    #     slots:
+    #       - components
+    #       - test_env
+    #       - test_runner_name
+    #       - test_run_parameters
+    #       - test_entities
+    #       - test_case_results
+    #       - timestamp
+    #     slot_usage:
+    #       test_run_parameters:
+    #         description: >-
+    #           Different TestRunners could expect additional global test
+    #           configuration parameters, like the applicable TRAPI version
+    #           ("trapi_version") or Biolink Model versions ("biolink_version").
+    #       test_entities:
+    #         description: >-
+    #           Different TestRunners could expect specific kinds of TestEntity
+    #           as an input.  These 'test_entities' are one or more instances of
+    #           TestAsset, TestCase or (preferably?) TestSuite.
+    #
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     tests = []
@@ -46,9 +76,18 @@ async def main(args):
         logger=logger,
     )
     await reporter.get_auth()
-    await reporter.create_test_run(next(iter(tests.values())))
+    await reporter.create_test_run("test", args["suite"])
     slacker = Slacker()
-    report = await run_tests(reporter, slacker, tests, logger, args["suite"])
+
+    trapi_version: Optional[str] = None
+    if("trapi_version" in args):
+        trapi_version = args["trapi_version"]
+
+    biolink_version: Optional[str] = None
+    if("biolink_version" in args):
+        biolink_version = args["biolink_version"]
+
+    report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger, args)
 
     logger.info("Finishing up test run...")
     await reporter.finish_test_run()
@@ -91,6 +130,22 @@ def cli():
         "tests",
         type=json.loads,
         help="Path to a file of tests to be run. This would be the same output from downloading the tests via `download_tests()`",
+    )
+
+    parser.add_argument(
+        "--trapi_version",
+        type=str,
+        required=True,
+        default=None,
+        help="TRAPI (SemVer) version assumed for testing (latest release, if not given)",
+    )
+
+    parser.add_argument(
+        "--biolink_version",
+        type=str,
+        required=True,
+        default=None,
+        help="Biolink Model (SemVer) version assumed for testing (latest release, if not given)",
     )
 
     parser.add_argument(
