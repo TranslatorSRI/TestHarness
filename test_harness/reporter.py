@@ -43,16 +43,16 @@ class Reporter:
             }
         )
 
-    async def create_test_run(self, test: TestCase):
+    async def create_test_run(self, test_env, suite_name):
         """Create a test run in the IR."""
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
             json={
-                "name": f"Test Harness Automated Tests: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
+                "name": f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
                 "config": {
-                    "environment": test.test_env,
+                    "environment": test_env,
                 },
             },
         )

@@ -76,7 +76,7 @@ async def main(args):
         logger=logger,
     )
     await reporter.get_auth()
-    await reporter.create_test_run(next(iter(tests.values())))
+    await reporter.create_test_run("test", args["suite"])
     slacker = Slacker()
 
     trapi_version: Optional[str] = None
@@ -87,7 +87,7 @@ async def main(args):
     if("biolink_version" in args):
         biolink_version = args["biolink_version"]
 
-    report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger, args["suite"])
+    report = await run_tests(reporter, slacker, tests, trapi_version, biolink_version, logger, args)
 
     logger.info("Finishing up test run...")
     await reporter.finish_test_run()

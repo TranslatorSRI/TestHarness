@@ -37,7 +37,7 @@ async def run_tests(
     trapi_version: Optional[str] = None,
     biolink_version: Optional[str] = None,
     logger: logging.Logger = logging.getLogger(__name__),
-    suite_name: str = "automated tests",
+    args: Dict[str, any] = {},
 ) -> Dict:
     """Send tests through the Test Runners.
     """
@@ -51,16 +51,15 @@ async def run_tests(
     environment: Optional[TestEnvEnum] = None
     await slacker.post_notification(
         messages=[
-            f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
-        environment: TestEnvEnum = test.test_env
-
+        # environment: TestEnvEnum = test.test_env
+        environment = "test"
         components: Optional[List[ComponentEnum]] = test.components
-
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
             continue
@@ -368,7 +367,7 @@ async def run_tests(
     await slacker.post_notification(
         messages=[
             """Test Suite: {test_suite}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
-                test_suite=suite_name,
+                test_suite=args["suite"],
                 duration=round(time.time() - start_time, 2),
                 env=environment,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
