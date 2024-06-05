@@ -7,7 +7,7 @@ import logging
 import time
 from tqdm import tqdm
 import traceback
-from typing import Dict, List
+from typing import Dict
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 
@@ -17,17 +17,8 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase
 
 from .reporter import Reporter
 from .slacker import Slacker
-from .utils import normalize_curies
-
-
-def get_tag(result):
-    """Given a result, get the correct tag for the label."""
-    tag = result.get("status", "FAILED")
-    if tag != "PASSED":
-        message = result.get("message")
-        if message:
-            tag = message
-    return tag
+from .result_collector import ResultCollector
+from .utils import normalize_curies, get_tag
 
 
 async def run_tests(
@@ -51,6 +42,7 @@ async def run_tests(
             f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
+    collector = ResultCollector()
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
@@ -182,6 +174,7 @@ async def run_tests(
                             test_result["result"].get("ars", {}).get("status", "FAILED")
                         )
                     full_report[status] += 1
+                    collector.collect_result(test, asset, test_result, f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}")
                     if not err_msg and status != "SKIPPED":
                         # only upload ara labels if the test ran successfully
                         try:
@@ -283,4 +276,6 @@ async def run_tests(
             )
         ]
     )
+    await slacker.upload_test_results_file(filename, collector.stats)
+    await slacker.upload_test_results_file(filename, collector.csv)
     return full_report
