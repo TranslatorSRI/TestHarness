@@ -60,3 +60,13 @@ async def normalize_curies(
                     # intentionally doesn't have a type so we can default to the original
                 }
         return normalized_curies
+
+
+def get_tag(result):
+    """Given a result, get the correct tag for the label."""
+    tag = result.get("status", "FAILED")
+    if tag != "PASSED":
+        message = result.get("message")
+        if message:
+            tag = message
+    return tag

@@ -133,6 +133,7 @@ async def run_tests(
             except Exception as e:
                 err_msg = f"ARS Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
+                ars_url = None
                 ars_result = {
                     "pks": {},
                     # this will effectively act as a list that we access by index down below
@@ -141,11 +142,11 @@ async def run_tests(
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
             try:
                 ars_pk = ars_result.get("pks", {}).get("parent_pk")
-                if ars_pk:
+                if ars_pk and ars_url is not None:
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{ars_url}retain/{ars_pk}")
             except Exception as e:
-                logger.error(f"Failed to retain PK on ARS.")
+                logger.error("Failed to retain PK on ARS.")
             # grab individual results for each asset
             for index, (test_id, asset) in enumerate(zip(test_ids, assets)):
                 status = "PASSED"
@@ -276,6 +277,6 @@ async def run_tests(
             )
         ]
     )
-    await slacker.upload_test_results_file(filename, collector.stats)
-    await slacker.upload_test_results_file(filename, collector.csv)
+    await slacker.upload_test_results_file(reporter.test_name, "json", collector.stats)
+    await slacker.upload_test_results_file(reporter.test_name, "csv", collector.csv)
     return full_report

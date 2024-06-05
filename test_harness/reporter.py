@@ -24,6 +24,7 @@ class Reporter:
         )
         self.authenticated_client = None
         self.test_run_id = None
+        self.test_name = ""
         self.logger = logger
 
     async def get_auth(self):
@@ -45,10 +46,11 @@ class Reporter:
 
     async def create_test_run(self, test_env, suite_name):
         """Create a test run in the IR."""
+        self.test_name = f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
             json={
-                "name": f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}",
+                "name": self.test_name,
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
                 "config": {
