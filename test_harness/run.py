@@ -175,7 +175,12 @@ async def run_tests(
                             test_result["result"].get("ars", {}).get("status", "FAILED")
                         )
                     full_report[status] += 1
-                    collector.collect_result(test, asset, test_result, f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}")
+                    collector.collect_result(
+                        test,
+                        asset,
+                        test_result,
+                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                    )
                     if not err_msg and status != "SKIPPED":
                         # only upload ara labels if the test ran successfully
                         try:

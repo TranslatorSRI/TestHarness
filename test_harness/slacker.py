@@ -1,4 +1,5 @@
 """Slack notification integration class."""
+
 import httpx
 import json
 import os
@@ -10,7 +11,9 @@ class Slacker:
     """Slack notification poster."""
 
     def __init__(self, url=None, token=None, slack_channel=None):
-        self.channel = slack_channel if slack_channel is not None else os.getenv("SLACK_CHANNEL")
+        self.channel = (
+            slack_channel if slack_channel is not None else os.getenv("SLACK_CHANNEL")
+        )
         self.url = url if url is not None else os.getenv("SLACK_WEBHOOK_URL")
         slack_token = token if token is not None else os.getenv("SLACK_TOKEN")
         self.client = WebClient(slack_token)
@@ -37,7 +40,7 @@ class Slacker:
                     "blocks": blocks,
                 },
             )
-    
+
     async def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""
         with tempfile.TemporaryDirectory() as td:
@@ -53,4 +56,3 @@ class Slacker:
                 file=tmp_path,
                 initial_comment="Test Results:",
             )
-
