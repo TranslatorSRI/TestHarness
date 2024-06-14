@@ -7,7 +7,7 @@ import logging
 import time
 from tqdm import tqdm
 import traceback
-from typing import Dict, List
+from typing import Dict
 
 from ARS_Test_Runner.semantic_test import run_semantic_test as run_ars_test
 
@@ -17,17 +17,8 @@ from translator_testing_model.datamodel.pydanticmodel import TestCase
 
 from .reporter import Reporter
 from .slacker import Slacker
-from .utils import normalize_curies
-
-
-def get_tag(result):
-    """Given a result, get the correct tag for the label."""
-    tag = result.get("status", "FAILED")
-    if tag != "PASSED":
-        message = result.get("message")
-        if message:
-            tag = message
-    return tag
+from .result_collector import ResultCollector
+from .utils import normalize_curies, get_tag
 
 
 async def run_tests(
@@ -35,7 +26,7 @@ async def run_tests(
     slacker: Slacker,
     tests: Dict[str, TestCase],
     logger: logging.Logger = logging.getLogger(__name__),
-    suite_name: str = "automated tests",
+    args: Dict[str, any] = {},
 ) -> Dict:
     """Send tests through the Test Runners."""
     start_time = time.time()
@@ -48,9 +39,10 @@ async def run_tests(
     env = "None"
     await slacker.post_notification(
         messages=[
-            f"Running {suite_name} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
+    collector = ResultCollector()
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
@@ -141,6 +133,7 @@ async def run_tests(
             except Exception as e:
                 err_msg = f"ARS Test Runner failed with {traceback.format_exc()}"
                 logger.error(f"[{test.id}] {err_msg}")
+                ars_url = None
                 ars_result = {
                     "pks": {},
                     # this will effectively act as a list that we access by index down below
@@ -149,11 +142,11 @@ async def run_tests(
                 # full_report[test["test_case_input_id"]]["ars"] = {"error": str(e)}
             try:
                 ars_pk = ars_result.get("pks", {}).get("parent_pk")
-                if ars_pk:
+                if ars_pk and ars_url is not None:
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{ars_url}retain/{ars_pk}")
             except Exception as e:
-                logger.error(f"Failed to retain PK on ARS.")
+                logger.error("Failed to retain PK on ARS.")
             # grab individual results for each asset
             for index, (test_id, asset) in enumerate(zip(test_ids, assets)):
                 status = "PASSED"
@@ -182,6 +175,12 @@ async def run_tests(
                             test_result["result"].get("ars", {}).get("status", "FAILED")
                         )
                     full_report[status] += 1
+                    collector.collect_result(
+                        test,
+                        asset,
+                        test_result,
+                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                    )
                     if not err_msg and status != "SKIPPED":
                         # only upload ara labels if the test ran successfully
                         try:
@@ -273,7 +272,7 @@ async def run_tests(
     await slacker.post_notification(
         messages=[
             """Test Suite: {test_suite}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
-                test_suite=suite_name,
+                test_suite=args["suite"],
                 duration=round(time.time() - start_time, 2),
                 env=env,
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
@@ -283,4 +282,6 @@ async def run_tests(
             )
         ]
     )
+    await slacker.upload_test_results_file(reporter.test_name, "json", collector.stats)
+    await slacker.upload_test_results_file(reporter.test_name, "csv", collector.csv)
     return full_report
