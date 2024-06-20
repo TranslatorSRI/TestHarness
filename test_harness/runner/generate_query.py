@@ -71,7 +71,9 @@ def generate_query(test_asset: TestAsset) -> dict:
             raise Exception("Unsupported input category for MVP1")
         # add knowledge_type
         if "inferred" in test_asset.test_runner_settings:
-            query["message"]["query_graph"]["edges"]["t_edge"]["knowledge_type"] = "inferred"
+            query["message"]["query_graph"]["edges"]["t_edge"][
+                "knowledge_type"
+            ] = "inferred"
     elif test_asset.predicate_id == "biolink:affects":
         # MVP2
         query = MVP2
@@ -96,6 +98,8 @@ def generate_query(test_asset: TestAsset) -> dict:
         ][1]["qualifier_value"] = direction_qualifier
         # add knowledge_type
         if "inferred" in test_asset.test_runner_settings:
-            query["message"]["query_graph"]["edges"]["t_edge"]["knowledge_type"] = "inferred"
+            query["message"]["query_graph"]["edges"]["t_edge"][
+                "knowledge_type"
+            ] = "inferred"
 
     return query

@@ -8,6 +8,7 @@ import traceback
 from typing import Dict
 
 from ARS_Test_Runner.semantic_test import pass_fail_analysis
+
 # from benchmarks_runner import run_benchmarks
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
@@ -65,7 +66,7 @@ async def run_tests(
                     test_ids.append(test_id)
                 except Exception:
                     logger.error(f"Failed to create test: {test.id}")
-                
+
                 test_asset_hash = hash_test_asset(asset)
                 test_query = query_responses.get(test_asset_hash)
                 if test_query is not None:
@@ -90,16 +91,24 @@ async def run_tests(
                             if response["status_code"] == "598":
                                 agent_report["message"] = "Timed out"
                             else:
-                                agent_report["message"] = f"Status code: {response['status_code']}"
+                                agent_report["message"] = (
+                                    f"Status code: {response['status_code']}"
+                                )
                         elif (
-                            response["response"]["message"]["results"] is None or
-                            len(response["response"]["message"]["results"]) == 0
+                            response["response"]["message"]["results"] is None
+                            or len(response["response"]["message"]["results"]) == 0
                         ):
                             agent_report["status"] = "DONE"
                             agent_report["message"] = "No results"
                         else:
-                            await pass_fail_analysis(report["result"], agent, response["response"]["message"]["results"], query_runner.normalized_curies[asset.output_id], asset.expected_output)
-                    
+                            await pass_fail_analysis(
+                                report["result"],
+                                agent,
+                                response["response"]["message"]["results"],
+                                query_runner.normalized_curies[asset.output_id],
+                                asset.expected_output,
+                            )
+
                     status = "PASSED"
                     # grab only ars result if it exists, otherwise default to failed
                     ars_status = report["result"].get("ars", {}).get("status")
@@ -122,18 +131,17 @@ async def run_tests(
                                     "key": ara,
                                     "value": get_tag(report["result"][ara]),
                                 }
-                                for ara in collector.agents if ara in report["result"]
+                                for ara in collector.agents
+                                if ara in report["result"]
                             ]
                             await reporter.upload_labels(test_id, labels)
                         except Exception as e:
                             logger.warning(f"[{test.id}] failed to upload labels: {e}")
                     try:
-                        await reporter.upload_log(
-                            test_id, json.dumps(report, indent=4)
-                        )
+                        await reporter.upload_log(test_id, json.dumps(report, indent=4))
                     except Exception:
                         logger.error(f"[{test.id}] failed to upload logs.")
-                    
+
                 try:
                     await reporter.finish_test(test_id, status)
                 except Exception:

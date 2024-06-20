@@ -109,7 +109,9 @@ class QueryRunner:
             # component = "ara"
             # loop over all specified components, i.e. ars, ara, kp, utilities
             semaphore = asyncio.Semaphore(concurrency)
-            self.logger.info(f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}")
+            self.logger.info(
+                f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
+            )
             tasks = [
                 asyncio.create_task(
                     self.run_query(
@@ -133,7 +135,9 @@ class QueryRunner:
 
         return queries
 
-    async def get_ars_responses(self, parent_pk: str, base_url: str) -> Tuple[Dict[str, dict], Dict[str, str]]:
+    async def get_ars_responses(
+        self, parent_pk: str, base_url: str
+    ) -> Tuple[Dict[str, dict], Dict[str, str]]:
         """Given a parent pk, get responses for all ARS things."""
         responses = {}
         pks = {
@@ -175,7 +179,9 @@ class QueryRunner:
                     current_time = time.time()
                     await asyncio.sleep(5)
             else:
-                self.logger.warning(f"Timed out getting ARS child messages after {MAX_QUERY_TIME / 60} minutes.")
+                self.logger.warning(
+                    f"Timed out getting ARS child messages after {MAX_QUERY_TIME / 60} minutes."
+                )
 
             # add response to output
             if response is not None:
@@ -189,14 +195,18 @@ class QueryRunner:
         current_time = time.time()
         while current_time - start_time <= MAX_QUERY_TIME:
             async with httpx.AsyncClient(timeout=30) as client:
-                res = await client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
+                res = await client.get(
+                    f"{base_url}/ars/api/messages/{parent_pk}?trace=y"
+                )
                 res.raise_for_status()
                 response = res.json()
                 status = response.get("status")
                 if status == "Done" or status == "Error":
                     merged_pk = response.get("merged_version")
                     if merged_pk is None:
-                        self.logger.error(f"Failed to get the ARS merged message from pk: {parent_pk}.")
+                        self.logger.error(
+                            f"Failed to get the ARS merged message from pk: {parent_pk}."
+                        )
                         pks["ars"] = "None"
                         responses["ars"] = {
                             "response": {"message": {"results": []}},
@@ -206,12 +216,18 @@ class QueryRunner:
                         # add final ars pk
                         pks["ars"] = merged_pk
                         # get full merged pk
-                        res = await client.get(f"{base_url}/ars/api/messages/{merged_pk}")
+                        res = await client.get(
+                            f"{base_url}/ars/api/messages/{merged_pk}"
+                        )
                         res.raise_for_status()
                         merged_message = res.json()
                         responses["ars"] = {
-                            "response": merged_message.get("fields", {}).get("data", {}),
-                            "status_code": merged_message.get("fields", {}).get("code", 410),
+                            "response": merged_message.get("fields", {}).get(
+                                "data", {}
+                            ),
+                            "status_code": merged_message.get("fields", {}).get(
+                                "code", 410
+                            ),
                         }
                         self.logger.info("Got ARS merged message!")
                     break
@@ -220,7 +236,9 @@ class QueryRunner:
                     current_time = time.time()
                     await asyncio.sleep(5)
         else:
-            self.logger.warning(f"ARS merging took greater than {MAX_QUERY_TIME / 60} minutes.")
+            self.logger.warning(
+                f"ARS merging took greater than {MAX_QUERY_TIME / 60} minutes."
+            )
             pks["ars"] = "None"
             responses["ars"] = {
                 "response": {"message": {"results": []}},

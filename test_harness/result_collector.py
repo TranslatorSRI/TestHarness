@@ -1,4 +1,5 @@
 """The Collector of Results."""
+
 from typing import Union
 from translator_testing_model.datamodel.pydanticmodel import TestAsset, TestCase
 
@@ -10,7 +11,15 @@ class ResultCollector:
 
     def __init__(self):
         """Initialize the Collector."""
-        self.agents = ["ars", "aragorn", "arax", "biothings-explorer", "improving-agent", "unsecret-agent", "cqs"]
+        self.agents = [
+            "ars",
+            "aragorn",
+            "arax",
+            "biothings-explorer",
+            "improving-agent",
+            "unsecret-agent",
+            "cqs",
+        ]
         query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.result_types = {
             "PASSED": "PASSED",
@@ -30,7 +39,14 @@ class ResultCollector:
         header = ",".join(self.columns)
         self.csv = f"{header}\n"
 
-    def collect_result(self, test: TestCase, asset: TestAsset, report: dict, parent_pk: Union[str, None], url: str):
+    def collect_result(
+        self,
+        test: TestCase,
+        asset: TestAsset,
+        report: dict,
+        parent_pk: Union[str, None],
+        url: str,
+    ):
         """Add a single report to the total output."""
         # add result to stats
         for agent in self.agents:
@@ -45,7 +61,9 @@ class ResultCollector:
         agent_results = ",".join(
             get_tag(report[agent]) for agent in self.agents if agent in report
         )
-        pk_url = f"https://arax.ncats.io/?r={parent_pk}" if parent_pk is not None else ""
+        pk_url = (
+            f"https://arax.ncats.io/?r={parent_pk}" if parent_pk is not None else ""
+        )
         self.csv += (
             f"""{asset.name},{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
