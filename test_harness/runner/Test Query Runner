@@ -1,0 +1,18 @@
+Test Query Runner
+
+Acceptance Tests
+- Test Cases will be a single query
+- Test Assets will have different output curies and expected outputs
+
+Performance Tests
+- Test Assets will be separate queries
+- It's assumed that all test assets in a single test case are unique, or that any duplicates will be run together as a single query
+- Each Test Case can have an overall timeout for overall pass/fail, or maybe it's a green/yellow/red based on how long it takes from the ARS, and then each ARA will have outputs for each run query
+- Test Assets for the Utilities should be full responses stored in the Tests repo
+
+Benchmark Tests
+- Test Assets can be separate queries
+- Each Test Case is a full benchmark
+
+Validation Tests
+- Can be run on any existing response
