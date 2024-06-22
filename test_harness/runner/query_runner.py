@@ -192,9 +192,13 @@ class QueryRunner:
             # add response to output
             if response is not None:
                 status_code = response.get("fields", {}).get("code", 410)
-                self.logger.info(f"Got reponse for {infores} with status code {status_code}.")
+                self.logger.info(
+                    f"Got reponse for {infores} with status code {status_code}."
+                )
                 responses[infores] = {
-                    "response": response.get("fields", {}).get("data", {"message": {"results": []}}),
+                    "response": response.get("fields", {}).get(
+                        "data", {"message": {"results": []}}
+                    ),
                     "status_code": status_code,
                 }
             else:
