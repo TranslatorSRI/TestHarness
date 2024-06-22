@@ -44,7 +44,7 @@ async def run_tests(
     query_runner = QueryRunner(logger)
     logger.info("Runner is getting service registry")
     await query_runner.retrieve_registry(trapi_version="1.5.0")
-    collector = ResultCollector()
+    collector = ResultCollector(logger)
     # loop over all tests
     for test in tqdm(tests.values()):
         status = "PASSED"
