@@ -12,6 +12,7 @@ from test_harness.runner.generate_query import generate_query
 from test_harness.utils import hash_test_asset, normalize_curies
 
 MAX_QUERY_TIME = 600
+MAX_ARA_TIME = 360
 
 env_map = {
     "dev": "development",
@@ -162,8 +163,9 @@ class QueryRunner:
             current_time = time.time()
 
             response = None
+            status = 500
             # while we stay within the query max time
-            while current_time - start_time <= MAX_QUERY_TIME:
+            while current_time - start_time <= MAX_ARA_TIME:
                 # get query status of child query
                 async with httpx.AsyncClient(timeout=30) as client:
                     res = await client.get(f"{base_url}/ars/api/messages/{child_pk}")
@@ -172,23 +174,34 @@ class QueryRunner:
                     status = response.get("fields", {}).get("status")
                     if status == "Done":
                         break
-                    if status == "Error":
+                    elif status == "Error" or status == "Unknown":
                         # query errored, need to capture
                         break
-                    self.logger.info(f"{infores} is not Done, waiting...")
-                    current_time = time.time()
-                    await asyncio.sleep(5)
+                    elif status == "Running":
+                        self.logger.info(f"{infores} is still Running...")
+                        current_time = time.time()
+                        await asyncio.sleep(10)
+                    else:
+                        self.logger.info(f"Got unhandled status: {status}")
+                        break
             else:
                 self.logger.warning(
-                    f"Timed out getting ARS child messages after {MAX_QUERY_TIME / 60} minutes."
+                    f"Timed out getting ARS child messages after {MAX_ARA_TIME / 60} minutes."
                 )
 
             # add response to output
             if response is not None:
-                self.logger.info(f"Got reponse for {infores}!")
+                status_code = response.get("fields", {}).get("code", 410)
+                self.logger.info(f"Got reponse for {infores} with status code {status_code}.")
                 responses[infores] = {
-                    "response": response.get("fields", {}).get("data", {}),
-                    "status_code": response.get("fields", {}).get("code", 410),
+                    "response": response.get("fields", {}).get("data", {"message": {"results": []}}),
+                    "status_code": status_code,
+                }
+            else:
+                self.logger.warning(f"Got error from {infores}")
+                responses[infores] = {
+                    "response": {"message": {"results": []}},
+                    "status_code": status,
                 }
 
         # After getting all individual ARA responses, get and save the merged version
@@ -223,7 +236,7 @@ class QueryRunner:
                         merged_message = res.json()
                         responses["ars"] = {
                             "response": merged_message.get("fields", {}).get(
-                                "data", {}
+                                "data", {"message": {"results": []}}
                             ),
                             "status_code": merged_message.get("fields", {}).get(
                                 "code", 410

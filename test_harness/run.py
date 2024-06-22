@@ -59,6 +59,10 @@ async def run_tests(
             test_ids = []
 
             for asset in test.test_assets:
+                # throw out any assets with unsupported expected outputs, i.e. OverlyGeneric
+                if asset.expected_output not in collector.query_types:
+                    logger.warning(f"Asset id {asset.id} has unsupported expected output.")
+                    continue
                 # create test in Test Dashboard
                 test_id = ""
                 try:
