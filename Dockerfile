@@ -17,7 +17,7 @@ COPY . .
 # make sure all is writeable for the nru USER later on
 RUN chmod -R 777 .
 
-RUN pip install .
+RUN pip install -e .
 
 # switch to the non-root user (nru). defined in the base image
 USER nru

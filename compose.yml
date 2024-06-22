@@ -1,0 +1,17 @@
+version: '3.7'
+
+services:
+  harness:
+    image: test-harness
+    container_name: test-harness
+    build:
+      context: .
+    volumes:
+      - ./logs:/app/logs
+    command: test-harness download sprint_4_tests
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      SLACK_TOKEN: ${SLACK_TOKEN}
+      SLACK_CHANNEL: ${SLACK_CHANNEL}
+      ZE_BASE_URL: ${ZE_BASE_URL}
+      ZE_REFRESH_TOKEN: ${ZE_REFRESH_TOKEN}
