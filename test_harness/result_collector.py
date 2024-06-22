@@ -1,8 +1,9 @@
 """The Collector of Results."""
 
+from typing import Union
 from translator_testing_model.datamodel.pydanticmodel import TestAsset, TestCase
 
-from .utils import get_tag
+from test_harness.utils import get_tag
 
 
 class ResultCollector:
@@ -10,7 +11,15 @@ class ResultCollector:
 
     def __init__(self):
         """Initialize the Collector."""
-        self.agents = ["ars", "aragorn", "arax", "bte", "improving", "unsecret", "cqs"]
+        self.agents = [
+            "ars",
+            "aragorn",
+            "arax",
+            "biothings-explorer",
+            "improving-agent",
+            "unsecret-agent",
+            "cqs",
+        ]
         query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.result_types = {
             "PASSED": "PASSED",
@@ -30,22 +39,31 @@ class ResultCollector:
         header = ",".join(self.columns)
         self.csv = f"{header}\n"
 
-    def collect_result(self, test: TestCase, asset: TestAsset, result: dict, url: str):
-        """Add a single result to the total output."""
+    def collect_result(
+        self,
+        test: TestCase,
+        asset: TestAsset,
+        report: dict,
+        parent_pk: Union[str, None],
+        url: str,
+    ):
+        """Add a single report to the total output."""
         # add result to stats
-        for agent in result["result"]:
+        for agent in self.agents:
             query_type = asset.expected_output
-            result_type = self.result_types.get(
-                get_tag(result["result"][agent]), "Test Error"
-            )
-            self.stats[agent][query_type][result_type] += 1
+            if agent in report:
+                result_type = self.result_types.get(
+                    get_tag(report[agent]), "Test Error"
+                )
+                self.stats[agent][query_type][result_type] += 1
 
         # add result to csv
         agent_results = ",".join(
-            get_tag(result["result"][agent]) for agent in self.agents
+            get_tag(report[agent]) for agent in self.agents if agent in report
         )
-        ars_pk = result["pks"].get("parent_pk", None)
-        pk_url = f"https://arax.ncats.io/?r={ars_pk}" if ars_pk is not None else ""
+        pk_url = (
+            f"https://arax.ncats.io/?r={parent_pk}" if parent_pk is not None else ""
+        )
         self.csv += (
             f"""{asset.name},{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
