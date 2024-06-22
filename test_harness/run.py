@@ -199,8 +199,6 @@ async def run_tests(
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
 
-        break
-
     await slacker.post_notification(
         messages=[
             """Test Suite: {test_suite}\nDuration: {duration} | Environment: {env}\n<{ir_url}|View in the Information Radiator>\n> Test Results:\n> Passed: {num_passed}, Failed: {num_failed}, Skipped: {num_skipped}""".format(
