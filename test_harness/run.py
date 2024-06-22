@@ -13,7 +13,7 @@ from ARS_Test_Runner.semantic_test import pass_fail_analysis
 
 from translator_testing_model.datamodel.pydanticmodel import TestCase
 
-from test_harness.runner.runner import QueryRunner
+from test_harness.runner.query_runner import QueryRunner
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 from test_harness.result_collector import ResultCollector
