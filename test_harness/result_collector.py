@@ -48,5 +48,5 @@ class ResultCollector:
         ars_pk = result["pks"].get("parent_pk", None)
         pk_url = f"https://arax.ncats.io/?r={ars_pk}" if ars_pk is not None else ""
         self.csv += (
-            f"""{asset.name},{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
+            f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
