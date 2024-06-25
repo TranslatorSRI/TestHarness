@@ -207,7 +207,7 @@ async def run_tests(
                     try:
                         await reporter.upload_log(
                             test_id,
-                            f"Failed to parse results: {json.dumps(ars_result)}",
+                            f"Failed to parse results: {json.dumps(ars_result, indent=4)}",
                         )
                     except Exception as e:
                         logger.error(f"[{test.id}] failed to upload failure log.")

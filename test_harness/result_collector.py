@@ -35,14 +35,15 @@ class ResultCollector:
         # add result to stats
         for agent in result["result"]:
             query_type = asset.expected_output
-            result_type = self.result_types.get(
-                get_tag(result["result"][agent]), "Test Error"
-            )
-            self.stats[agent][query_type][result_type] += 1
+            if agent in self.agents:
+                result_type = self.result_types.get(
+                    get_tag(result["result"][agent]), "Test Error"
+                )
+                self.stats[agent][query_type][result_type] += 1
 
         # add result to csv
         agent_results = ",".join(
-            get_tag(result["result"][agent]) for agent in self.agents
+            get_tag(result["result"].get(agent, {"status": "Not queried"})) for agent in self.agents
         )
         ars_pk = result["pks"].get("parent_pk", None)
         pk_url = f"https://arax.ncats.io/?r={ars_pk}" if ars_pk is not None else ""
