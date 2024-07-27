@@ -1,5 +1,6 @@
 """Given a Test Asset, generate a TRAPI query."""
 
+import copy
 from translator_testing_model.datamodel.pydanticmodel import TestAsset
 
 from test_harness.utils import get_qualifier_constraints
@@ -61,7 +62,7 @@ def generate_query(test_asset: TestAsset) -> dict:
     query = {}
     if test_asset.predicate_id == "biolink:treats":
         # MVP1
-        query = MVP1
+        query = copy.deepcopy(MVP1)
         # add id to node
         if test_asset.input_category == "biolink:Disease":
             query["message"]["query_graph"]["nodes"]["ON"]["ids"] = [
@@ -76,7 +77,7 @@ def generate_query(test_asset: TestAsset) -> dict:
             ] = "inferred"
     elif test_asset.predicate_id == "biolink:affects":
         # MVP2
-        query = MVP2
+        query = copy.deepcopy(MVP2)
         # add id to corresponding node
         if test_asset.input_category == "biolink:ChemicalEntity":
             query["message"]["query_graph"]["nodes"]["SN"]["ids"] = [
