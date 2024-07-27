@@ -69,11 +69,12 @@ class ResultCollector:
 
         # add result to csv
         agent_results = ",".join(
-            get_tag(report[agent]) for agent in self.agents if agent in report
+            get_tag(report.get(agent, {"status": "Not queried"}))
+            for agent in self.agents
         )
         pk_url = (
             f"https://arax.ncats.io/?r={parent_pk}" if parent_pk is not None else ""
         )
         self.csv += (
-            f"""{asset.name},{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
+            f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )

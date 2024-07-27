@@ -251,7 +251,7 @@ class QueryRunner:
                 else:
                     self.logger.info("ARS merging not done, waiting...")
                     current_time = time.time()
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(10)
         else:
             self.logger.warning(
                 f"ARS merging took greater than {MAX_QUERY_TIME / 60} minutes."
