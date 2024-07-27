@@ -101,7 +101,7 @@ async def run_tests(
                                     f"Status code: {response['status_code']}"
                                 )
                         elif (
-                            response["response"]["message"]["results"] is None
+                            response["response"]["message"].get("results") is None
                             or len(response["response"]["message"]["results"]) == 0
                         ):
                             agent_report["status"] = "DONE"
