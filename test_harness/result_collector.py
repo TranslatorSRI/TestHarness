@@ -69,7 +69,8 @@ class ResultCollector:
 
         # add result to csv
         agent_results = ",".join(
-            get_tag(report.get(agent, {"status": "Not queried"})) for agent in self.agents
+            get_tag(report.get(agent, {"status": "Not queried"}))
+            for agent in self.agents
         )
         pk_url = (
             f"https://arax.ncats.io/?r={parent_pk}" if parent_pk is not None else ""
