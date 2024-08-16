@@ -103,8 +103,8 @@ async def run_tests(
                                         f"Status code: {response['status_code']}"
                                     )
                             elif (
-                                "response" not in response or
-                                "message" not in response["response"]
+                                "response" not in response
+                                or "message" not in response["response"]
                             ):
                                 agent_report["status"] = "FAILED"
                                 agent_report["message"] = "Test Error"
@@ -218,7 +218,7 @@ async def run_tests(
                 await reporter.finish_test(test_id, status)
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
-        
+
         # delete this big object to help out the garbage collector
         del query_responses
 

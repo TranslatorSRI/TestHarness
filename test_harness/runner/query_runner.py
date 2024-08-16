@@ -135,7 +135,11 @@ class QueryRunner:
         return queries, normalized_curies
 
     async def get_ars_child_response(
-        self, child_pk: str, base_url: str, infores: str, start_time: float,
+        self,
+        child_pk: str,
+        base_url: str,
+        infores: str,
+        start_time: float,
     ):
         """Given a child pk, get response from ARS."""
         self.logger.info(f"Getting response for {infores}...")
@@ -189,12 +193,14 @@ class QueryRunner:
                     "status_code": status,
                 }
         except Exception as e:
-            self.logger.error(f"Getting ARS child response ({infores}) failed with: {e}")
+            self.logger.error(
+                f"Getting ARS child response ({infores}) failed with: {e}"
+            )
             response = {
                 "response": {"message": {"results": []}},
                 "status_code": status,
             }
-        
+
         return infores, response
 
     async def get_ars_responses(
@@ -221,8 +227,10 @@ class QueryRunner:
             infores = child["actor"]["inforesid"].split("infores:")[1]
             # add child pk
             pks[infores] = child_pk
-            child_tasks.append(self.get_ars_child_response(child_pk, base_url, infores, start_time))
-            
+            child_tasks.append(
+                self.get_ars_child_response(child_pk, base_url, infores, start_time)
+            )
+
         child_responses = await asyncio.gather(*child_tasks)
 
         for child_response in child_responses:
