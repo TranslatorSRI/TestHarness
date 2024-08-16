@@ -25,8 +25,8 @@ async def normalize_curies(
     curies.update([asset.input_id for asset in test.test_assets])
     curies.add(test.test_case_input_id)
 
+    normalized_curies = {}
     async with httpx.AsyncClient() as client:
-        normalized_curies = {}
         try:
             response = await client.post(
                 node_norm + "/get_normalized_nodes",
@@ -49,7 +49,7 @@ async def normalize_curies(
             logger.error("Using original curies.")
             for curie in curies:
                 normalized_curies[curie] = curie
-        return normalized_curies
+    return normalized_curies
 
 
 def get_tag(result):
