@@ -27,7 +27,6 @@ class QueryRunner:
 
     def __init__(self, logger: logging.Logger):
         self.registry = {}
-        self.normalized_curies = {}
         self.logger = logger
 
     async def retrieve_registry(self, trapi_version: str):
@@ -84,15 +83,15 @@ class QueryRunner:
         self,
         test_case: TestCase,
         concurrency: int = 1,  # for performance testing
-    ) -> Dict[int, dict]:
+    ) -> Tuple[Dict[int, dict], Dict[str, str]]:
         """Run all queries specified in a Test Case."""
         # normalize all the curies in a test case
-        self.normalized_curies.update(await normalize_curies(test_case, self.logger))
+        normalized_curies = await normalize_curies(test_case, self.logger)
         # TODO: figure out the right way to handle input category wrt normalization
 
         queries: Dict[int, dict] = {}
         for test_asset in test_case.test_assets:
-            test_asset.input_id = self.normalized_curies[test_asset.input_id]
+            test_asset.input_id = normalized_curies[test_asset.input_id]
             # TODO: make this better
             asset_hash = hash_test_asset(test_asset)
             if asset_hash not in queries:
@@ -104,7 +103,6 @@ class QueryRunner:
                     "pks": {},
                 }
 
-        self.logger.debug(queries)
         # send queries to a single type of component at a time
         for component in test_case.components:
             # component = "ara"
@@ -134,36 +132,23 @@ class QueryRunner:
             except Exception as e:
                 self.logger.error(f"Something went wrong with the queries: {e}")
 
-        return queries
+        return queries, normalized_curies
 
-    async def get_ars_responses(
-        self, parent_pk: str, base_url: str
-    ) -> Tuple[Dict[str, dict], Dict[str, str]]:
-        """Given a parent pk, get responses for all ARS things."""
-        responses = {}
-        pks = {
-            "parent_pk": parent_pk,
-        }
-        async with httpx.AsyncClient(timeout=30) as client:
-            # retain this response for testing
-            res = await client.post(f"{base_url}/ars/api/retain/{parent_pk}")
-            res.raise_for_status()
-            # Get all children queries
-            res = await client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
-            res.raise_for_status()
-            response = res.json()
+    async def get_ars_child_response(
+        self,
+        child_pk: str,
+        base_url: str,
+        infores: str,
+        start_time: float,
+    ):
+        """Given a child pk, get response from ARS."""
+        self.logger.info(f"Getting response for {infores}...")
 
-        start_time = time.time()
-        for child in response.get("children", []):
-            child_pk = child["message"]
-            infores = child["actor"]["inforesid"].split("infores:")[1]
-            self.logger.info(f"Getting response for {infores}...")
-            # add child pk
-            pks[infores] = child_pk
-            current_time = time.time()
+        current_time = time.time()
 
-            response = None
-            status = 500
+        response = None
+        status = 500
+        try:
             # while we stay within the query max time
             while current_time - start_time <= MAX_ARA_TIME:
                 # get query status of child query
@@ -195,7 +180,7 @@ class QueryRunner:
                 self.logger.info(
                     f"Got reponse for {infores} with status code {status_code}."
                 )
-                responses[infores] = {
+                response = {
                     "response": response.get("fields", {}).get(
                         "data", {"message": {"results": []}}
                     ),
@@ -203,10 +188,54 @@ class QueryRunner:
                 }
             else:
                 self.logger.warning(f"Got error from {infores}")
-                responses[infores] = {
+                response = {
                     "response": {"message": {"results": []}},
                     "status_code": status,
                 }
+        except Exception as e:
+            self.logger.error(
+                f"Getting ARS child response ({infores}) failed with: {e}"
+            )
+            response = {
+                "response": {"message": {"results": []}},
+                "status_code": status,
+            }
+
+        return infores, response
+
+    async def get_ars_responses(
+        self, parent_pk: str, base_url: str
+    ) -> Tuple[Dict[str, dict], Dict[str, str]]:
+        """Given a parent pk, get responses for all ARS things."""
+        responses = {}
+        pks = {
+            "parent_pk": parent_pk,
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            # retain this response for testing
+            # res = await client.post(f"{base_url}/ars/api/retain/{parent_pk}")
+            # res.raise_for_status()
+            # Get all children queries
+            res = await client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
+            res.raise_for_status()
+            response = res.json()
+
+        start_time = time.time()
+        child_tasks = []
+        for child in response.get("children", []):
+            child_pk = child["message"]
+            infores = child["actor"]["inforesid"].split("infores:")[1]
+            # add child pk
+            pks[infores] = child_pk
+            child_tasks.append(
+                self.get_ars_child_response(child_pk, base_url, infores, start_time)
+            )
+
+        child_responses = await asyncio.gather(*child_tasks)
+
+        for child_response in child_responses:
+            infores, response = child_response
+            responses[infores] = response
 
         # After getting all individual ARA responses, get and save the merged version
         current_time = time.time()

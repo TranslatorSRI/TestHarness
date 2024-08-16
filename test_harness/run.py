@@ -29,7 +29,7 @@ async def run_tests(
 ) -> Dict:
     """Send tests through the Test Runners."""
     start_time = time.time()
-    logger.info(f"Running {len(tests)} tests...")
+    logger.info(f"Running {len(tests)} queries...")
     full_report = {
         "PASSED": 0,
         "FAILED": 0,
@@ -38,7 +38,7 @@ async def run_tests(
     env = "None"
     await slacker.post_notification(
         messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
         ]
     )
     query_runner = QueryRunner(logger)
@@ -54,7 +54,7 @@ async def run_tests(
             logger.warning(f"Test has missing required fields: {test.id}")
             continue
 
-        query_responses = await query_runner.run_queries(test)
+        query_responses, normalized_curies = await query_runner.run_queries(test)
         if test.test_case_objective == "AcceptanceTest":
             test_ids = []
 
@@ -72,6 +72,7 @@ async def run_tests(
                     test_ids.append(test_id)
                 except Exception:
                     logger.error(f"Failed to create test: {test.id}")
+                    continue
 
                 test_asset_hash = hash_test_asset(asset)
                 test_query = query_responses.get(test_asset_hash)
@@ -92,28 +93,39 @@ async def run_tests(
                     for agent, response in test_query["responses"].items():
                         report["result"][agent] = {}
                         agent_report = report["result"][agent]
-                        if response["status_code"] > 299:
-                            agent_report["status"] = "FAILED"
-                            if response["status_code"] == "598":
-                                agent_report["message"] = "Timed out"
+                        try:
+                            if response["status_code"] > 299:
+                                agent_report["status"] = "FAILED"
+                                if response["status_code"] == "598":
+                                    agent_report["message"] = "Timed out"
+                                else:
+                                    agent_report["message"] = (
+                                        f"Status code: {response['status_code']}"
+                                    )
+                            elif (
+                                "response" not in response
+                                or "message" not in response["response"]
+                            ):
+                                agent_report["status"] = "FAILED"
+                                agent_report["message"] = "Test Error"
+                            elif (
+                                response["response"]["message"].get("results") is None
+                                or len(response["response"]["message"]["results"]) == 0
+                            ):
+                                agent_report["status"] = "DONE"
+                                agent_report["message"] = "No results"
                             else:
-                                agent_report["message"] = (
-                                    f"Status code: {response['status_code']}"
+                                await pass_fail_analysis(
+                                    report["result"],
+                                    agent,
+                                    response["response"]["message"]["results"],
+                                    normalized_curies[asset.output_id],
+                                    asset.expected_output,
                                 )
-                        elif (
-                            response["response"]["message"].get("results") is None
-                            or len(response["response"]["message"]["results"]) == 0
-                        ):
-                            agent_report["status"] = "DONE"
-                            agent_report["message"] = "No results"
-                        else:
-                            await pass_fail_analysis(
-                                report["result"],
-                                agent,
-                                response["response"]["message"]["results"],
-                                query_runner.normalized_curies[asset.output_id],
-                                asset.expected_output,
-                            )
+                        except Exception as e:
+                            logger.error(f"Failed to run analysis on {agent}: {e}")
+                            agent_report["status"] = "FAILED"
+                            agent_report["message"] = "Test Error"
 
                     status = "PASSED"
                     # grab only ars result if it exists, otherwise default to failed
@@ -147,6 +159,8 @@ async def run_tests(
                         await reporter.upload_log(test_id, json.dumps(report, indent=4))
                     except Exception:
                         logger.error(f"[{test.id}] failed to upload logs.")
+                else:
+                    status = "SKIPPED"
 
                 try:
                     await reporter.finish_test(test_id, status)
@@ -204,6 +218,9 @@ async def run_tests(
                 await reporter.finish_test(test_id, status)
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
+
+        # delete this big object to help out the garbage collector
+        del query_responses
 
     await slacker.post_notification(
         messages=[
