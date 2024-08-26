@@ -69,7 +69,7 @@ def generate_query(test_asset: TestAsset) -> dict:
                 test_asset.input_id
             ]
         else:
-            raise Exception("Unsupported input category for MVP1")
+            raise Exception(f"Unsupported input category for MVP1: {test_asset.input_category}")
         # add knowledge_type
         if "inferred" in test_asset.test_runner_settings:
             query["message"]["query_graph"]["edges"]["t_edge"][
@@ -88,7 +88,7 @@ def generate_query(test_asset: TestAsset) -> dict:
                 test_asset.input_id
             ]
         else:
-            raise Exception("Unsupported input category.")
+            raise Exception(f"Unsupported input category: {test_asset.input_category}")
         # add qualifier constraints
         aspect_qualifier, direction_qualifier = get_qualifier_constraints(test_asset)
         query["message"]["query_graph"]["edges"]["t_edge"]["qualifier_constraints"][0][
@@ -102,5 +102,7 @@ def generate_query(test_asset: TestAsset) -> dict:
             query["message"]["query_graph"]["edges"]["t_edge"][
                 "knowledge_type"
             ] = "inferred"
+    else:
+        raise Exception(f"Unsupported predicate: {test_asset.predicate_id}")
 
     return query

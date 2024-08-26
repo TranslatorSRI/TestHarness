@@ -96,12 +96,16 @@ class QueryRunner:
             asset_hash = hash_test_asset(test_asset)
             if asset_hash not in queries:
                 # generate query
-                query = generate_query(test_asset)
-                queries[asset_hash] = {
-                    "query": query,
-                    "responses": {},
-                    "pks": {},
-                }
+                try:
+                    query = generate_query(test_asset)
+                    queries[asset_hash] = {
+                        "query": query,
+                        "responses": {},
+                        "pks": {},
+                    }
+                except Exception as e:
+                    self.logger.warning(e)
+
 
         # send queries to a single type of component at a time
         for component in test_case.components:
@@ -231,64 +235,75 @@ class QueryRunner:
                 self.get_ars_child_response(child_pk, base_url, infores, start_time)
             )
 
-        child_responses = await asyncio.gather(*child_tasks)
+        try:
+            child_responses = await asyncio.gather(*child_tasks)
 
-        for child_response in child_responses:
-            infores, response = child_response
-            responses[infores] = response
+            for child_response in child_responses:
+                infores, response = child_response
+                responses[infores] = response
+        except Exception as e:
+            self.logger.warning(f"Failed to get all child responses: {e}")
 
-        # After getting all individual ARA responses, get and save the merged version
-        current_time = time.time()
-        while current_time - start_time <= MAX_QUERY_TIME:
-            async with httpx.AsyncClient(timeout=30) as client:
-                res = await client.get(
-                    f"{base_url}/ars/api/messages/{parent_pk}?trace=y"
-                )
-                res.raise_for_status()
-                response = res.json()
-                status = response.get("status")
-                if status == "Done" or status == "Error":
-                    merged_pk = response.get("merged_version")
-                    if merged_pk is None:
-                        self.logger.error(
-                            f"Failed to get the ARS merged message from pk: {parent_pk}."
-                        )
-                        pks["ars"] = "None"
-                        responses["ars"] = {
-                            "response": {"message": {"results": []}},
-                            "status_code": 410,
-                        }
+        try:
+            # After getting all individual ARA responses, get and save the merged version
+            current_time = time.time()
+            while current_time - start_time <= MAX_QUERY_TIME:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    res = await client.get(
+                        f"{base_url}/ars/api/messages/{parent_pk}?trace=y"
+                    )
+                    res.raise_for_status()
+                    response = res.json()
+                    status = response.get("status")
+                    if status == "Done" or status == "Error":
+                        merged_pk = response.get("merged_version")
+                        if merged_pk is None:
+                            self.logger.error(
+                                f"Failed to get the ARS merged message from pk: {parent_pk}."
+                            )
+                            pks["ars"] = "None"
+                            responses["ars"] = {
+                                "response": {"message": {"results": []}},
+                                "status_code": 410,
+                            }
+                        else:
+                            # add final ars pk
+                            pks["ars"] = merged_pk
+                            # get full merged pk
+                            res = await client.get(
+                                f"{base_url}/ars/api/messages/{merged_pk}"
+                            )
+                            res.raise_for_status()
+                            merged_message = res.json()
+                            responses["ars"] = {
+                                "response": merged_message.get("fields", {}).get(
+                                    "data", {"message": {"results": []}}
+                                ),
+                                "status_code": merged_message.get("fields", {}).get(
+                                    "code", 410
+                                ),
+                            }
+                            self.logger.info("Got ARS merged message!")
+                        break
                     else:
-                        # add final ars pk
-                        pks["ars"] = merged_pk
-                        # get full merged pk
-                        res = await client.get(
-                            f"{base_url}/ars/api/messages/{merged_pk}"
-                        )
-                        res.raise_for_status()
-                        merged_message = res.json()
-                        responses["ars"] = {
-                            "response": merged_message.get("fields", {}).get(
-                                "data", {"message": {"results": []}}
-                            ),
-                            "status_code": merged_message.get("fields", {}).get(
-                                "code", 410
-                            ),
-                        }
-                        self.logger.info("Got ARS merged message!")
-                    break
-                else:
-                    self.logger.info("ARS merging not done, waiting...")
-                    current_time = time.time()
-                    await asyncio.sleep(10)
-        else:
-            self.logger.warning(
-                f"ARS merging took greater than {MAX_QUERY_TIME / 60} minutes."
-            )
+                        self.logger.info("ARS merging not done, waiting...")
+                        current_time = time.time()
+                        await asyncio.sleep(10)
+            else:
+                self.logger.warning(
+                    f"ARS merging took greater than {MAX_QUERY_TIME / 60} minutes."
+                )
+                pks["ars"] = "None"
+                responses["ars"] = {
+                    "response": {"message": {"results": []}},
+                    "status_code": 598,
+                }
+        except Exception as e:
+            self.logger.warning(f"Failed to get ARS merged message: {e}")
             pks["ars"] = "None"
             responses["ars"] = {
                 "response": {"message": {"results": []}},
-                "status_code": 410,
+                "status_code": 500,
             }
 
         return responses, pks

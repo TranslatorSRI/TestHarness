@@ -102,3 +102,4 @@ def setup_logger():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
     logging.getLogger("root").setLevel(logging.WARNING)
+    logging.getLogger("bmt").setLevel(logging.ERROR)

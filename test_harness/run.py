@@ -8,6 +8,7 @@ import traceback
 from typing import Dict
 
 from ARS_Test_Runner.semantic_test import pass_fail_analysis
+from standards_validation_test_runner import StandardsValidationTest
 
 # from benchmarks_runner import run_benchmarks
 
@@ -94,6 +95,19 @@ async def run_tests(
                         report["result"][agent] = {}
                         agent_report = report["result"][agent]
                         try:
+                            svt = StandardsValidationTest(
+                                test_asset=asset,
+                                environment=test.test_env,
+                                component=agent,
+                                trapi_version="1.5.0-beta",
+                                biolink_version="suppress",
+                                runner_settings="Inferred",
+                            )
+                            results = svt.test_case_processor(trapi_response=response["response"])
+                            agent_report["trapi_validation"] = results[next(iter(results.keys()))][agent]["status"]
+                        except Exception as e:
+                            logger.warning(f"TRAPI validation failed with {e}")
+                        try:
                             if response["status_code"] > 299:
                                 agent_report["status"] = "FAILED"
                                 if response["status_code"] == "598":
@@ -126,6 +140,7 @@ async def run_tests(
                             logger.error(f"Failed to run analysis on {agent}: {e}")
                             agent_report["status"] = "FAILED"
                             agent_report["message"] = "Test Error"
+                            agent_report["trapi_validation"] = "NA"
 
                     status = "PASSED"
                     # grab only ars result if it exists, otherwise default to failed
