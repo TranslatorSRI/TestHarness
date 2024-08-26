@@ -40,7 +40,8 @@ async def normalize_curies(
             response = response.json()
             for curie, attrs in response.items():
                 if attrs is None:
-                    normalized_curies[curie] = "Unknown"
+                    # keep original curie
+                    normalized_curies[curie] = curie
                 else:
                     # choose the perferred id
                     normalized_curies[curie] = attrs["id"]["identifier"]
