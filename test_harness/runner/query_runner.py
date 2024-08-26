@@ -217,8 +217,8 @@ class QueryRunner:
         }
         async with httpx.AsyncClient(timeout=30) as client:
             # retain this response for testing
-            # res = await client.post(f"{base_url}/ars/api/retain/{parent_pk}")
-            # res.raise_for_status()
+            res = await client.post(f"{base_url}/ars/api/retain/{parent_pk}")
+            res.raise_for_status()
             # Get all children queries
             res = await client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
             res.raise_for_status()
