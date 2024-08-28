@@ -44,7 +44,7 @@ async def run_tests(
     )
     query_runner = QueryRunner(logger)
     logger.info("Runner is getting service registry")
-    await query_runner.retrieve_registry(trapi_version="1.5.0")
+    await query_runner.retrieve_registry(trapi_version=args["trapi_version"])
     collector = ResultCollector(logger)
     # loop over all tests
     for test in tqdm(tests.values()):
@@ -92,21 +92,10 @@ async def run_tests(
                         "result": {},
                     }
                     for agent, response in test_query["responses"].items():
-                        report["result"][agent] = {}
+                        report["result"][agent] = {
+                            "trapi_validation": "NA",
+                        }
                         agent_report = report["result"][agent]
-                        try:
-                            svt = StandardsValidationTest(
-                                test_asset=asset,
-                                environment=test.test_env,
-                                component=agent,
-                                trapi_version="1.5.0-beta",
-                                biolink_version="suppress",
-                                runner_settings="Inferred",
-                            )
-                            results = svt.test_case_processor(trapi_response=response["response"])
-                            agent_report["trapi_validation"] = results[next(iter(results.keys()))][agent]["status"]
-                        except Exception as e:
-                            logger.warning(f"TRAPI validation failed with {e}")
                         try:
                             if response["status_code"] > 299:
                                 agent_report["status"] = "FAILED"
@@ -116,31 +105,53 @@ async def run_tests(
                                     agent_report["message"] = (
                                         f"Status code: {response['status_code']}"
                                     )
+                                continue
                             elif (
                                 "response" not in response
                                 or "message" not in response["response"]
                             ):
                                 agent_report["status"] = "FAILED"
                                 agent_report["message"] = "Test Error"
-                            elif (
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Failed to parse basic response fields from {agent}: {e}")
+                        try:
+                            svt = StandardsValidationTest(
+                                test_asset=asset,
+                                environment=test.test_env,
+                                component=agent,
+                                trapi_version=args["trapi_version"],
+                                biolink_version="suppress",
+                                runner_settings="Inferred",
+                            )
+                            results = svt.test_case_processor(trapi_response=response["response"])
+                            agent_report["trapi_validation"] = results[next(iter(results.keys()))][agent]["status"]
+                            if agent_report["trapi_validation"] == "FAILED":
+                                agent_report["status"] = "FAILED"
+                                agent_report["message"] = "TRAPI Validation Error"
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Failed to run TRAPI validation with {e}")
+                            agent_report["trapi_validation"] = "ERROR"
+                        try:
+                            if (
                                 response["response"]["message"].get("results") is None
                                 or len(response["response"]["message"]["results"]) == 0
                             ):
                                 agent_report["status"] = "DONE"
                                 agent_report["message"] = "No results"
-                            else:
-                                await pass_fail_analysis(
-                                    report["result"],
-                                    agent,
-                                    response["response"]["message"]["results"],
-                                    normalized_curies[asset.output_id],
-                                    asset.expected_output,
-                                )
+                                continue
+                            await pass_fail_analysis(
+                                report["result"],
+                                agent,
+                                response["response"]["message"]["results"],
+                                normalized_curies[asset.output_id],
+                                asset.expected_output,
+                            )
                         except Exception as e:
-                            logger.error(f"Failed to run analysis on {agent}: {e}")
+                            logger.error(f"Failed to run acceptance test analysis on {agent}: {e}")
                             agent_report["status"] = "FAILED"
                             agent_report["message"] = "Test Error"
-                            agent_report["trapi_validation"] = "NA"
 
                     status = "PASSED"
                     # grab only ars result if it exists, otherwise default to failed
