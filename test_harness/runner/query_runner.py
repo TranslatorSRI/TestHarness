@@ -106,7 +106,6 @@ class QueryRunner:
                 except Exception as e:
                     self.logger.warning(e)
 
-
         # send queries to a single type of component at a time
         for component in test_case.components:
             # component = "ara"

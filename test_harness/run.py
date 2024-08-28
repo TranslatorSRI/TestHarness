@@ -114,7 +114,9 @@ async def run_tests(
                                 agent_report["message"] = "Test Error"
                                 continue
                         except Exception as e:
-                            logger.warning(f"Failed to parse basic response fields from {agent}: {e}")
+                            logger.warning(
+                                f"Failed to parse basic response fields from {agent}: {e}"
+                            )
                         try:
                             svt = StandardsValidationTest(
                                 test_asset=asset,
@@ -124,8 +126,12 @@ async def run_tests(
                                 biolink_version="suppress",
                                 runner_settings="Inferred",
                             )
-                            results = svt.test_case_processor(trapi_response=response["response"])
-                            agent_report["trapi_validation"] = results[next(iter(results.keys()))][agent]["status"]
+                            results = svt.test_case_processor(
+                                trapi_response=response["response"]
+                            )
+                            agent_report["trapi_validation"] = results[
+                                next(iter(results.keys()))
+                            ][agent]["status"]
                             if agent_report["trapi_validation"] == "FAILED":
                                 agent_report["status"] = "FAILED"
                                 agent_report["message"] = "TRAPI Validation Error"
@@ -149,7 +155,9 @@ async def run_tests(
                                 asset.expected_output,
                             )
                         except Exception as e:
-                            logger.error(f"Failed to run acceptance test analysis on {agent}: {e}")
+                            logger.error(
+                                f"Failed to run acceptance test analysis on {agent}: {e}"
+                            )
                             agent_report["status"] = "FAILED"
                             agent_report["message"] = "Test Error"
 

@@ -69,7 +69,9 @@ def generate_query(test_asset: TestAsset) -> dict:
                 test_asset.input_id
             ]
         else:
-            raise Exception(f"Unsupported input category for MVP1: {test_asset.input_category}")
+            raise Exception(
+                f"Unsupported input category for MVP1: {test_asset.input_category}"
+            )
         # add knowledge_type
         if "inferred" in test_asset.test_runner_settings:
             query["message"]["query_graph"]["edges"]["t_edge"][
