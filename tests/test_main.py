@@ -1,9 +1,9 @@
 import pytest
 
 from test_harness.main import main
-from .example_tests import example_test_cases
 
-from .mocker import (
+from .helpers.example_tests import example_test_cases
+from .helpers.mocks import (
     MockReporter,
     MockSlacker,
 )
@@ -13,17 +13,16 @@ from .mocker import (
 async def test_main(mocker):
     """Test the main function."""
     # This article is awesome: https://nedbatchelder.com/blog/201908/why_your_mock_doesnt_work.html
-    run_ars_test = mocker.patch("test_harness.run.run_ars_test", return_value="Fail")
     run_tests = mocker.patch("test_harness.main.run_tests", return_value={})
-    mocker.patch("test_harness.slacker.Slacker", return_value=MockSlacker())
+    mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
     mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
     await main(
         {
             "tests": example_test_cases,
+            "suite": "testing",
             "save_to_dashboard": False,
             "json_output": False,
             "log_level": "ERROR",
         }
     )
-    # run_ui_test.assert_called_once()
     run_tests.assert_called_once()
