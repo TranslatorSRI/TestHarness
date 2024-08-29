@@ -9,24 +9,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      # Cache docker layers for faster build
-      - uses: satackey/action-docker-layer-caching@v0.0.8
-        # Ignore the failure of a step and avoid terminating the job.
-        continue-on-error: true
+      - uses: actions/setup-python@v5
+        name: Setup python
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Build
-        run: docker build -t harness-testing -f Dockerfile.test .
+      - name: Install requirements
+        run: pip install -r requirements.txt
+      
+      - run: pip install -r requirements-runners.txt
+      - run: pip install -r requirements-test.txt
 
       - name: Run tests and get output
-        run: |
-          echo 'TEST_OUTPUT<<EOF' >> $GITHUB_ENV
-          echo "$(docker run harness-testing)" >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
-
-      - name: Exit if there are any test failures
-        run: '[[ $TEST_OUTPUT != *FAILED* ]]'
+        run: pytest
 
   check-format:
     name: Check that code matches Black formatter

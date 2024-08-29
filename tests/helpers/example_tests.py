@@ -34,7 +34,7 @@ example_test_cases = TestSuite.parse_obj(
                         "tags": [],
                         "input_id": "MONDO:0010794",
                         "input_name": "NARP Syndrome",
-                        "input_category": None,
+                        "input_category": "biolink:Disease",
                         "predicate_id": "biolink:treats",
                         "predicate_name": "treats",
                         "output_id": "DRUGBANK:DB00313",
@@ -48,7 +48,7 @@ example_test_cases = TestSuite.parse_obj(
                         "in_v1": None,
                         "well_known": False,
                         "test_reference": None,
-                        "runner_settings": ["inferred"],
+                        "test_runner_settings": ["inferred"],
                         "test_metadata": {
                             "id": "1",
                             "name": None,
@@ -67,7 +67,7 @@ example_test_cases = TestSuite.parse_obj(
                         "tags": [],
                         "input_id": "MONDO:0010794",
                         "input_name": "NARP Syndrome",
-                        "input_category": None,
+                        "input_category": "biolink:Disease",
                         "predicate_id": "biolink:treats",
                         "predicate_name": "treats",
                         "output_id": "MESH:D001463",
@@ -81,7 +81,7 @@ example_test_cases = TestSuite.parse_obj(
                         "in_v1": None,
                         "well_known": False,
                         "test_reference": None,
-                        "runner_settings": ["inferred"],
+                        "test_runner_settings": ["inferred"],
                         "test_metadata": {
                             "id": "1",
                             "name": None,
@@ -102,7 +102,7 @@ example_test_cases = TestSuite.parse_obj(
                 "test_case_predicate_name": "treats",
                 "test_case_predicate_id": "biolink:treats",
                 "test_case_input_id": "MONDO:0010794",
-                "test_case_runner_settings": ["inferred"],
+                "test_runner_settings": ["inferred"],
             }
         },
     }
