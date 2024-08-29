@@ -2,6 +2,7 @@ from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 from test_harness.runner.query_runner import QueryRunner
 
+
 class MockReporter(Reporter):
     def __init__(self, base_url=None, refresh_token=None, logger=None):
         super().__init__()
@@ -61,7 +62,7 @@ class MockQueryRunner(QueryRunner):
                         "_id": "testing",
                         "title": "Tester",
                         "infores": "infores:tester",
-                        "url": "http://tester"
+                        "url": "http://tester",
                     }
                 ],
             },

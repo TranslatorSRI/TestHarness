@@ -26,14 +26,16 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
         return_value=MockQueryRunner(logger),
     )
     httpx_mock.add_response(
-        url="http://tester/query", json=kp_response,
+        url="http://tester/query",
+        json=kp_response,
     )
     httpx_mock.add_response(
-        url="https://nodenorm.ci.transltr.io/get_normalized_nodes", json={
+        url="https://nodenorm.ci.transltr.io/get_normalized_nodes",
+        json={
             "MONDO:0010794": None,
             "DRUGBANK:DB00313": None,
             "MESH:D001463": None,
-        }
+        },
     )
     full_report = await run_tests(
         reporter=MockReporter(
@@ -45,6 +47,6 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
         args={
             "suite": "testing",
             "trapi_version": "1.5.0",
-        }
+        },
     )
     assert full_report["SKIPPED"] == 2
