@@ -83,5 +83,5 @@ def download_tests(
     #     test.test_case_type = "acceptance"
     # tests = all_tests
     # tests = list(filter((lambda x: x for x in all_tests for asset in x.test_assets if asset.output_id), all_tests))
-    logger.info(f"Passing along {len(test_suite.test_cases)} tests")
+    logger.info(f"Passing along {len(test_suite.test_cases)} queries")
     return test_suite.test_cases

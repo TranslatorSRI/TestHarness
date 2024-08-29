@@ -3,6 +3,7 @@
 from argparse import ArgumentParser
 import asyncio
 import json
+from setproctitle import setproctitle
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from test_harness.logger import get_logger, setup_logger
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 
+setproctitle("TestHarness")
 setup_logger()
 
 
@@ -109,6 +111,13 @@ def cli():
         "--save_to_dashboard",
         action="store_true",
         help="Have the Test Harness send the test results to the Testing Dashboard",
+    )
+
+    parser.add_argument(
+        "--trapi_version",
+        type=str,
+        default="1.5.0",
+        help="TRAPI (SemVer) version assumed for testing (1.5.0, if not given)",
     )
 
     parser.add_argument(
