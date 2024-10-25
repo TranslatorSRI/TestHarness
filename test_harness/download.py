@@ -36,7 +36,7 @@ def download_tests(
         tests_paths = glob.glob(f"{tmpdir}/*/test_suites/{suite}.json")
 
         with open(tests_paths[0]) as f:
-            test_suite = TestSuite.parse_obj(json.load(f))
+            test_suite = TestSuite.model_validate(json.load(f))
 
         # all_tests = []
         # suites = suite if type(suite) == list else [suite]

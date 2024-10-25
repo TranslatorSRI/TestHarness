@@ -55,6 +55,7 @@ class Reporter:
                 "framework": "Translator Automated Testing",
                 "config": {
                     "environment": test_env,
+                    "build": "v0.3.2",
                 },
             },
         )
@@ -81,6 +82,18 @@ class Reporter:
                     {
                         "key": "TestAsset",
                         "value": asset.id,
+                    },
+                    {
+                        "key": "InputCurie",
+                        "value": asset.input_id,
+                    },
+                    {
+                        "key": "OutputCurie",
+                        "value": asset.output_id,
+                    },
+                    {
+                        "key": "ExpectedOutput",
+                        "value": asset.expected_output,
                     },
                 ],
             },
