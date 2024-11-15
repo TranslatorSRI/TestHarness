@@ -2,10 +2,10 @@
 Automated Test Harness that downloads Translator Tests and executes them via Translator Runners
 
 ## Overview
-The Test Harness is a lightweight wrapper around the Test Runners. Its job is to retrieve automated tests, pass them along to test runners, and then send the report to a test dashboard, all while being easily and automatically instantiated.
+The Test Harness is a wrapper around the Test Runners. Its job is to retrieve automated tests, run the given queries, and then pass the responses along to test runners, and then send the report to a test dashboard, all while being easily and automatically instantiated.
 
 ### Test Runners
-The Test Harness incorporates Test Runners that do the actual running of the automated tests. These Runners must be pip installable and take a test input that is defined by this Test Harness. The list of current Test Runners can be found in `requirements-runners.txt`.
+The Test Harness incorporates Test Runners that run analyses on the responses of the automated tests. These Runners must be pip installable and take a test asset input and response as arguments. An example Test Runner function can be found [here](https://github.com/NCATSTranslator/ARS_Test_Runner/blob/master/ARS_Test_Runner/semantic_test.py#L196). The list of current Test Runners can be found in `requirements-runners.txt`.
 
 ### Test Schema
 *_WARNING:_* This schema is likely to change as the Test Cases are finalized
