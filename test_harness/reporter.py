@@ -54,8 +54,7 @@ class Reporter:
                 "startedAt": datetime.now().astimezone().isoformat(),
                 "framework": "Translator Automated Testing",
                 "config": {
-                    "environment": test_env,
-                    "build": "v0.3.2",
+                    "build": "v0.3.3",
                 },
             },
         )
