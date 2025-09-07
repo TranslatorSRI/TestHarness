@@ -11,7 +11,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def retrieve_registry_from_smartapi(
-    target_trapi_version="1.5.0",
+    target_trapi_version="1.6.0",
 ):
     """Returns a dict of smart api service endpoints defined with a dict like
     {
