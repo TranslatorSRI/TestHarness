@@ -1,6 +1,4 @@
 ARS_Test_Runner==0.2.4
 # benchmarks-runner==0.1.3
 # ui-test-runner==0.0.2
-graph-validation-test-runners==0.1.5
-# we need to manually pin the right reasoner-validator version
-reasoner-validator==4.2.5
+# graph-validation-test-runners==0.1.5
