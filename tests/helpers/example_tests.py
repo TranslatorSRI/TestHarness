@@ -105,7 +105,7 @@ example_test_cases = TestSuite.parse_obj(
                 "test_runner_settings": ["inferred"],
             },
             "TestCase_2": {
-                "id": "TestCase_0",
+                "id": "TestCase_2",
                 "name": "imatinib to asthma",
                 "description": "imatinib to asthma",
                 "tags": [],
