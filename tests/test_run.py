@@ -35,6 +35,13 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
             "MONDO:0010794": None,
             "DRUGBANK:DB00313": None,
             "MESH:D001463": None,
+            "CHEBI:18295": None,
+            "CHEBI:31690": None,
+            "CL:0000097": None,
+            "MONDO:0004979": None,
+            "NCBIGene:3815": None,
+            "NCBIGene:4254": None,
+            "PR:000049994": None
         },
     )
     full_report = await run_tests(
@@ -46,7 +53,7 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
-            "trapi_version": "1.5.0",
+            "trapi_version": "1.6.0",
         },
     )
-    assert full_report["SKIPPED"] == 2
+    assert full_report["SKIPPED"] == 3
