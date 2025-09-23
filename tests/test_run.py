@@ -41,7 +41,7 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
             "MONDO:0004979": None,
             "NCBIGene:3815": None,
             "NCBIGene:4254": None,
-            "PR:000049994": None
+            "PR:000049994": None,
         },
     )
     full_report = await run_tests(
