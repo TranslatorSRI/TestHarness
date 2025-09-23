@@ -10,14 +10,14 @@ import tempfile
 from typing import List, Union, Dict
 import zipfile
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, TestSuite
+from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase, TestSuite
 
 
 def download_tests(
     suite: Union[str, List[str]],
     url: Path,
     logger: logging.Logger,
-) -> Dict[str, TestCase]:
+) -> Dict[str, Union[TestCase, PathfinderTestCase]]:
     """Download tests from specified location."""
     assert Path(url).suffix == ".zip"
     logger.info(f"Downloading tests from {url}...")

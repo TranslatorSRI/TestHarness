@@ -103,6 +103,80 @@ example_test_cases = TestSuite.parse_obj(
                 "test_case_predicate_id": "biolink:treats",
                 "test_case_input_id": "MONDO:0010794",
                 "test_runner_settings": ["inferred"],
+            },
+            "TestCase_2": {
+                "id": "TestCase_0",
+                "name": "imatinib to asthma",
+                "description": "imatinib to asthma",
+                "tags": [],
+                "test_runner_settings": [
+                    "pathfinder"
+                ],
+                "query_type": None,
+                "test_assets": [
+                    {
+                        "id": "PTFQ_1",
+                        "name": "Imatinib to Asthma",
+                        "description": "Imatinib to Asthma",
+                        "tags": [],
+                        "test_runner_settings": [
+                            "pathfinder"
+                        ],
+                        "source_input_id": "CHEBI:31690",
+                        "source_input_name": "Imatinib",
+                        "source_input_category": "biolink:Drug",
+                        "target_input_id": "MONDO:0004979",
+                        "target_input_name": "Asthma",
+                        "target_input_category": "biolink:Disease",
+                        "predicate_id": "biolink:related_to",
+                        "predicate_name": "related to",
+                        "path_nodes": [
+                            {
+                                "ids": ["NCBIGene:3815"],
+                                "name": "KIT"
+                            },
+                            {
+                                "ids": ["CHEBI:18295", "PR:000049994"],
+                                "name": "Histamine"
+                            },
+                            {
+                                "ids": ["NCBIGene:4254"],
+                                "name": "SCF-1"
+                            },
+                            {
+                                "ids": ["CL:0000097"],
+                                "name": "Mast Cell"
+                            }
+                        ],
+                        "association": None,
+                        "qualifiers": None,
+                        "expected_output": "TopAnswer",
+                        "test_issue": None,
+                        "semantic_severity": None,
+                        "in_v1": None,
+                        "well_known": False,
+                        "test_reference": None,
+                        "test_metadata": {
+                            "id": "1",
+                            "name": None,
+                            "description": None,
+                            "tags": [],
+                            "test_runner_settings": [],
+                            "test_source": "SMURF",
+                            "test_reference": None,
+                            "test_objective": "AcceptanceTest",
+                            "test_annotations": []
+                        }
+                    }
+                ],
+                "preconditions": [],
+                "trapi_template": None,
+                "test_case_objective": "AcceptanceTest",
+                "test_case_source": None,
+                "components": [
+                    "ars"
+                ],
+                "test_env": "ci"
             }
         },
     }
