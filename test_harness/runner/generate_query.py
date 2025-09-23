@@ -1,7 +1,8 @@
 """Given a Test Asset, generate a TRAPI query."""
 
 import copy
-from translator_testing_model.datamodel.pydanticmodel import TestAsset
+from typing import Union
+from translator_testing_model.datamodel.pydanticmodel import TestAsset, PathfinderTestAsset
 
 from test_harness.utils import get_qualifier_constraints
 
@@ -56,11 +57,48 @@ MVP2 = {
     }
 }
 
+PATHFINDER = {
+    "message": {
+        "query_graph": {
+            "nodes": {
+                "SN": {
+                    "set_interpretation": "BATCH",
+                    "constraints": [],
+                    "member_ids": []
+                },
+                "ON": {
+                    "set_interpretation": "BATCH",
+                    "constraints": [],
+                    "member_ids": []
+                }
+            },
+            "paths": {
+                "p0": {
+                    "subject": "SN",
+                    "object": "ON"
+                }
+            }
+        }
+    }
+}
 
-def generate_query(test_asset: TestAsset) -> dict:
+
+def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
     """Generate a TRAPI query."""
     query = {}
-    if test_asset.predicate_id == "biolink:treats":
+    if isinstance(test_asset, PathfinderTestAsset):
+        source_id = test_asset.source_input_id
+        target_id = test_asset.target_input_id
+        query = copy.deepcopy(PATHFINDER)
+        query["message"]["query_graph"]["nodes"]["SN"] = {
+            "ids": [source_id],
+            "categories": [test_asset.source_input_category]
+        }
+        query["message"]["query_graph"]["nodes"]["ON"] = {
+            "ids": [target_id],
+            "categories": [test_asset.target_input_category]
+        }
+    elif test_asset.predicate_id == "biolink:treats":
         # MVP1
         query = copy.deepcopy(MVP1)
         # add id to node
@@ -108,3 +146,4 @@ def generate_query(test_asset: TestAsset) -> dict:
         raise Exception(f"Unsupported predicate: {test_asset.predicate_id}")
 
     return query
+

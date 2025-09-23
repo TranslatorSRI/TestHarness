@@ -4,7 +4,7 @@ import httpx
 import logging
 from typing import Dict, Union, List, Tuple
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, TestAsset
+from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase, TestAsset, PathfinderTestAsset
 
 NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
@@ -15,15 +15,27 @@ NODE_NORM_URL = {
 
 
 async def normalize_curies(
-    test: TestCase,
+    test: Union[TestCase, PathfinderTestCase],
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict[str, Dict[str, Union[Dict[str, str], List[str]]]]:
     """Normalize a list of curies."""
     node_norm = NODE_NORM_URL.get(test.test_env)
     # collect all curies from test
-    curies = set([asset.output_id for asset in test.test_assets])
-    curies.update([asset.input_id for asset in test.test_assets])
-    curies.add(test.test_case_input_id)
+    if isinstance(test, PathfinderTestCase):
+        curies = set([asset.source_input_id for asset in test.test_assets])
+        curies.update([asset.target_input_id for asset in test.test_assets])
+        curies.update(
+            [
+                path_node_id
+                for asset in test.test_assets
+                for path_node in asset.path_nodes
+                for path_node_id in path_node.ids
+            ]
+        )
+    else:
+        curies = set([asset.output_id for asset in test.test_assets])
+        curies.update([asset.input_id for asset in test.test_assets])
+        curies.add(test.test_case_input_id)
 
     normalized_curies = {}
     async with httpx.AsyncClient() as client:
@@ -63,15 +75,25 @@ def get_tag(result):
     return tag
 
 
-def hash_test_asset(test_asset: TestAsset) -> int:
+def hash_test_asset(test_asset: Union[TestAsset, PathfinderTestAsset]) -> int:
     """Given a test asset, return its unique hash."""
-    asset_hash = hash(
+    if isinstance(test_asset, PathfinderTestAsset):
+        asset_hash = hash(
         (
-            test_asset.input_id,
+            test_asset.source_input_id,
+            test_asset.target_input_id,
             test_asset.predicate_id,
-            *[qualifier.value for qualifier in test_asset.qualifiers],
+            *[qualifier.value for qualifier in (test_asset.qualifiers or [])],
         )
     )
+    else:
+        asset_hash = hash(
+            (
+                test_asset.input_id,
+                test_asset.predicate_id,
+                *[qualifier.value for qualifier in test_asset.qualifiers],
+            )
+        )
     return asset_hash
 
 
