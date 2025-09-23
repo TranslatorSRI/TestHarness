@@ -2,7 +2,12 @@
 
 import logging
 from typing import Union
-from translator_testing_model.datamodel.pydanticmodel import TestAsset, PathfinderTestAsset, TestCase, PathfinderTestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestAsset,
+    PathfinderTestAsset,
+    TestCase,
+    PathfinderTestCase,
+)
 
 from test_harness.utils import get_tag
 

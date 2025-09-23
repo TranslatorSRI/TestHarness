@@ -4,7 +4,12 @@ import httpx
 import logging
 from typing import Dict, Union, List, Tuple
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase, TestAsset, PathfinderTestAsset
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+    TestAsset,
+    PathfinderTestAsset,
+)
 
 NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
@@ -79,13 +84,13 @@ def hash_test_asset(test_asset: Union[TestAsset, PathfinderTestAsset]) -> int:
     """Given a test asset, return its unique hash."""
     if isinstance(test_asset, PathfinderTestAsset):
         asset_hash = hash(
-        (
-            test_asset.source_input_id,
-            test_asset.target_input_id,
-            test_asset.predicate_id,
-            *[qualifier.value for qualifier in (test_asset.qualifiers or [])],
+            (
+                test_asset.source_input_id,
+                test_asset.target_input_id,
+                test_asset.predicate_id,
+                *[qualifier.value for qualifier in (test_asset.qualifiers or [])],
+            )
         )
-    )
     else:
         asset_hash = hash(
             (

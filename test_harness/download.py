@@ -10,7 +10,11 @@ import tempfile
 from typing import List, Union, Dict
 import zipfile
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase, TestSuite
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+    TestSuite,
+)
 
 
 def download_tests(

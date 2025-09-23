@@ -2,7 +2,10 @@
 
 import copy
 from typing import Union
-from translator_testing_model.datamodel.pydanticmodel import TestAsset, PathfinderTestAsset
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestAsset,
+    PathfinderTestAsset,
+)
 
 from test_harness.utils import get_qualifier_constraints
 
@@ -64,20 +67,15 @@ PATHFINDER = {
                 "SN": {
                     "set_interpretation": "BATCH",
                     "constraints": [],
-                    "member_ids": []
+                    "member_ids": [],
                 },
                 "ON": {
                     "set_interpretation": "BATCH",
                     "constraints": [],
-                    "member_ids": []
-                }
+                    "member_ids": [],
+                },
             },
-            "paths": {
-                "p0": {
-                    "subject": "SN",
-                    "object": "ON"
-                }
-            }
+            "paths": {"p0": {"subject": "SN", "object": "ON"}},
         }
     }
 }
@@ -92,11 +90,11 @@ def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
         query = copy.deepcopy(PATHFINDER)
         query["message"]["query_graph"]["nodes"]["SN"] = {
             "ids": [source_id],
-            "categories": [test_asset.source_input_category]
+            "categories": [test_asset.source_input_category],
         }
         query["message"]["query_graph"]["nodes"]["ON"] = {
             "ids": [target_id],
-            "categories": [test_asset.target_input_category]
+            "categories": [test_asset.target_input_category],
         }
     elif test_asset.predicate_id == "biolink:treats":
         # MVP1
@@ -146,4 +144,3 @@ def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
         raise Exception(f"Unsupported predicate: {test_asset.predicate_id}")
 
     return query
-

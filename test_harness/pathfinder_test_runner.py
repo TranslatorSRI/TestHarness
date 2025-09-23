@@ -1,10 +1,8 @@
 from typing import Dict, Union, List
 
+
 async def pass_fail_analysis(
-        report: Dict[str, any],
-        agent: str,
-        message: Dict[str, any],
-        path_curies: List[str]
+    report: Dict[str, any], agent: str, message: Dict[str, any], path_curies: List[str]
 ) -> Dict[str, any]:
     found_path_nodes = set()
     for analysis in message["results"][0]["analyses"]:
@@ -22,5 +20,5 @@ async def pass_fail_analysis(
         report[agent]["expected_path_nodes"] = found_path_nodes
     else:
         report[agent]["status"] = "FAILED"
-            
+
     return report

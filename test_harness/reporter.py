@@ -6,7 +6,12 @@ import logging
 import os
 from typing import List, Union
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase, TestAsset, PathfinderTestAsset
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+    TestAsset,
+    PathfinderTestAsset,
+)
 
 
 class Reporter:
@@ -63,7 +68,11 @@ class Reporter:
         self.test_run_id = res_json["id"]
         return self.test_run_id
 
-    async def create_test(self, test: Union[TestCase, PathfinderTestCase], asset: Union[TestAsset, PathfinderTestAsset]):
+    async def create_test(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+    ):
         """Create a test in the IR."""
         name = asset.name if asset.name else asset.description
         test_json = {
@@ -99,7 +108,9 @@ class Reporter:
                     },
                 ]
             )
-        elif isinstance(test, PathfinderTestCase) and isinstance(asset, PathfinderTestAsset):
+        elif isinstance(test, PathfinderTestCase) and isinstance(
+            asset, PathfinderTestAsset
+        ):
             test_json["labels"].extend(
                 [
                     {
@@ -113,18 +124,18 @@ class Reporter:
                     {
                         "key": "PathOutputCuries",
                         "value": [
-                            path_node_id 
+                            path_node_id
                             for path_node in asset.path_nodes
                             for path_node_id in path_node.ids
-                        ]
-                    }
+                        ],
+                    },
                 ]
             )
         else:
             raise Exception
         res = await self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
-            json=test_json
+            json=test_json,
         )
         res.raise_for_status()
         res_json = res.json()

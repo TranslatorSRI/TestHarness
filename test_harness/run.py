@@ -12,15 +12,20 @@ from standards_validation_test_runner import StandardsValidationTest
 
 # from benchmarks_runner import run_benchmarks
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase, PathfinderTestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+)
 
 from test_harness.runner.query_runner import QueryRunner
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 from test_harness.result_collector import ResultCollector
 from test_harness.utils import get_tag, hash_test_asset
-from test_harness.pathfinder_test_runner import pass_fail_analysis as pathfinder_pass_fail_analysis
-    
+from test_harness.pathfinder_test_runner import (
+    pass_fail_analysis as pathfinder_pass_fail_analysis,
+)
+
 
 async def run_tests(
     reporter: Reporter,
@@ -103,9 +108,9 @@ async def run_tests(
                                 if response["status_code"] == "598":
                                     agent_report["message"] = "Timed out"
                                 else:
-                                    agent_report["message"] = (
-                                        f"Status code: {response['status_code']}"
-                                    )
+                                    agent_report[
+                                        "message"
+                                    ] = f"Status code: {response['status_code']}"
                                 continue
                             elif (
                                 "response" not in response
@@ -157,7 +162,7 @@ async def run_tests(
                                         normalized_curies[path_node_id]
                                         for path_node in asset.path_nodes
                                         for path_node_id in path_node.ids
-                                    ]
+                                    ],
                                 )
                             else:
                                 await pass_fail_analysis(

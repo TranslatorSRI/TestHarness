@@ -267,8 +267,12 @@ class QueryRunner(BaseQueryRunner):
         queries: Dict[int, dict] = {}
         for test_asset in test_case.test_assets:
             if isinstance(test_case, PathfinderTestCase):
-                test_asset.source_input_id = normalized_curies[test_asset.source_input_id]
-                test_asset.target_input_id = normalized_curies[test_asset.target_input_id]
+                test_asset.source_input_id = normalized_curies[
+                    test_asset.source_input_id
+                ]
+                test_asset.target_input_id = normalized_curies[
+                    test_asset.target_input_id
+                ]
             else:
                 test_asset.input_id = normalized_curies[test_asset.input_id]
             # TODO: make this better
@@ -319,9 +323,7 @@ class QueryRunner(BaseQueryRunner):
 
 class PathfinderQueryRunner(BaseQueryRunner):
     async def run_queries(
-        self,
-        test_case: PathfinderTestCase,
-        concurrency: int = 1
+        self, test_case: PathfinderTestCase, concurrency: int = 1
     ) -> Tuple[Dict[int, dict], Dict[str, str]]:
         # normalize all the curies in a test case
         normalized_curies = await normalize_curies(test_case, self.logger)
