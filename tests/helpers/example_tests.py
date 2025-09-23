@@ -109,9 +109,7 @@ example_test_cases = TestSuite.parse_obj(
                 "name": "imatinib to asthma",
                 "description": "imatinib to asthma",
                 "tags": [],
-                "test_runner_settings": [
-                    "pathfinder"
-                ],
+                "test_runner_settings": ["pathfinder"],
                 "query_type": None,
                 "test_assets": [
                     {
@@ -119,9 +117,7 @@ example_test_cases = TestSuite.parse_obj(
                         "name": "Imatinib to Asthma",
                         "description": "Imatinib to Asthma",
                         "tags": [],
-                        "test_runner_settings": [
-                            "pathfinder"
-                        ],
+                        "test_runner_settings": ["pathfinder"],
                         "source_input_id": "CHEBI:31690",
                         "source_input_name": "Imatinib",
                         "source_input_category": "biolink:Drug",
@@ -131,22 +127,13 @@ example_test_cases = TestSuite.parse_obj(
                         "predicate_id": "biolink:related_to",
                         "predicate_name": "related to",
                         "path_nodes": [
-                            {
-                                "ids": ["NCBIGene:3815"],
-                                "name": "KIT"
-                            },
+                            {"ids": ["NCBIGene:3815"], "name": "KIT"},
                             {
                                 "ids": ["CHEBI:18295", "PR:000049994"],
-                                "name": "Histamine"
+                                "name": "Histamine",
                             },
-                            {
-                                "ids": ["NCBIGene:4254"],
-                                "name": "SCF-1"
-                            },
-                            {
-                                "ids": ["CL:0000097"],
-                                "name": "Mast Cell"
-                            }
+                            {"ids": ["NCBIGene:4254"], "name": "SCF-1"},
+                            {"ids": ["CL:0000097"], "name": "Mast Cell"},
                         ],
                         "association": None,
                         "qualifiers": None,
@@ -165,19 +152,17 @@ example_test_cases = TestSuite.parse_obj(
                             "test_source": "SMURF",
                             "test_reference": None,
                             "test_objective": "AcceptanceTest",
-                            "test_annotations": []
-                        }
+                            "test_annotations": [],
+                        },
                     }
                 ],
                 "preconditions": [],
                 "trapi_template": None,
                 "test_case_objective": "AcceptanceTest",
                 "test_case_source": None,
-                "components": [
-                    "ars"
-                ],
-                "test_env": "ci"
-            }
+                "components": ["ars"],
+                "test_env": "ci",
+            },
         },
     }
 ).test_cases

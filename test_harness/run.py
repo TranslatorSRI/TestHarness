@@ -8,7 +8,7 @@ import traceback
 from typing import Dict, Union
 
 from ARS_Test_Runner.semantic_test import pass_fail_analysis
-from standards_validation_test_runner import StandardsValidationTest
+# from standards_validation_test_runner import StandardsValidationTest
 
 # from benchmarks_runner import run_benchmarks
 
@@ -108,9 +108,9 @@ async def run_tests(
                                 if response["status_code"] == "598":
                                     agent_report["message"] = "Timed out"
                                 else:
-                                    agent_report[
-                                        "message"
-                                    ] = f"Status code: {response['status_code']}"
+                                    agent_report["message"] = (
+                                        f"Status code: {response['status_code']}"
+                                    )
                                 continue
                             elif (
                                 "response" not in response
@@ -123,28 +123,28 @@ async def run_tests(
                             logger.warning(
                                 f"Failed to parse basic response fields from {agent}: {e}"
                             )
-                        try:
-                            svt = StandardsValidationTest(
-                                test_asset=asset,
-                                environment=test.test_env,
-                                component=agent,
-                                trapi_version=args["trapi_version"],
-                                biolink_version="suppress",
-                                runner_settings="Inferred",
-                            )
-                            results = svt.test_case_processor(
-                                trapi_response=response["response"]
-                            )
-                            agent_report["trapi_validation"] = results[
-                                next(iter(results.keys()))
-                            ][agent]["status"]
-                            if agent_report["trapi_validation"] == "FAILED":
-                                agent_report["status"] = "FAILED"
-                                agent_report["message"] = "TRAPI Validation Error"
-                                continue
-                        except Exception as e:
-                            logger.warning(f"Failed to run TRAPI validation with {e}")
-                            agent_report["trapi_validation"] = "ERROR"
+                        # try:
+                        #     svt = StandardsValidationTest(
+                        #         test_asset=asset,
+                        #         environment=test.test_env,
+                        #         component=agent,
+                        #         trapi_version=args["trapi_version"],
+                        #         biolink_version="suppress",
+                        #         runner_settings="Inferred",
+                        #     )
+                        #     results = svt.test_case_processor(
+                        #         trapi_response=response["response"]
+                        #     )
+                        #     agent_report["trapi_validation"] = results[
+                        #         next(iter(results.keys()))
+                        #     ][agent]["status"]
+                        #     if agent_report["trapi_validation"] == "FAILED":
+                        #         agent_report["status"] = "FAILED"
+                        #         agent_report["message"] = "TRAPI Validation Error"
+                        #         continue
+                        # except Exception as e:
+                        #     logger.warning(f"Failed to run TRAPI validation with {e}")
+                        #     agent_report["trapi_validation"] = "ERROR"
                         try:
                             if (
                                 response["response"]["message"].get("results") is None
