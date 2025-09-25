@@ -121,14 +121,6 @@ class Reporter:
                         "key": "TargetInputCurie",
                         "value": asset.target_input_id,
                     },
-                    {
-                        "key": "PathOutputCuries",
-                        "value": [
-                            path_node_id
-                            for path_node in asset.path_nodes
-                            for path_node_id in path_node.ids
-                        ],
-                    },
                 ]
             )
         else:
