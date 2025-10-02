@@ -4,5 +4,5 @@ pydantic==2.7.1
 setproctitle==1.3.3
 slack_sdk==3.27.2
 tqdm==4.66.4
-translator-testing-model==0.4.0
+translator-testing-model==0.4.1
 reasoner-validator==4.2.5
