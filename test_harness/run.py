@@ -164,7 +164,7 @@ async def run_tests(
                                         ]
                                         for path_node in asset.path_nodes
                                     ],
-                                    asset.minimum_expected_path_nodes
+                                    asset.minimum_required_path_nodes
                                 )
                             else:
                                 await pass_fail_analysis(
