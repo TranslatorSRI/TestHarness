@@ -2,7 +2,11 @@ from typing import Dict, Union, List
 
 
 async def pathfinder_pass_fail_analysis(
-    report: Dict[str, any], agent: str, message: Dict[str, any], path_nodes: List[List[str]], minimum_required_path_nodes: int
+    report: Dict[str, any],
+    agent: str,
+    message: Dict[str, any],
+    path_nodes: List[List[str]],
+    minimum_required_path_nodes: int,
 ) -> Dict[str, any]:
     found_path_nodes = set()
     for analysis in message["results"][0]["analyses"]:
@@ -29,7 +33,5 @@ async def pathfinder_pass_fail_analysis(
         report[agent]["expected_path_nodes"] = "; ".join(found_path_nodes)
     else:
         report[agent]["status"] = "FAILED"
-        report[agent]["expected_path_nodes"] = ""
-    
-    print(f"ran test, {agent}, {path_nodes}, {report[agent]['expected_path_nodes']}, {report[agent]['status']}")
+
     return report
