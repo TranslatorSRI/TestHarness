@@ -126,6 +126,7 @@ example_test_cases = TestSuite.parse_obj(
                         "target_input_category": "biolink:Disease",
                         "predicate_id": "biolink:related_to",
                         "predicate_name": "related to",
+                        "minimum_required_path_nodes": 2,
                         "path_nodes": [
                             {"ids": ["NCBIGene:3815"], "name": "KIT"},
                             {
