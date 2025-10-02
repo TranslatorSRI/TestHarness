@@ -23,9 +23,7 @@ from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 from test_harness.result_collector import ResultCollector
 from test_harness.utils import get_tag, hash_test_asset
-from test_harness.pathfinder_test_runner import (
-    pass_fail_analysis as pathfinder_pass_fail_analysis,
-)
+from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
 
 
 async def run_tests(
@@ -160,10 +158,13 @@ async def run_tests(
                                     agent,
                                     response["response"]["message"],
                                     [
-                                        normalized_curies[path_node_id]
+                                        [
+                                            normalized_curies[path_node_id]
+                                            for path_node_id in path_node.ids
+                                        ]
                                         for path_node in asset.path_nodes
-                                        for path_node_id in path_node.ids
                                     ],
+                                    asset.minimum_expected_path_nodes
                                 )
                             else:
                                 await pass_fail_analysis(
