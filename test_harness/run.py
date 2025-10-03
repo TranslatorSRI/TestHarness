@@ -96,10 +96,25 @@ async def run_tests(
                         "pks": test_query["pks"],
                         "result": {},
                     }
-                    for agent, response in test_query["responses"].items():
-                        report["result"][agent] = {
-                            "trapi_validation": "NA",
+                    if isinstance(test, PathfinderTestCase):
+                        report["test_details"] = {
+                            "minimum_required_path_nodes": asset.minimum_required_path_nodes,
+                            "expected_path_nodes": "; ".join(
+                                [
+                                    ",".join(
+                                        [
+                                            normalized_curies[path_node_id]
+                                            for path_node_id in path_node.ids
+                                        ]
+                                    )
+                                    for path_node in asset.path_nodes
+                                ]
+                            )
                         }
+                    for agent, response in test_query["responses"].items():
+                        # report["result"][agent] = {
+                        #     "trapi_validation": "NA",
+                        # }
                         agent_report = report["result"][agent]
                         try:
                             if response["status_code"] > 299:

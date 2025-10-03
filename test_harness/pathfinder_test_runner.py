@@ -9,6 +9,7 @@ async def pathfinder_pass_fail_analysis(
     minimum_required_path_nodes: int,
 ) -> Dict[str, any]:
     found_path_nodes = set()
+    unmatched_paths = set()
     for analysis in message["results"][0]["analyses"]:
         for path_bindings in analysis["path_bindings"].values():
             for path_binding in path_bindings:
@@ -28,9 +29,15 @@ async def pathfinder_pass_fail_analysis(
                                 matching_path_nodes.add(edge["object"])
                 if len(matching_path_nodes) >= minimum_required_path_nodes:
                     found_path_nodes.add(",".join(matching_path_nodes))
+                elif len(matching_path_nodes) > 0:
+                    unmatched_paths.add(",".join(matching_path_nodes))
+
     if len(found_path_nodes) > 0:
         report[agent]["status"] = "PASSED"
-        report[agent]["expected_path_nodes"] = "; ".join(found_path_nodes)
+        report[agent]["expected_nodes_found"] = "; ".join(found_path_nodes)
+    elif len(unmatched_paths) > 0:
+        report[agent]["status"] = "FAILED"
+        report[agent]["expected_nodes_found"] = "; ".join(unmatched_paths)
     else:
         report[agent]["status"] = "FAILED"
 
