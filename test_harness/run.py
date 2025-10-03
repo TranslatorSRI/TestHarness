@@ -109,12 +109,12 @@ async def run_tests(
                                     )
                                     for path_node in asset.path_nodes
                                 ]
-                            )
+                            ),
                         }
                     for agent, response in test_query["responses"].items():
-                        # report["result"][agent] = {
-                        #     "trapi_validation": "NA",
-                        # }
+                        report["result"][agent] = {
+                            # "trapi_validation": "NA",
+                        }
                         agent_report = report["result"][agent]
                         try:
                             if response["status_code"] > 299:
