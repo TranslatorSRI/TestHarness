@@ -25,7 +25,7 @@ env_map = {
 }
 
 
-class QueryRunner(BaseQueryRunner):
+class QueryRunner:
     """Translator Test Query Runner."""
 
     def __init__(self, logger: logging.Logger):
