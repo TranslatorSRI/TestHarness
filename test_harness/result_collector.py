@@ -2,7 +2,12 @@
 
 import logging
 from typing import Union
-from translator_testing_model.datamodel.pydanticmodel import TestAsset, TestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestAsset,
+    PathfinderTestAsset,
+    TestCase,
+    PathfinderTestCase,
+)
 
 from test_harness.utils import get_tag
 
@@ -43,8 +48,8 @@ class ResultCollector:
 
     def collect_result(
         self,
-        test: TestCase,
-        asset: TestAsset,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
         report: dict,
         parent_pk: Union[str, None],
         url: str,

@@ -4,9 +4,12 @@ import asyncio
 import httpx
 import logging
 import time
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+)
 from test_harness.runner.smart_api_registry import retrieve_registry_from_smartapi
 from test_harness.runner.generate_query import generate_query
 from test_harness.utils import hash_test_asset, normalize_curies
@@ -78,64 +81,6 @@ class QueryRunner:
                 }
 
         return query_hash, responses, pks
-
-    async def run_queries(
-        self,
-        test_case: TestCase,
-        concurrency: int = 1,  # for performance testing
-    ) -> Tuple[Dict[int, dict], Dict[str, str]]:
-        """Run all queries specified in a Test Case."""
-        # normalize all the curies in a test case
-        normalized_curies = await normalize_curies(test_case, self.logger)
-        # TODO: figure out the right way to handle input category wrt normalization
-
-        queries: Dict[int, dict] = {}
-        for test_asset in test_case.test_assets:
-            test_asset.input_id = normalized_curies[test_asset.input_id]
-            # TODO: make this better
-            asset_hash = hash_test_asset(test_asset)
-            if asset_hash not in queries:
-                # generate query
-                try:
-                    query = generate_query(test_asset)
-                    queries[asset_hash] = {
-                        "query": query,
-                        "responses": {},
-                        "pks": {},
-                    }
-                except Exception as e:
-                    self.logger.warning(e)
-
-        # send queries to a single type of component at a time
-        for component in test_case.components:
-            # component = "ara"
-            # loop over all specified components, i.e. ars, ara, kp, utilities
-            semaphore = asyncio.Semaphore(concurrency)
-            self.logger.info(
-                f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
-            )
-            tasks = [
-                asyncio.create_task(
-                    self.run_query(
-                        query_hash,
-                        semaphore,
-                        query["query"],
-                        service["url"],
-                        service["infores"],
-                    )
-                )
-                for service in self.registry[env_map[test_case.test_env]][component]
-                for query_hash, query in queries.items()
-            ]
-            try:
-                all_responses = await asyncio.gather(*tasks, return_exceptions=True)
-                for query_hash, responses, pks in all_responses:
-                    queries[query_hash]["responses"].update(responses)
-                    queries[query_hash]["pks"].update(pks)
-            except Exception as e:
-                self.logger.error(f"Something went wrong with the queries: {e}")
-
-        return queries, normalized_curies
 
     async def get_ars_child_response(
         self,
@@ -306,3 +251,69 @@ class QueryRunner:
             }
 
         return responses, pks
+
+    async def run_queries(
+        self,
+        test_case: Union[TestCase, PathfinderTestCase],
+        concurrency: int = 1,  # for performance testing
+    ) -> Tuple[Dict[int, dict], Dict[str, str]]:
+        """Run all queries specified in a Test Case."""
+        # normalize all the curies in a test case
+        normalized_curies = await normalize_curies(test_case, self.logger)
+        # TODO: figure out the right way to handle input category wrt normalization
+
+        queries: Dict[int, dict] = {}
+        for test_asset in test_case.test_assets:
+            if isinstance(test_case, PathfinderTestCase):
+                test_asset.source_input_id = normalized_curies[
+                    test_asset.source_input_id
+                ]
+                test_asset.target_input_id = normalized_curies[
+                    test_asset.target_input_id
+                ]
+            else:
+                test_asset.input_id = normalized_curies[test_asset.input_id]
+            # TODO: make this better
+            asset_hash = hash_test_asset(test_asset)
+            if asset_hash not in queries:
+                # generate query
+                try:
+                    query = generate_query(test_asset)
+                    queries[asset_hash] = {
+                        "query": query,
+                        "responses": {},
+                        "pks": {},
+                    }
+                except Exception as e:
+                    self.logger.warning(e)
+
+        # send queries to a single type of component at a time
+        for component in test_case.components:
+            # component = "ara"
+            # loop over all specified components, i.e. ars, ara, kp, utilities
+            semaphore = asyncio.Semaphore(concurrency)
+            self.logger.info(
+                f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
+            )
+            tasks = [
+                asyncio.create_task(
+                    self.run_query(
+                        query_hash,
+                        semaphore,
+                        query["query"],
+                        service["url"],
+                        service["infores"],
+                    )
+                )
+                for service in self.registry[env_map[test_case.test_env]][component]
+                for query_hash, query in queries.items()
+            ]
+            try:
+                all_responses = await asyncio.gather(*tasks, return_exceptions=True)
+                for query_hash, responses, pks in all_responses:
+                    queries[query_hash]["responses"].update(responses)
+                    queries[query_hash]["pks"].update(pks)
+            except Exception as e:
+                self.logger.error(f"Something went wrong with the queries: {e}")
+
+        return queries, normalized_curies

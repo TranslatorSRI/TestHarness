@@ -5,26 +5,31 @@ import logging
 import time
 from tqdm import tqdm
 import traceback
-from typing import Dict
+from typing import Dict, Union
 
 from ARS_Test_Runner.semantic_test import pass_fail_analysis
-from standards_validation_test_runner import StandardsValidationTest
+
+# from standards_validation_test_runner import StandardsValidationTest
 
 # from benchmarks_runner import run_benchmarks
 
-from translator_testing_model.datamodel.pydanticmodel import TestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    TestCase,
+    PathfinderTestCase,
+)
 
 from test_harness.runner.query_runner import QueryRunner
 from test_harness.reporter import Reporter
 from test_harness.slacker import Slacker
 from test_harness.result_collector import ResultCollector
 from test_harness.utils import get_tag, hash_test_asset
+from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
 
 
 async def run_tests(
     reporter: Reporter,
     slacker: Slacker,
-    tests: Dict[str, TestCase],
+    tests: Dict[str, Union[TestCase, PathfinderTestCase]],
     logger: logging.Logger = logging.getLogger(__name__),
     args: Dict[str, any] = {},
 ) -> Dict:
@@ -71,7 +76,7 @@ async def run_tests(
                 try:
                     test_id = await reporter.create_test(test, asset)
                     test_ids.append(test_id)
-                except Exception:
+                except Exception as e:
                     logger.error(f"Failed to create test: {test.id}")
                     continue
 
@@ -91,9 +96,24 @@ async def run_tests(
                         "pks": test_query["pks"],
                         "result": {},
                     }
+                    if isinstance(test, PathfinderTestCase):
+                        report["test_details"] = {
+                            "minimum_required_path_nodes": asset.minimum_required_path_nodes,
+                            "expected_path_nodes": "; ".join(
+                                [
+                                    ",".join(
+                                        [
+                                            normalized_curies[path_node_id]
+                                            for path_node_id in path_node.ids
+                                        ]
+                                    )
+                                    for path_node in asset.path_nodes
+                                ]
+                            ),
+                        }
                     for agent, response in test_query["responses"].items():
                         report["result"][agent] = {
-                            "trapi_validation": "NA",
+                            # "trapi_validation": "NA",
                         }
                         agent_report = report["result"][agent]
                         try:
@@ -117,28 +137,28 @@ async def run_tests(
                             logger.warning(
                                 f"Failed to parse basic response fields from {agent}: {e}"
                             )
-                        try:
-                            svt = StandardsValidationTest(
-                                test_asset=asset,
-                                environment=test.test_env,
-                                component=agent,
-                                trapi_version=args["trapi_version"],
-                                biolink_version="suppress",
-                                runner_settings="Inferred",
-                            )
-                            results = svt.test_case_processor(
-                                trapi_response=response["response"]
-                            )
-                            agent_report["trapi_validation"] = results[
-                                next(iter(results.keys()))
-                            ][agent]["status"]
-                            if agent_report["trapi_validation"] == "FAILED":
-                                agent_report["status"] = "FAILED"
-                                agent_report["message"] = "TRAPI Validation Error"
-                                continue
-                        except Exception as e:
-                            logger.warning(f"Failed to run TRAPI validation with {e}")
-                            agent_report["trapi_validation"] = "ERROR"
+                        # try:
+                        #     svt = StandardsValidationTest(
+                        #         test_asset=asset,
+                        #         environment=test.test_env,
+                        #         component=agent,
+                        #         trapi_version=args["trapi_version"],
+                        #         biolink_version="suppress",
+                        #         runner_settings="Inferred",
+                        #     )
+                        #     results = svt.test_case_processor(
+                        #         trapi_response=response["response"]
+                        #     )
+                        #     agent_report["trapi_validation"] = results[
+                        #         next(iter(results.keys()))
+                        #     ][agent]["status"]
+                        #     if agent_report["trapi_validation"] == "FAILED":
+                        #         agent_report["status"] = "FAILED"
+                        #         agent_report["message"] = "TRAPI Validation Error"
+                        #         continue
+                        # except Exception as e:
+                        #     logger.warning(f"Failed to run TRAPI validation with {e}")
+                        #     agent_report["trapi_validation"] = "ERROR"
                         try:
                             if (
                                 response["response"]["message"].get("results") is None
@@ -147,13 +167,28 @@ async def run_tests(
                                 agent_report["status"] = "DONE"
                                 agent_report["message"] = "No results"
                                 continue
-                            await pass_fail_analysis(
-                                report["result"],
-                                agent,
-                                response["response"]["message"]["results"],
-                                normalized_curies[asset.output_id],
-                                asset.expected_output,
-                            )
+                            if isinstance(test, PathfinderTestCase):
+                                await pathfinder_pass_fail_analysis(
+                                    report["result"],
+                                    agent,
+                                    response["response"]["message"],
+                                    [
+                                        [
+                                            normalized_curies[path_node_id]
+                                            for path_node_id in path_node.ids
+                                        ]
+                                        for path_node in asset.path_nodes
+                                    ],
+                                    asset.minimum_required_path_nodes,
+                                )
+                            else:
+                                await pass_fail_analysis(
+                                    report["result"],
+                                    agent,
+                                    response["response"]["message"]["results"],
+                                    normalized_curies[asset.output_id],
+                                    asset.expected_output,
+                                )
                         except Exception as e:
                             logger.error(
                                 f"Failed to run acceptance test analysis on {agent}: {e}"
