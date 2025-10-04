@@ -116,7 +116,7 @@ def cli():
     parser.add_argument(
         "--trapi_version",
         type=str,
-        default="1.5.0",
+        default="1.6.0",
         help="TRAPI (SemVer) version assumed for testing (1.5.0, if not given)",
     )
 
