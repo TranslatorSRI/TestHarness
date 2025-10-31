@@ -23,9 +23,7 @@ def retrieve_registry_from_smartapi(
     """
     with httpx.Client(timeout=30) as client:
         try:
-            response = client.get(
-                "https://smart-api.info/api/query?limit=1000&q=TRAPI"
-            )
+            response = client.get("https://smart-api.info/api/query?limit=1000&q=TRAPI")
             response.raise_for_status()
         except httpx.HTTPError as e:
             LOGGER.error("Failed to query smart api. Exiting...")

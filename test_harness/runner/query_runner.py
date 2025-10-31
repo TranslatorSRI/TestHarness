@@ -187,9 +187,7 @@ class QueryRunner:
             current_time = time.time()
             while current_time - start_time <= MAX_QUERY_TIME:
                 with httpx.Client(timeout=30) as client:
-                    res = client.get(
-                        f"{base_url}/ars/api/messages/{parent_pk}?trace=y"
-                    )
+                    res = client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
                     res.raise_for_status()
                     response = res.json()
                     status = response.get("status")
@@ -208,9 +206,7 @@ class QueryRunner:
                             # add final ars pk
                             pks["ars"] = merged_pk
                             # get full merged pk
-                            res = client.get(
-                                f"{base_url}/ars/api/messages/{merged_pk}"
-                            )
+                            res = client.get(f"{base_url}/ars/api/messages/{merged_pk}")
                             res.raise_for_status()
                             merged_message = res.json()
                             responses["ars"] = {

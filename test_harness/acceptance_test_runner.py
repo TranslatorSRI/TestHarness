@@ -1,4 +1,5 @@
 """Acceptance Test Pass Fail Analysis Runner."""
+
 from typing import Any, Dict, List
 
 
@@ -9,7 +10,7 @@ def run_acceptance_pass_fail_analysis(
     out_curie: str,
     expect_output: str,
 ):
-    """"Function to run pass fail analysis on individual results."""
+    """ "Function to run pass fail analysis on individual results."""
     # get the top_n result's ids
     try:
         all_ids = []
@@ -19,13 +20,13 @@ def run_acceptance_pass_fail_analysis(
                     ids = str(val["id"])
                     if ids not in all_ids:
                         all_ids.append(ids)
-        if expect_output == 'TopAnswer':
+        if expect_output == "TopAnswer":
             n_perc_res = results[0:30]
-        elif expect_output == 'Acceptable':
-            n_perc_res = results[0:int(len(results) * (float(50) / 100))]
-        elif expect_output == 'BadButForgivable':
-            n_perc_res = results[int(len(results) * (float(50) / 100)):]
-        elif expect_output == 'NeverShow':
+        elif expect_output == "Acceptable":
+            n_perc_res = results[0 : int(len(results) * (float(50) / 100))]
+        elif expect_output == "BadButForgivable":
+            n_perc_res = results[int(len(results) * (float(50) / 100)) :]
+        elif expect_output == "NeverShow":
             n_perc_res = results
         else:
             error_mesg = {
@@ -48,75 +49,75 @@ def run_acceptance_pass_fail_analysis(
                 for c in nb:
                     the_id = c.get("id")
                 if the_id == out_curie:
-                    if 'sugeno' in res.keys() and 'rank' in res.keys():
-                        ars_score = res['sugeno']
-                        ars_rank = res['rank']
+                    if "sugeno" in res.keys() and "rank" in res.keys():
+                        ars_score = res["sugeno"]
+                        ars_rank = res["rank"]
                         ara_score = None
                         ara_rank = None
                     else:
                         ars_score = None
                         ars_rank = None
-                        for anal in res['analyses']:
-                            if 'score' in anal.keys():
-                                ara_score = anal['score']
+                        for anal in res["analyses"]:
+                            if "score" in anal.keys():
+                                ara_score = anal["score"]
                             else:
                                 ara_score = None
                         ara_rank = idx + 1
 
-                    report[agent]['actual_output'] = {}
+                    report[agent]["actual_output"] = {}
                     if ars_score is not None and ars_rank is not None:
-                        report[agent]['actual_output']['ars_score'] = ars_score
-                        report[agent]['actual_output']['ars_rank'] = ars_rank
+                        report[agent]["actual_output"]["ars_score"] = ars_score
+                        report[agent]["actual_output"]["ars_rank"] = ars_rank
 
                     if ara_score is not None and ara_rank is not None:
-                        report[agent]['actual_output']['ara_score'] = ara_score
-                        report[agent]['actual_output']['ara_rank'] = ara_rank
+                        report[agent]["actual_output"]["ara_score"] = ara_score
+                        report[agent]["actual_output"]["ara_rank"] = ara_rank
 
-        if expect_output in ['TopAnswer', 'Acceptable']:
+        if expect_output in ["TopAnswer", "Acceptable"]:
             if out_curie in n_perc_ids:
-                report[agent]['status'] = 'PASSED'
+                report[agent]["status"] = "PASSED"
             elif out_curie not in n_perc_ids:
                 if out_curie in all_ids:
-                    report[agent]['status'] = 'FAILED'
+                    report[agent]["status"] = "FAILED"
                 else:
-                    report[agent]['status'] = 'FAILED'
-                    report[agent]['actual_output'] = {}
-                    if agent == 'ars':
-                        report[agent]['actual_output']['ars_score'] = None
-                        report[agent]['actual_output']['ars_rank'] = None
+                    report[agent]["status"] = "FAILED"
+                    report[agent]["actual_output"] = {}
+                    if agent == "ars":
+                        report[agent]["actual_output"]["ars_score"] = None
+                        report[agent]["actual_output"]["ars_rank"] = None
                     else:
-                        report[agent]['actual_output']['ara_score'] = None
-                        report[agent]['actual_output']['ara_rank'] = None
+                        report[agent]["actual_output"]["ara_score"] = None
+                        report[agent]["actual_output"]["ara_rank"] = None
 
-        elif expect_output == 'BadButForgivable':
+        elif expect_output == "BadButForgivable":
             if out_curie in n_perc_ids:
-                report[agent]['status'] = 'PASSED'
+                report[agent]["status"] = "PASSED"
             elif out_curie not in n_perc_ids and out_curie in all_ids:
-                report[agent]['status'] = 'FAILED'
+                report[agent]["status"] = "FAILED"
             elif out_curie not in n_perc_ids and out_curie not in all_ids:
-                report[agent]['status'] = 'PASSED'
-                report[agent]['actual_output'] = {}
-                if agent == 'ars':
-                    report[agent]['actual_output']['ars_score'] = None
-                    report[agent]['actual_output']['ars_rank'] = None
+                report[agent]["status"] = "PASSED"
+                report[agent]["actual_output"] = {}
+                if agent == "ars":
+                    report[agent]["actual_output"]["ars_score"] = None
+                    report[agent]["actual_output"]["ars_rank"] = None
                 else:
-                    report[agent]['actual_output']['ara_score'] = None
-                    report[agent]['actual_output']['ara_rank'] = None
+                    report[agent]["actual_output"]["ara_score"] = None
+                    report[agent]["actual_output"]["ara_rank"] = None
 
-        elif expect_output == 'NeverShow':
+        elif expect_output == "NeverShow":
             if out_curie in n_perc_ids:
-                report[agent]['status'] = 'FAILED'
+                report[agent]["status"] = "FAILED"
             elif out_curie not in all_ids:
-                report[agent]['status'] = 'PASSED'
-                report[agent]['actual_output'] = {}
-                if agent == 'ars':
-                    report[agent]['actual_output']['ars_score'] = None
-                    report[agent]['actual_output']['ars_rank'] = None
+                report[agent]["status"] = "PASSED"
+                report[agent]["actual_output"] = {}
+                if agent == "ars":
+                    report[agent]["actual_output"]["ars_score"] = None
+                    report[agent]["actual_output"]["ars_rank"] = None
                 else:
-                    report[agent]['actual_output']['ara_score'] = None
-                    report[agent]['actual_output']['ara_rank'] = None
+                    report[agent]["actual_output"]["ara_score"] = None
+                    report[agent]["actual_output"]["ara_rank"] = None
     except Exception as e:
-        report[agent]['status']= 'FAILED'
-        report[agent]['message'] = f'An exception happened: {type(e), str(e)}'
+        report[agent]["status"] = "FAILED"
+        report[agent]["message"] = f"An exception happened: {type(e), str(e)}"
 
     return report

@@ -1,4 +1,5 @@
 """Translator Performance Test Runner."""
+
 import logging
 import time
 from typing import Dict
@@ -27,6 +28,7 @@ def run_locust_tests(
     target: str,
 ):
     print("Starting locust testing")
+
     class RetryPoll(Exception):
         pass
 
@@ -48,7 +50,9 @@ def run_locust_tests(
     class ARAUser(HttpUser):
         @task
         def send_query(self):
-            with self.client.post("/query", json=test_query, catch_response=True) as response:
+            with self.client.post(
+                "/query", json=test_query, catch_response=True
+            ) as response:
                 # do stuff with the response
                 if response.status_code == 200:
                     response.success()
@@ -61,10 +65,14 @@ def run_locust_tests(
             parent_pk = ""
             try:
                 print("Sending query to ARS")
-                with self.client.post("/ars/api/submit", json=test_query, catch_response=True) as response:
+                with self.client.post(
+                    "/ars/api/submit", json=test_query, catch_response=True
+                ) as response:
                     # do stuff with the response
                     if response.status_code != 201:
-                        response.failure(f"Failed to start a query: {response.content}, {response.status_code}")
+                        response.failure(
+                            f"Failed to start a query: {response.content}, {response.status_code}"
+                        )
                         return
 
                     parent_pk = response.json().get("pk", "")
@@ -79,7 +87,11 @@ def run_locust_tests(
                 while now - start_time <= 3600:
                     now = time.time()
                     try:
-                        with self.client.get(f"/ars/api/messages/{parent_pk}?trace=y", catch_response=True, name=parent_pk) as response:
+                        with self.client.get(
+                            f"/ars/api/messages/{parent_pk}?trace=y",
+                            catch_response=True,
+                            name=parent_pk,
+                        ) as response:
                             total_time = (now - start_time) * 1000
                             if response.status_code != 200:
                                 self.environment.events.request.fire(
@@ -106,7 +118,9 @@ def run_locust_tests(
                                     request_type="GET_RESPONSE",
                                     name="/ars/api/messages",
                                     response_time=total_time,
-                                    response_length=len(response.content) if response.content else 0,
+                                    response_length=(
+                                        len(response.content) if response.content else 0
+                                    ),
                                     exception=None,
                                     context=self.context(),
                                 )
@@ -177,55 +191,46 @@ def run_performance_test(test: PerformanceTestCase, test_query: Dict, host: str)
 
 
 def initialize():
-    test_asset = AcceptanceTestAsset.model_validate({
-        "id": "Asset_1",
-        "name": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
-        "description": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
-        "tags": [],
-        "test_runner_settings": [
-            "inferred"
-        ],
-        "input_id": "MONDO:0011426",
-        "input_name": "Aceruloplasminemia",
-        "input_category": "biolink:Disease",
-        "predicate_id": "biolink:treats",
-        "predicate_name": "treats",
-        "output_id": "PUBCHEM.COMPOUND:23925",
-        "output_name": "Iron (PUBCHEM)",
-        "output_category": "biolink:ChemicalEntity",
-        "association": None,
-        "qualifiers": [
-            {
-                "parameter": "biolink_qualified_predicate",
-                "value": "biolink:treats"
-            },
-            {
-                "parameter": "biolink_object_aspect_qualifier",
-                "value": ""
-            },
-            {
-                "parameter": "biolink_object_direction_qualifier",
-                "value": ""
-            }
-        ],
-        "expected_output": "NeverShow",
-        "test_issue": None,
-        "semantic_severity": None,
-        "in_v1": None,
-        "well_known": False,
-        "test_reference": None,
-        "test_metadata": {
-            "id": "1",
-            "name": None,
-            "description": None,
+    test_asset = AcceptanceTestAsset.model_validate(
+        {
+            "id": "Asset_1",
+            "name": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
+            "description": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
             "tags": [],
-            "test_runner_settings": [],
-            "test_source": "SMURF",
-            "test_reference": "https://github.com/NCATSTranslator/Feedback/issues/506",
-            "test_objective": "AcceptanceTest",
-            "test_annotations": []
+            "test_runner_settings": ["inferred"],
+            "input_id": "MONDO:0011426",
+            "input_name": "Aceruloplasminemia",
+            "input_category": "biolink:Disease",
+            "predicate_id": "biolink:treats",
+            "predicate_name": "treats",
+            "output_id": "PUBCHEM.COMPOUND:23925",
+            "output_name": "Iron (PUBCHEM)",
+            "output_category": "biolink:ChemicalEntity",
+            "association": None,
+            "qualifiers": [
+                {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+                {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+                {"parameter": "biolink_object_direction_qualifier", "value": ""},
+            ],
+            "expected_output": "NeverShow",
+            "test_issue": None,
+            "semantic_severity": None,
+            "in_v1": None,
+            "well_known": False,
+            "test_reference": None,
+            "test_metadata": {
+                "id": "1",
+                "name": None,
+                "description": None,
+                "tags": [],
+                "test_runner_settings": [],
+                "test_source": "SMURF",
+                "test_reference": "https://github.com/NCATSTranslator/Feedback/issues/506",
+                "test_objective": "AcceptanceTest",
+                "test_annotations": [],
+            },
         }
-    })
+    )
     test = PerformanceTestCase(
         id="1",
         name="ExamplePerformanceTest",

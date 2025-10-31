@@ -242,7 +242,9 @@ def run_tests(
                         test_id,
                         message,
                     )
-                    host = query_runner.registry[env_map[test.test_env]][test.components[0]][0]["url"]
+                    host = query_runner.registry[env_map[test.test_env]][
+                        test.components[0]
+                    ][0]["url"]
                     results = run_performance_test(test, test_query, host)
 
                     collector.collect_performance_result(

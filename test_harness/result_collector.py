@@ -127,13 +127,26 @@ class ResultCollector:
         for result_stat in results_stats:
             self.performance_report["stats"][host_url] = {
                 "endpoint": f"{host_url}{result_stat['name']}",
-                "num_requests": result_stat.get("num_requests", 0) - result_stat.get("num_none_requests", 0),
+                "num_requests": result_stat.get("num_requests", 0)
+                - result_stat.get("num_none_requests", 0),
                 "num_failures": result_stat.get("num_failures", 0),
                 "max_response_time": result_stat.get("max_response_time", -1),
                 "min_response_time": result_stat.get("min_response_time", -1),
-                "requests_per_second": result_stat.get("num_requests", 1) / (result_stat.get("last_request_timestamp", -1) - result_stat.get("start_time", 0)),
-                "average_response_time": result_stat.get("total_response_time") / (result_stat.get("num_requests", 0) - result_stat.get("num_none_requests", 0)),
-                "median_response_time": median_from_dict(result_stat.get("num_requests", 0) - result_stat.get("num_none_requests", 0), result_stat.get("response_times", {})),
+                "requests_per_second": result_stat.get("num_requests", 1)
+                / (
+                    result_stat.get("last_request_timestamp", -1)
+                    - result_stat.get("start_time", 0)
+                ),
+                "average_response_time": result_stat.get("total_response_time")
+                / (
+                    result_stat.get("num_requests", 0)
+                    - result_stat.get("num_none_requests", 0)
+                ),
+                "median_response_time": median_from_dict(
+                    result_stat.get("num_requests", 0)
+                    - result_stat.get("num_none_requests", 0),
+                    result_stat.get("response_times", {}),
+                ),
             }
         self.performance_report["failures"] = results.get("failures") or {}
 
