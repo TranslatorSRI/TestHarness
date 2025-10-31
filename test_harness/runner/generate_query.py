@@ -2,13 +2,13 @@
 
 import copy
 from typing import Union
+
 from translator_testing_model.datamodel.pydanticmodel import (
-    TestAsset,
     PathfinderTestAsset,
+    TestAsset,
 )
 
 from test_harness.utils import get_qualifier_constraints
-
 
 MVP1 = {
     "message": {
@@ -144,3 +144,57 @@ def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
         raise Exception(f"Unsupported predicate: {test_asset.predicate_id}")
 
     return query
+
+
+if __name__ == "__main__":
+    test_asset = TestAsset.parse_obj({
+    "id": "Asset_450",
+    "name": "NeverShow: MMP3 increases activity or abundance of Potassium ion",
+    "description": "NeverShow: MMP3 increases activity or abundance of Potassium ion",
+    "tags": [],
+    "test_runner_settings": [
+        "inferred"
+    ],
+    "input_id": "CHEBI:29103",
+    "input_name": "Potassium ion",
+    "input_category": "biolink:ChemicalEntity",
+    "predicate_id": "biolink:affects",
+    "predicate_name": "affects",
+    "output_id": "NCBIGene:4314",
+    "output_name": "MMP3",
+    "output_category": "biolink:Gene",
+    "association": None,
+    "qualifiers": [
+        {
+            "parameter": "biolink_qualified_predicate",
+            "value": "biolink:causes"
+        },
+        {
+            "parameter": "biolink_object_aspect_qualifier",
+            "value": "activity_or_abundance"
+        },
+        {
+            "parameter": "biolink_object_direction_qualifier",
+            "value": "increased"
+        }
+    ],
+    "expected_output": "NeverShow",
+    "test_issue": None,
+    "semantic_severity": None,
+    "in_v1": None,
+    "well_known": False,
+    "test_reference": None,
+    "test_metadata": {
+        "id": "1",
+        "name": None,
+        "description": None,
+        "tags": [],
+        "test_runner_settings": [],
+        "test_source": "SMURF",
+        "test_reference": "https://github.com/NCATSTranslator/Feedback/issues/740",
+        "test_objective": "AcceptanceTest",
+        "test_annotations": []
+    }
+})
+    query = generate_query(test_asset)
+    print(query)
