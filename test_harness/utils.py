@@ -1,14 +1,14 @@
 """General utilities for the Test Harness."""
 
-import httpx
 import logging
-from typing import Dict, Union, List, Tuple
+from typing import Dict, List, Tuple, Union
 
+import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
-    TestCase,
+    PathfinderTestAsset,
     PathfinderTestCase,
     TestAsset,
-    PathfinderTestAsset,
+    TestCase,
 )
 
 NODE_NORM_URL = {
@@ -19,7 +19,7 @@ NODE_NORM_URL = {
 }
 
 
-async def normalize_curies(
+def normalize_curies(
     test: Union[TestCase, PathfinderTestCase],
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict[str, Dict[str, Union[Dict[str, str], List[str]]]]:
@@ -43,9 +43,9 @@ async def normalize_curies(
         curies.add(test.test_case_input_id)
 
     normalized_curies = {}
-    async with httpx.AsyncClient() as client:
+    with httpx.Client() as client:
         try:
-            response = await client.post(
+            response = client.post(
                 node_norm + "/get_normalized_nodes",
                 json={
                     "curies": list(curies),

@@ -24,7 +24,7 @@ def url_type(arg):
     raise TypeError("Invalid URL")
 
 
-async def main(args):
+def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
@@ -47,13 +47,13 @@ async def main(args):
         refresh_token=args.get("reporter_access_token"),
         logger=logger,
     )
-    await reporter.get_auth()
-    await reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
+    reporter.get_auth()
+    reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
     slacker = Slacker()
     report = await run_tests(reporter, slacker, tests, logger, args)
 
     logger.info("Finishing up test run...")
-    await reporter.finish_test_run()
+    reporter.finish_test_run()
 
     if args["json_output"]:
         # logger.info("Saving report as JSON...")
