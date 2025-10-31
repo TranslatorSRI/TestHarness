@@ -1,16 +1,22 @@
 """Translator SRI Automated Test Harness."""
 
-from argparse import ArgumentParser
-import asyncio
+from gevent import monkey
+
+monkey.patch_all()
+
 import json
-from setproctitle import setproctitle
+from argparse import ArgumentParser
+import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from test_harness.run import run_tests
+from setproctitle import setproctitle
+
 from test_harness.download import download_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.reporter import Reporter
+from test_harness.result_collector import ResultCollector
+from test_harness.run import run_tests
 from test_harness.slacker import Slacker
 
 setproctitle("TestHarness")
@@ -50,7 +56,46 @@ def main(args):
     reporter.get_auth()
     reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
     slacker = Slacker()
-    report = await run_tests(reporter, slacker, tests, logger, args)
+    collector = ResultCollector(logger)
+    queried_envs = set()
+    for test in tests.values():
+        queried_envs.add(test.test_env)
+    slacker.post_notification(
+        messages=[
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+        ]
+    )
+    start_time = time.time()
+    run_tests(tests, reporter, collector, logger, args)
+
+    slacker.post_notification(
+        messages=[
+            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}\n<{ir_url}|View in the Information Radiator>\n{result_summary}""".format(
+                test_suite=args["suite"],
+                duration=round(time.time() - start_time, 2),
+                envs=(",").join(list(queried_envs)),
+                ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
+                result_summary=collector.dump_result_summary(),
+            )
+        ]
+    )
+    if collector.has_acceptance_results:
+        slacker.upload_test_results_file(
+            reporter.test_name,
+            "json",
+            collector.acceptance_stats,
+        )
+        slacker.upload_test_results_file(
+            reporter.test_name,
+            "csv",
+            collector.acceptance_csv,
+        )
+    if collector.has_performance_results:
+        slacker.upload_test_results_file(
+            reporter.test_name,
+            "json",
+            collector.performance_stats,
+        )
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()
@@ -58,7 +103,7 @@ def main(args):
     if args["json_output"]:
         # logger.info("Saving report as JSON...")
         with open("test_report.json", "w") as f:
-            json.dump(report, f)
+            json.dump(collector.acceptance_report, f)
 
     return logger.info("All tests have completed!")
 
@@ -135,7 +180,7 @@ def cli():
     )
 
     args = parser.parse_args()
-    asyncio.run(main(vars(args)))
+    main(vars(args))
 
 
 if __name__ == "__main__":
