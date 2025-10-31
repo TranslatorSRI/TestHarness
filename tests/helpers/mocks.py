@@ -1,4 +1,7 @@
+from typing import Dict
+from translator_testing_model.datamodel.pydanticmodel import PathfinderTestAsset, PathfinderTestCase, TestAsset, TestCase
 from test_harness.reporter import Reporter
+from test_harness.result_collector import ResultCollector
 from test_harness.slacker import Slacker
 from test_harness.runner.query_runner import QueryRunner
 
@@ -10,34 +13,34 @@ class MockReporter(Reporter):
         self.test_run_id = 1
         pass
 
-    async def get_auth(self):
+    def get_auth(self):
         pass
 
-    async def create_test_run(self, test_env, suite_name):
+    def create_test_run(self, test_env, suite_name):
         return 1
 
-    async def create_test(self, test, asset):
+    def create_test(self, test, asset):
         return 2
 
-    async def upload_labels(self, test_id, labels):
+    def upload_labels(self, test_id, labels):
         pass
 
-    async def upload_logs(self, test_id, logs):
+    def upload_logs(self, test_id, logs):
         pass
 
-    async def upload_artifact_references(self, test_id, artifact_references):
+    def upload_artifact_references(self, test_id, artifact_references):
         pass
 
-    async def upload_screenshots(self, test_id, screenshot):
+    def upload_screenshots(self, test_id, screenshot):
         pass
 
-    async def upload_log(self, test_id, message):
+    def upload_log(self, test_id, message):
         pass
 
-    async def finish_test(self, test_id, result):
+    def finish_test(self, test_id, result):
         return result
 
-    async def finish_test_run(self):
+    def finish_test_run(self):
         pass
 
 
@@ -45,16 +48,16 @@ class MockSlacker(Slacker):
     def __init__(self):
         pass
 
-    async def post_notification(self, messages=[]):
+    def post_notification(self, messages=[]):
         print(f"posting messages: {messages}")
         pass
 
-    async def upload_test_results_file(self, filename, extension, results):
+    def upload_test_results_file(self, filename, extension, results):
         pass
 
 
 class MockQueryRunner(QueryRunner):
-    async def retrieve_registry(self, trapi_version: str):
+    def retrieve_registry(self, trapi_version: str):
         self.registry = {
             "staging": {
                 "ars": [
@@ -67,3 +70,14 @@ class MockQueryRunner(QueryRunner):
                 ],
             },
         }
+
+
+class MockResultCollector(ResultCollector):
+    def collect_acceptance_result(self, test: TestCase | PathfinderTestCase, asset: TestAsset | PathfinderTestAsset, report: dict, parent_pk: str | None, url: str):
+        return super().collect_acceptance_result(test, asset, report, parent_pk, url)
+    
+    def collect_performance_result(self, test: TestCase | PathfinderTestCase, asset: TestAsset | PathfinderTestAsset, url: str, host_url: str, results: Dict):
+        return super().collect_performance_result(test, asset, url, host_url, results)
+    
+    def dump_result_summary(self):
+        return super().dump_result_summary()
