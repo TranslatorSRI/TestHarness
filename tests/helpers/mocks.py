@@ -1,5 +1,10 @@
 from typing import Dict
-from translator_testing_model.datamodel.pydanticmodel import PathfinderTestAsset, PathfinderTestCase, TestAsset, TestCase
+from translator_testing_model.datamodel.pydanticmodel import (
+    PathfinderTestAsset,
+    PathfinderTestCase,
+    TestAsset,
+    TestCase,
+)
 from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.slacker import Slacker
@@ -73,11 +78,25 @@ class MockQueryRunner(QueryRunner):
 
 
 class MockResultCollector(ResultCollector):
-    def collect_acceptance_result(self, test: TestCase | PathfinderTestCase, asset: TestAsset | PathfinderTestAsset, report: dict, parent_pk: str | None, url: str):
+    def collect_acceptance_result(
+        self,
+        test: TestCase | PathfinderTestCase,
+        asset: TestAsset | PathfinderTestAsset,
+        report: dict,
+        parent_pk: str | None,
+        url: str,
+    ):
         return super().collect_acceptance_result(test, asset, report, parent_pk, url)
-    
-    def collect_performance_result(self, test: TestCase | PathfinderTestCase, asset: TestAsset | PathfinderTestAsset, url: str, host_url: str, results: Dict):
+
+    def collect_performance_result(
+        self,
+        test: TestCase | PathfinderTestCase,
+        asset: TestAsset | PathfinderTestAsset,
+        url: str,
+        host_url: str,
+        results: Dict,
+    ):
         return super().collect_performance_result(test, asset, url, host_url, results)
-    
+
     def dump_result_summary(self):
         return super().dump_result_summary()
