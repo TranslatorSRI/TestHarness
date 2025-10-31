@@ -2,7 +2,7 @@
 
 from translator_testing_model.datamodel.pydanticmodel import TestSuite
 
-example_test_cases = TestSuite.parse_obj(
+example_test_cases = TestSuite.model_validate(
     {
         "id": "TestSuite_1",
         "name": None,
@@ -110,7 +110,6 @@ example_test_cases = TestSuite.parse_obj(
                 "description": "imatinib to asthma",
                 "tags": [],
                 "test_runner_settings": ["pathfinder"],
-                "query_type": None,
                 "test_assets": [
                     {
                         "id": "PTFQ_1",
@@ -136,31 +135,10 @@ example_test_cases = TestSuite.parse_obj(
                             {"ids": ["NCBIGene:4254"], "name": "SCF-1"},
                             {"ids": ["CL:0000097"], "name": "Mast Cell"},
                         ],
-                        "association": None,
-                        "qualifiers": None,
                         "expected_output": "TopAnswer",
-                        "test_issue": None,
-                        "semantic_severity": None,
-                        "in_v1": None,
-                        "well_known": False,
-                        "test_reference": None,
-                        "test_metadata": {
-                            "id": "1",
-                            "name": None,
-                            "description": None,
-                            "tags": [],
-                            "test_runner_settings": [],
-                            "test_source": "SMURF",
-                            "test_reference": None,
-                            "test_objective": "AcceptanceTest",
-                            "test_annotations": [],
-                        },
                     }
                 ],
-                "preconditions": [],
-                "trapi_template": None,
                 "test_case_objective": "AcceptanceTest",
-                "test_case_source": None,
                 "components": ["ars"],
                 "test_env": "ci",
             },

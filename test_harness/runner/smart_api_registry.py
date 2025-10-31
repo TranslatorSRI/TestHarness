@@ -1,16 +1,16 @@
 """KP registry."""
 
-import asyncio
-from collections import defaultdict
-import httpx
 import json
 import logging
 import re
+from collections import defaultdict
+
+import httpx
 
 LOGGER = logging.getLogger(__name__)
 
 
-async def retrieve_registry_from_smartapi(
+def retrieve_registry_from_smartapi(
     target_trapi_version="1.6.0",
 ):
     """Returns a dict of smart api service endpoints defined with a dict like
@@ -21,11 +21,9 @@ async def retrieve_registry_from_smartapi(
             "version": version,
     }
     """
-    async with httpx.AsyncClient(timeout=30) as client:
+    with httpx.Client(timeout=30) as client:
         try:
-            response = await client.get(
-                "https://smart-api.info/api/query?limit=1000&q=TRAPI"
-            )
+            response = client.get("https://smart-api.info/api/query?limit=1000&q=TRAPI")
             response.raise_for_status()
         except httpx.HTTPError as e:
             LOGGER.error("Failed to query smart api. Exiting...")
@@ -122,5 +120,5 @@ async def retrieve_registry_from_smartapi(
 
 
 if __name__ == "__main__":
-    registry = asyncio.run(retrieve_registry_from_smartapi())
+    registry = retrieve_registry_from_smartapi()
     print(json.dumps(registry))

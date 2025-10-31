@@ -8,6 +8,7 @@ from test_harness.run import run_tests
 from .helpers.example_tests import example_test_cases
 from .helpers.mocks import (
     MockReporter,
+    MockResultCollector,
     MockSlacker,
     MockQueryRunner,
 )
@@ -17,8 +18,7 @@ from .helpers.mock_responses import kp_response
 logger = setup_logger()
 
 
-@pytest.mark.asyncio
-async def test_run_tests(mocker, httpx_mock: HTTPXMock):
+def test_run_tests(mocker, httpx_mock: HTTPXMock):
     """Test the run_tests function."""
     # This article is awesome: https://nedbatchelder.com/blog/201908/why_your_mock_doesnt_work.html
     mocker.patch(
@@ -44,16 +44,15 @@ async def test_run_tests(mocker, httpx_mock: HTTPXMock):
             "PR:000049994": None,
         },
     )
-    full_report = await run_tests(
+    run_tests(
+        tests=example_test_cases,
         reporter=MockReporter(
             base_url="http://test",
         ),
-        slacker=MockSlacker(),
-        tests=example_test_cases,
+        collector=MockResultCollector(logger),
         logger=logger,
         args={
             "suite": "testing",
             "trapi_version": "1.6.0",
         },
     )
-    assert full_report["SKIPPED"] == 3

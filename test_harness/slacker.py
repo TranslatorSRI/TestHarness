@@ -1,10 +1,11 @@
 """Slack notification integration class."""
 
-import httpx
 import json
 import os
-from slack_sdk import WebClient
 import tempfile
+
+import httpx
+from slack_sdk import WebClient
 
 
 class Slacker:
@@ -18,7 +19,7 @@ class Slacker:
         slack_token = token if token is not None else os.getenv("SLACK_TOKEN")
         self.client = WebClient(slack_token)
 
-    async def post_notification(self, messages=[]):
+    def post_notification(self, messages=[]):
         """Post a notification to Slack."""
         # https://gist.github.com/mrjk/079b745c4a8a118df756b127d6499aa0
         blocks = []
@@ -32,8 +33,8 @@ class Slacker:
                     },
                 }
             )
-        async with httpx.AsyncClient() as client:
-            res = await client.post(
+        with httpx.Client() as client:
+            res = client.post(
                 url=self.url,
                 json={
                     "text": ", ".join(block["text"]["text"] for block in blocks),
@@ -41,7 +42,7 @@ class Slacker:
                 },
             )
 
-    async def upload_test_results_file(self, filename, extension, results):
+    def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""
         with tempfile.TemporaryDirectory() as td:
             tmp_path = os.path.join(td, f"{filename}.{extension}")

@@ -1,25 +1,25 @@
 """Download tests."""
 
 import glob
-import httpx
 import io
 import json
 import logging
-from pathlib import Path
 import tempfile
-from typing import List, Union, Dict
 import zipfile
+from pathlib import Path
+from typing import Dict, List, Union
 
+import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
-    TestCase,
     PathfinderTestCase,
+    TestCase,
     TestSuite,
 )
 
 
 def download_tests(
     suite: Union[str, List[str]],
-    url: Path,
+    url: str,
     logger: logging.Logger,
 ) -> Dict[str, Union[TestCase, PathfinderTestCase]]:
     """Download tests from specified location."""
@@ -87,5 +87,15 @@ def download_tests(
     #     test.test_case_type = "acceptance"
     # tests = all_tests
     # tests = list(filter((lambda x: x for x in all_tests for asset in x.test_assets if asset.output_id), all_tests))
-    logger.info(f"Passing along {len(test_suite.test_cases)} queries")
+    logger.info(f"Passing along {len(test_suite.test_cases.keys())} queries")
     return test_suite.test_cases
+
+
+if __name__ == "__main__":
+    tests = download_tests(
+        "performance_tests",
+        "https://github.com/NCATSTranslator/Tests/archive/refs/heads/performance_tests.zip",
+        logging.Logger("tester"),
+    )
+    for test_case_id, test in tests.items():
+        print(type(test))

@@ -1,13 +1,13 @@
-from typing import Dict, Union, List
+from typing import Any, Dict, List
 
 
-async def pathfinder_pass_fail_analysis(
-    report: Dict[str, any],
+def pathfinder_pass_fail_analysis(
+    report: Dict[str, Any],
     agent: str,
-    message: Dict[str, any],
+    message: Dict[str, Any],
     path_nodes: List[List[str]],
     minimum_required_path_nodes: int,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     found_path_nodes = set()
     unmatched_paths = set()
     for analysis in message["results"][0]["analyses"]:
