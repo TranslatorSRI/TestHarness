@@ -1,16 +1,17 @@
 """Information Radiator Reporter."""
 
-from datetime import datetime
-import httpx
 import logging
 import os
+from datetime import datetime
 from typing import List, Union
 
+import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
-    TestCase,
-    PathfinderTestCase,
-    TestAsset,
     PathfinderTestAsset,
+    PathfinderTestCase,
+    PerformanceTestCase,
+    TestAsset,
+    TestCase,
 )
 
 
@@ -32,10 +33,10 @@ class Reporter:
         self.test_name = ""
         self.logger = logger
 
-    async def get_auth(self):
+    def get_auth(self):
         """Get access token for subsequent calls."""
-        async with httpx.AsyncClient() as client:
-            res = await client.post(
+        with httpx.Client() as client:
+            res = client.post(
                 url=f"{self.base_path}/api/iam/v1/auth/refresh",
                 json={
                     "refreshToken": self.refresh_token,
@@ -43,16 +44,16 @@ class Reporter:
             )
             res.raise_for_status()
             auth_response = res.json()
-        self.authenticated_client = httpx.AsyncClient(
+        self.authenticated_client = httpx.Client(
             headers={
                 "Authorization": f"Bearer {auth_response['authToken']}",
             }
         )
 
-    async def create_test_run(self, test_env, suite_name):
+    def create_test_run(self, test_env, suite_name):
         """Create a test run in the IR."""
         self.test_name = f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
-        res = await self.authenticated_client.post(
+        res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs",
             json={
                 "name": self.test_name,
@@ -68,9 +69,9 @@ class Reporter:
         self.test_run_id = res_json["id"]
         return self.test_run_id
 
-    async def create_test(
+    def create_test(
         self,
-        test: Union[TestCase, PathfinderTestCase],
+        test: Union[TestCase, PathfinderTestCase, PerformanceTestCase],
         asset: Union[TestAsset, PathfinderTestAsset],
     ):
         """Create a test in the IR."""
@@ -95,7 +96,7 @@ class Reporter:
                 },
             ],
         }
-        if isinstance(test, TestCase) and isinstance(asset, TestAsset):
+        if isinstance(test, PerformanceTestCase) and isinstance(asset, TestAsset):
             test_json["labels"].extend(
                 [
                     {
@@ -103,10 +104,14 @@ class Reporter:
                         "value": asset.input_id,
                     },
                     {
-                        "key": "OutputCurie",
-                        "value": asset.output_id,
+                        "key": "TestRunTime",
+                        "value": test.test_run_time,
                     },
-                ]
+                    {
+                        "key": "UserSpawnRate",
+                        "value": test.spawn_rate,
+                    },
+                ],
             )
         elif isinstance(test, PathfinderTestCase) and isinstance(
             asset, PathfinderTestAsset
@@ -123,9 +128,23 @@ class Reporter:
                     },
                 ]
             )
+        elif isinstance(test, TestCase) and isinstance(asset, TestAsset):
+            test_json["labels"].extend(
+                [
+                    {
+                        "key": "InputCurie",
+                        "value": asset.input_id,
+                    },
+                    {
+                        "key": "OutputCurie",
+                        "value": asset.output_id,
+                    },
+                ]
+            )
         else:
+            print("made it to the error section")
             raise Exception
-        res = await self.authenticated_client.post(
+        res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
             json=test_json,
         )
@@ -133,10 +152,10 @@ class Reporter:
         res_json = res.json()
         return res_json["id"]
 
-    async def upload_labels(self, test_id: int, labels: List[dict]):
+    def upload_labels(self, test_id: int, labels: List[dict]):
         """Upload labels to the IR."""
         self.logger.info(labels)
-        res = await self.authenticated_client.put(
+        res = self.authenticated_client.put(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/labels",
             json={
                 "items": labels,
@@ -144,9 +163,9 @@ class Reporter:
         )
         res.raise_for_status()
 
-    async def upload_logs(self, test_id: int, logs: List[str]):
+    def upload_logs(self, test_id: int, logs: List[str]):
         """Upload logs to the IR."""
-        res = await self.authenticated_client.post(
+        res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
             json=[
                 {
@@ -160,17 +179,17 @@ class Reporter:
         )
         res.raise_for_status()
 
-    async def upload_artifact_references(self, test_id, artifact_references):
+    def upload_artifact_references(self, test_id, artifact_references):
         """Upload artifact references to the IR."""
-        res = await self.authenticated_client.put(
+        res = self.authenticated_client.put(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/artifact-references",
             json=artifact_references,
         )
         res.raise_for_status()
 
-    async def upload_screenshot(self, test_id, screenshot):
+    def upload_screenshot(self, test_id, screenshot):
         """Upload screenshots to the IR."""
-        res = await self.authenticated_client.post(
+        res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}/screenshots",
             headers={
                 "Content-Type": "image/png",
@@ -180,9 +199,9 @@ class Reporter:
         )
         res.raise_for_status()
 
-    async def upload_log(self, test_id, message):
+    def upload_log(self, test_id, message):
         """Upload logs to the IR."""
-        res = await self.authenticated_client.post(
+        res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
             json=[
                 {
@@ -195,9 +214,9 @@ class Reporter:
         )
         res.raise_for_status()
 
-    async def finish_test(self, test_id, result):
+    def finish_test(self, test_id, result):
         """Set the final status of a test."""
-        res = await self.authenticated_client.put(
+        res = self.authenticated_client.put(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}",
             json={
                 "result": result,
@@ -208,9 +227,9 @@ class Reporter:
         res_json = res.json()
         return res_json["result"]
 
-    async def finish_test_run(self):
+    def finish_test_run(self):
         """Set the final status of a test run."""
-        res = await self.authenticated_client.put(
+        res = self.authenticated_client.put(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}",
             json={
                 "endedAt": datetime.now().astimezone().isoformat(),
