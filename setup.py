@@ -7,7 +7,7 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="sri-test-harness",
-    version="0.5.0",
+    version="0.5.1",
     author="Max Wang",
     author_email="max@covar.com",
     url="https://github.com/TranslatorSRI/TestHarness",
