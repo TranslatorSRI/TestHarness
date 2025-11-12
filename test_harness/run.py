@@ -37,7 +37,7 @@ def run_tests(
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=args["trapi_version"])
     # loop over all tests
-    for test in tqdm(list(tests.values())[:2]):
+    for test in tqdm(list(tests.values())):
         status = "PASSED"
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
