@@ -1,6 +1,6 @@
 """Setup file for SRI Test Harness package."""
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", encoding="utf-8") as readme_file:
     readme = readme_file.read()
@@ -14,7 +14,7 @@ setup(
     description="Translator SRI Test Harness",
     long_description_content_type="text/markdown",
     long_description=readme,
-    packages=["test_harness"],
+    packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
     license="MIT",
