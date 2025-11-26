@@ -47,6 +47,7 @@ class ResultCollector:
             "PASSED": 0,
             "FAILED": 0,
             "SKIPPED": 0,
+            "DONE": 0,
         }
         self.result_types = {
             "PASSED": "PASSED",
@@ -162,6 +163,7 @@ class ResultCollector:
 > Passed: {self.acceptance_report['PASSED']},
 > Failed: {self.acceptance_report['FAILED']},
 > Skipped: {self.acceptance_report['SKIPPED']}
+> Done: {self.acceptance_report['DONE']}
 """
         if self.has_performance_results:
             results_formatted += """
