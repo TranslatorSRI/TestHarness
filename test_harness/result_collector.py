@@ -38,9 +38,12 @@ class ResultCollector:
         self.has_performance_results = False
         self.agents = [
             "ars",
-            "shepherd-aragorn",
-            "shepherd-arax",
-            "shepherd-bte",
+            "aragorn",
+            "arax",
+            "biothings-explorer",
+            "improving-agent",
+            "unsecret-agent",
+            "cqs",
         ]
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.acceptance_report = {
