@@ -1,16 +1,17 @@
 """The Collector of Results."""
 
 import logging
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 from translator_testing_model.datamodel.pydanticmodel import (
     PathfinderTestAsset,
     PathfinderTestCase,
     TestAsset,
     TestCase,
+    TestEnvEnum,
 )
 
-from test_harness.utils import get_tag
+from test_harness.utils import AgentStatus, TestReport
 
 
 def median_from_dict(total: int, count: dict[int, int]) -> int:
@@ -31,12 +32,12 @@ def median_from_dict(total: int, count: dict[int, int]) -> int:
 class ResultCollector:
     """Collect results for easy dissemination."""
 
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, test_env: Optional[TestEnvEnum], logger: logging.Logger):
         """Initialize the Collector."""
         self.logger = logger
         self.has_acceptance_results = False
         self.has_performance_results = False
-        self.agents = [
+        agents = [
             "ars",
             "aragorn",
             "arax",
@@ -44,26 +45,24 @@ class ResultCollector:
             "improving-agent",
             "unsecret-agent",
             "cqs",
+        ] if test_env != "dev" else [
+            "ars",
+            "shepherd-aragorn",
+            "shepherd-arax",
+            "shepherd-bte",
         ]
+        self.agents = agents
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.acceptance_report = {
-            "PASSED": 0,
-            "FAILED": 0,
-            "SKIPPED": 0,
-            "DONE": 0,
-        }
-        self.result_types = {
-            "PASSED": "PASSED",
-            "FAILED": "FAILED",
-            "No results": "No results",
-            "-": "Test Error",
+            status_type.value: 0
+            for status_type in AgentStatus
         }
         self.acceptance_stats = {}
         for agent in self.agents:
             self.acceptance_stats[agent] = {}
             for query_type in self.query_types:
                 self.acceptance_stats[agent][query_type] = {}
-                for result_type in self.result_types.values():
+                for result_type in self.acceptance_report.keys():
                     self.acceptance_stats[agent][query_type][result_type] = 0
 
         self.columns = ["name", "url", "pk", "TestCase", "TestAsset", *self.agents]
@@ -79,36 +78,28 @@ class ResultCollector:
         self,
         test: Union[TestCase, PathfinderTestCase],
         asset: Union[TestAsset, PathfinderTestAsset],
-        report: dict,
+        report: TestReport,
         parent_pk: Union[str, None],
         url: str,
     ):
         """Add a single report to the total output."""
         self.has_acceptance_results = True
         # add result to stats
+        agent_statuses = []
         for agent in self.agents:
             query_type = asset.expected_output
-            if agent in report:
-                result_type = self.result_types.get(
-                    get_tag(report[agent]), "Test Error"
-                )
-                if (
-                    query_type in self.acceptance_stats[agent]
-                    and result_type in self.acceptance_stats[agent][query_type]
-                ):
-                    self.acceptance_stats[agent][query_type][result_type] += 1
-                else:
-                    self.logger.error(
-                        f"Got {query_type} and {result_type} and can't put into stats!"
-                    )
+            if agent in report.result:
+                agent_result = report.result[agent]
+                self.acceptance_stats[agent][query_type][agent_result.status.value] += 1
+                agent_statuses.append(agent_result.status.value)
+            else:
+                agent_statuses.append(AgentStatus.SKIPPED.value)
 
         # add result to csv
-        agent_results = ",".join(
-            get_tag(report.get(agent, {"status": "Not queried"}))
-            for agent in self.agents
-        )
+        agent_results = ",".join(agent_statuses)
         pk_url = (
-            f"https://arax.ci.transltr.io/?r={parent_pk}" if parent_pk is not None else ""
+            f"https://arax.ci.transltr.io/?r={parent_pk}"
+            if parent_pk is not None else ""
         )
         self.acceptance_csv += (
             f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
@@ -166,7 +157,8 @@ class ResultCollector:
 > Passed: {self.acceptance_report['PASSED']},
 > Failed: {self.acceptance_report['FAILED']},
 > Skipped: {self.acceptance_report['SKIPPED']}
-> Done: {self.acceptance_report['DONE']}
+> No Results: {self.acceptance_report['NO_RESULTS']}
+> Errors: {self.acceptance_report['ERROR']}
 """
         if self.has_performance_results:
             results_formatted += """

@@ -1,7 +1,9 @@
 """General utilities for the Test Harness."""
 
+from dataclasses import dataclass
+from enum import Enum
 import logging
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -17,6 +19,32 @@ NODE_NORM_URL = {
     "test": "https://nodenorm.test.transltr.io/1.4",
     "prod": "https://nodenorm.transltr.io/1.4",
 }
+
+
+class AgentStatus(Enum):
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    NO_RESULTS = "NO_RESULTS"
+    SKIPPED = "SKIPPED"
+    ERROR = "ERROR"
+
+
+@dataclass
+class AgentReport(dict):
+    """Dictionary for single agent report."""
+
+    status: AgentStatus
+    message: Optional[str]
+    actual_output: Optional[dict[str, Optional[int]]]
+
+
+@dataclass
+class TestReport(dict):
+    """Dictionary for single test report."""
+
+    pks: dict[str, str]
+    result: dict[str, AgentReport]
+    test_details: Optional[dict[str, str | int]]
 
 
 def normalize_curies(
@@ -68,16 +96,6 @@ def normalize_curies(
             for curie in curies:
                 normalized_curies[curie] = curie
     return normalized_curies
-
-
-def get_tag(result):
-    """Given a result, get the correct tag for the label."""
-    tag = result.get("status", "FAILED")
-    if tag != "PASSED":
-        message = result.get("message")
-        if message:
-            tag = message
-    return tag
 
 
 def hash_test_asset(test_asset: Union[TestAsset, PathfinderTestAsset]) -> int:

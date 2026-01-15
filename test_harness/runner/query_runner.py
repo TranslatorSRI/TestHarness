@@ -159,10 +159,9 @@ class QueryRunner:
             "parent_pk": parent_pk,
         }
         with httpx.Client(timeout=30) as client:
-            # retain this response for testing
-            res = client.post(f"{base_url}/ars/api/retain/{parent_pk}")
-            res.raise_for_status()
             # Get all children queries
+            # TODO: race condition in the ARS that will hopefully get fixed
+            time.sleep(10)
             res = client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
             res.raise_for_status()
             response = res.json()
@@ -239,6 +238,16 @@ class QueryRunner:
                 "response": {"message": {"results": []}},
                 "status_code": 500,
             }
+
+        with httpx.Client(timeout=30) as client:
+            # retain this response for testing
+            res = client.post(f"{base_url}/ars/api/retain/{parent_pk}")
+            res.raise_for_status()
+            retain_response = res.json()
+            if not retain_response.get("success"):
+                self.logger.error(
+                    f"Failed to retain the query response: {retain_response}"
+                )
 
         return responses, pks
 
