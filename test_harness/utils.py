@@ -21,7 +21,7 @@ NODE_NORM_URL = {
 }
 
 
-class AgentStatus(Enum):
+class AgentStatus(str, Enum):
     PASSED = "PASSED"
     FAILED = "FAILED"
     NO_RESULTS = "NO_RESULTS"
@@ -30,7 +30,7 @@ class AgentStatus(Enum):
 
 
 @dataclass
-class AgentReport(dict):
+class AgentReport:
     """Dictionary for single agent report."""
 
     status: AgentStatus
@@ -39,7 +39,7 @@ class AgentReport(dict):
 
 
 @dataclass
-class TestReport(dict):
+class TestReport:
     """Dictionary for single test report."""
 
     pks: dict[str, str]

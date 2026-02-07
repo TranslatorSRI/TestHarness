@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any, Dict, Union
 
 from tqdm import tqdm
@@ -74,7 +75,7 @@ def run_tests(
                 test_asset_hash = hash_test_asset(asset)
                 test_query = query_responses.get(test_asset_hash)
                 if test_query is not None:
-                    message = json.dumps(test_query["query"], indent=2)
+                    message = json.dumps(test_query["query"], indent=4)
                 else:
                     message = "Unable to retrieve response for test asset."
                 reporter.upload_log(
@@ -170,7 +171,6 @@ def run_tests(
                             agent_report.status = AgentStatus.FAILED
                             agent_report.message = "Test Error"
 
-                    logger.info(f"Full report: {report}")
                     # grab only ars result if it exists, otherwise default to failed
                     if "ars" not in report.result:
                         status = AgentStatus.SKIPPED
@@ -199,7 +199,7 @@ def run_tests(
                             reporter.upload_labels(test_id, labels)
                         except Exception as e:
                             logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                    reporter.upload_log(test_id, json.dumps(report, indent=4))
+                    reporter.upload_log(test_id, json.dumps(asdict(report), indent=4))
                 else:
                     status = AgentStatus.SKIPPED
 
