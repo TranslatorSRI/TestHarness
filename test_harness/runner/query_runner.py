@@ -278,7 +278,7 @@ class QueryRunner:
 
         # send queries to a single type of component at a time
         for component in test_case.components:
-            # component = "ara"
+            component = "ara"
             # loop over all specified components, i.e. ars, ara, kp, utilities
             self.logger.info(
                 f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"

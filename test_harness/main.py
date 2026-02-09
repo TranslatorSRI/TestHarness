@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from setproctitle import setproctitle
 
+from tests.helpers.mocks import MockReporter, MockSlacker
 from test_harness.download import download_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.reporter import Reporter
@@ -48,14 +49,14 @@ def main(args):
         return logger.warning("No tests to run. Exiting.")
 
     # Create test run in the Information Radiator
-    reporter = Reporter(
+    reporter = MockReporter(
         base_url=args.get("reporter_url"),
         refresh_token=args.get("reporter_access_token"),
         logger=logger,
     )
     reporter.get_auth()
     reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
-    slacker = Slacker()
+    slacker = MockSlacker()
     collector = ResultCollector(logger)
     queried_envs = set()
     for test in tests.values():
