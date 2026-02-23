@@ -1,8 +1,10 @@
 from typing import Any, Dict, List
 
+from test_harness.utils import AgentStatus, PathfinderReport
+
 
 def pathfinder_pass_fail_analysis(
-    report: Dict[str, Any],
+    report: Dict[str, PathfinderReport],
     agent: str,
     message: Dict[str, Any],
     path_nodes: List[List[str]],
@@ -33,12 +35,12 @@ def pathfinder_pass_fail_analysis(
                     unmatched_paths.add(",".join(matching_path_nodes))
 
     if len(found_path_nodes) > 0:
-        report[agent]["status"] = "PASSED"
-        report[agent]["expected_nodes_found"] = "; ".join(found_path_nodes)
+        report[agent].status = AgentStatus.PASSED
+        report[agent].expected_nodes_found = "; ".join(found_path_nodes)
     elif len(unmatched_paths) > 0:
-        report[agent]["status"] = "FAILED"
-        report[agent]["expected_nodes_found"] = "; ".join(unmatched_paths)
+        report[agent].status = AgentStatus.FAILED
+        report[agent].expected_nodes_found = "; ".join(unmatched_paths)
     else:
-        report[agent]["status"] = "FAILED"
+        report[agent].status = AgentStatus.FAILED
 
     return report

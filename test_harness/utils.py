@@ -39,6 +39,13 @@ class AgentReport:
 
 
 @dataclass
+class PathfinderReport(AgentReport):
+    """Dictionary for single Pathfinder agent report."""
+
+    expected_nodes_found: str
+
+
+@dataclass
 class TestReport:
     """Dictionary for single test report."""
 
