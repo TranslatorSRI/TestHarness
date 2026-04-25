@@ -45,12 +45,14 @@ class ResultCollector:
             "improving-agent",
             "unsecret-agent",
             "cqs",
-        ] if test_env != "dev" else [
-            "ars",
-            "shepherd-aragorn",
-            "shepherd-arax",
-            "shepherd-bte",
         ]
+        if test_env == "dev" or test_env == "ci":
+            agents = [
+                "ars",
+                "shepherd-aragorn",
+                "shepherd-arax",
+                "shepherd-bte",
+            ]
         self.agents = agents
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.acceptance_report = {
