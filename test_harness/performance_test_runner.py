@@ -5,6 +5,7 @@ import time
 from typing import Dict
 
 import gevent
+from gevent import GreenletExit
 from locust import HttpUser, LoadTestShape, task
 from locust.env import Environment
 from locust.stats import stats_history, stats_printer
@@ -20,6 +21,32 @@ from test_harness.runner.generate_query import generate_query
 from test_harness.runner.query_runner import QueryRunner, env_map
 
 
+# Custom request_type values used to distinguish layers of the test in stats.
+# Locust groups stats by (method, name); using these as the "method" lets us
+# pull each layer out cleanly in the result collector.
+SUBMIT_TYPE = "POST"
+POLL_TYPE = "GET"
+QUERY_TYPE = "QUERY"
+
+# Single names per layer so stats aggregate across all queries instead of
+# one row per parent_pk.
+SUBMIT_NAME = "submit_query"
+POLL_NAME = "poll_status"
+
+# Per-outcome names for the end-to-end QUERY event. Distinct names give us
+# a count for each outcome directly out of Locust's stats serialization.
+OUTCOME_COMPLETED = "ars_query_completed"
+OUTCOME_ERRORED = "ars_query_errored"
+OUTCOME_POLLING_FAILED = "ars_query_polling_failed"
+OUTCOME_TIMED_OUT = "ars_query_timed_out"
+OUTCOME_ABANDONED = "ars_query_abandoned"
+
+ARA_QUERY_COMPLETED = "ara_query_completed"
+ARA_QUERY_FAILED = "ara_query_failed"
+
+POLL_INTERVAL_SECONDS = 5
+
+
 def run_locust_tests(
     host: str,
     test_query: Dict,
@@ -29,11 +56,11 @@ def run_locust_tests(
 ):
     print("Starting locust testing")
 
-    class RetryPoll(Exception):
-        pass
+    test_started_at = time.time()
 
-    class QueryCompleted(Exception):
-        pass
+    def remaining_test_time() -> float:
+        """Seconds left in the test window; clamped at 0."""
+        return max(0.0, test_run_time - (time.time() - test_started_at))
 
     class TestShape(LoadTestShape):
         time_limit = test_run_time
@@ -47,100 +74,164 @@ def run_locust_tests(
 
             return None
 
+    def fire_query_event(env, name, response_time_ms, exception=None, length=0):
+        env.events.request.fire(
+            request_type=QUERY_TYPE,
+            name=name,
+            response_time=response_time_ms,
+            response_length=length,
+            exception=exception,
+            context={},
+        )
+
     class ARAUser(HttpUser):
         @task
         def send_query(self):
-            with self.client.post(
-                "/query", json=test_query, catch_response=True
-            ) as response:
-                # do stuff with the response
-                if response.status_code == 200:
-                    response.success()
-                else:
-                    response.failure(f"Got a bad response: {response.status_code}")
+            query_started = time.time()
+            outcome = ARA_QUERY_FAILED
+            failure_reason = "ARA query did not complete"
+            response_length = 0
+            try:
+                with self.client.post(
+                    "/query",
+                    json=test_query,
+                    catch_response=True,
+                    name=SUBMIT_NAME,
+                ) as response:
+                    if response.status_code == 200:
+                        response.success()
+                        outcome = ARA_QUERY_COMPLETED
+                        failure_reason = None
+                        response_length = (
+                            len(response.content) if response.content else 0
+                        )
+                    else:
+                        failure_reason = (
+                            f"Got a bad response: {response.status_code}"
+                        )
+                        response.failure(failure_reason)
+            except GreenletExit:
+                outcome = ARA_QUERY_FAILED
+                failure_reason = "Test stopped before ARA query finished"
+                raise
+            finally:
+                elapsed_ms = (time.time() - query_started) * 1000
+                fire_query_event(
+                    self.environment,
+                    outcome,
+                    elapsed_ms,
+                    exception=failure_reason,
+                    length=response_length,
+                )
 
     class ARSUser(HttpUser):
         @task
         def send_query(self):
+            query_started = time.time()
+            outcome = OUTCOME_ABANDONED
+            failure_reason = "Test ended before query reached a terminal state"
+            response_length = 0
             parent_pk = ""
+
             try:
-                print("Sending query to ARS")
+                # Submit the query.
                 with self.client.post(
-                    "/ars/api/submit", json=test_query, catch_response=True
+                    "/ars/api/submit",
+                    json=test_query,
+                    catch_response=True,
+                    name=SUBMIT_NAME,
                 ) as response:
-                    # do stuff with the response
                     if response.status_code != 201:
-                        response.failure(
-                            f"Failed to start a query: {response.content}, {response.status_code}"
+                        failure_reason = (
+                            f"Failed to start a query: "
+                            f"{response.status_code} {response.content!r}"
+                        )
+                        response.failure(failure_reason)
+                        outcome = OUTCOME_POLLING_FAILED
+                        return
+                    response.success()
+                    parent_pk = response.json().get("pk", "")
+
+                if not parent_pk:
+                    failure_reason = "ARS submit returned no parent_pk"
+                    outcome = OUTCOME_POLLING_FAILED
+                    return
+
+                # Poll until terminal state, the test window closes, or the
+                # greenlet is killed.
+                while True:
+                    if remaining_test_time() <= 0:
+                        outcome = OUTCOME_ABANDONED
+                        failure_reason = (
+                            f"Test ended while polling {parent_pk}"
                         )
                         return
 
-                    parent_pk = response.json().get("pk", "")
-                    raise QueryCompleted()
-            except QueryCompleted:
-                pass
+                    with self.client.get(
+                        f"/ars/api/messages/{parent_pk}?trace=y",
+                        catch_response=True,
+                        name=POLL_NAME,
+                    ) as response:
+                        if response.status_code != 200:
+                            failure_reason = (
+                                f"Failed to poll {parent_pk}: "
+                                f"{response.status_code} {response.content!r}"
+                            )
+                            response.failure(failure_reason)
+                            outcome = OUTCOME_POLLING_FAILED
+                            return
+                        response.success()
 
-            start_time = time.time()
-            now = time.time()
-            total_time = 0
-            try:
-                while now - start_time <= 3600:
-                    now = time.time()
-                    try:
-                        with self.client.get(
-                            f"/ars/api/messages/{parent_pk}?trace=y",
-                            catch_response=True,
-                            name=parent_pk,
-                        ) as response:
-                            total_time = (now - start_time) * 1000
-                            if response.status_code != 200:
-                                self.environment.events.request.fire(
-                                    request_type="GET_RESPONSE",
-                                    name="/ars/api/messages",
-                                    response_time=total_time,
-                                    response_length=0,
-                                    exception=f"Failed to poll the query: {response.content}, {response.status_code}",
-                                    context=self.context(),
-                                )
+                        try:
                             res = response.json()
-                            status = res.get("status")
-                            if status == "Error":
-                                self.environment.events.request.fire(
-                                    request_type="GET_RESPONSE",
-                                    name="/ars/api/messages",
-                                    response_time=total_time,
-                                    response_length=0,
-                                    exception=f"ARS had an error: {parent_pk}",
-                                    context=self.context(),
-                                )
-                            elif status == "Done":
-                                self.environment.events.request.fire(
-                                    request_type="GET_RESPONSE",
-                                    name="/ars/api/messages",
-                                    response_time=total_time,
-                                    response_length=(
-                                        len(response.content) if response.content else 0
-                                    ),
-                                    exception=None,
-                                    context=self.context(),
-                                )
-                                raise QueryCompleted()
-                            time.sleep(5)
-                            raise RetryPoll("Polling again")
-                    except RetryPoll:
-                        continue
+                        except ValueError:
+                            failure_reason = (
+                                f"Non-JSON poll body for {parent_pk}"
+                            )
+                            outcome = OUTCOME_POLLING_FAILED
+                            return
 
-                self.environment.events.request.fire(
-                    request_type="GET_RESPONSE",
-                    name="/ars/api/messages",
-                    response_time=total_time,
-                    response_length=0,
-                    exception=f"ARS timed out: {parent_pk}",
-                    context=self.context(),
+                        status = res.get("status")
+                        if status == "Done":
+                            outcome = OUTCOME_COMPLETED
+                            failure_reason = None
+                            response_length = (
+                                len(response.content)
+                                if response.content
+                                else 0
+                            )
+                            return
+                        if status == "Error":
+                            failure_reason = f"ARS reported Error for {parent_pk}"
+                            outcome = OUTCOME_ERRORED
+                            return
+
+                    # Don't sleep past the end of the test window.
+                    sleep_for = min(POLL_INTERVAL_SECONDS, remaining_test_time())
+                    if sleep_for <= 0:
+                        outcome = OUTCOME_ABANDONED
+                        failure_reason = (
+                            f"Test ended while polling {parent_pk}"
+                        )
+                        return
+                    time.sleep(sleep_for)
+            except GreenletExit:
+                # Runner is shutting down. Record the in-flight query and
+                # re-raise so locust stops the user cleanly.
+                outcome = OUTCOME_ABANDONED
+                failure_reason = (
+                    f"Greenlet killed while query {parent_pk} was in flight"
                 )
-            except QueryCompleted:
-                print("Query complete!")
-                pass
+                raise
+            finally:
+                elapsed_ms = (time.time() - query_started) * 1000
+                fire_query_event(
+                    self.environment,
+                    outcome,
+                    elapsed_ms,
+                    exception=failure_reason,
+                    length=response_length,
+                )
 
     # Create environment
     USER_TYPE_MAP = {
@@ -172,6 +263,9 @@ def run_locust_tests(
     return {
         "stats": env.stats.serialize_stats(),
         "failures": env.stats.serialize_errors(),
+        "test_run_time": test_run_time,
+        "spawn_rate": spawn_rate,
+        "target": target,
     }
 
 
