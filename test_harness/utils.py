@@ -1,9 +1,12 @@
 """General utilities for the Test Harness."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
-from typing import Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from test_harness.regression_checks.base import RegressionCheckResult
 
 import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -27,6 +30,7 @@ class AgentStatus(str, Enum):
     NO_RESULTS = "NO_RESULTS"
     SKIPPED = "SKIPPED"
     ERROR = "ERROR"
+    REGRESSION = "REGRESSION"
 
 
 @dataclass
@@ -36,13 +40,14 @@ class AgentReport:
     status: AgentStatus
     message: Optional[str]
     actual_output: Optional[dict[str, Optional[int]]]
+    regression_checks: List["RegressionCheckResult"] = field(default_factory=list)
 
 
 @dataclass
 class PathfinderReport(AgentReport):
     """Dictionary for single Pathfinder agent report."""
 
-    expected_nodes_found: str
+    expected_nodes_found: str = ""
 
 
 @dataclass

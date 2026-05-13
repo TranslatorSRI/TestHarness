@@ -20,6 +20,10 @@ from translator_testing_model.datamodel.pydanticmodel import (
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
 from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
 from test_harness.performance_test_runner import run_performance_test
+from test_harness.regression_checks import (
+    RegressionStatus,
+    run_all as run_regression_checks,
+)
 from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.generate_query import generate_query
@@ -170,6 +174,32 @@ def run_tests(
                             )
                             agent_report.status = AgentStatus.FAILED
                             agent_report.message = "Test Error"
+
+                        try:
+                            check_results = run_regression_checks(
+                                response["response"]["message"],
+                                test_query["query"]["message"].get("query_graph") or {},
+                                logger,
+                            )
+                            agent_report.regression_checks.extend(check_results)
+                            failed_checks = [
+                                r for r in check_results
+                                if r.status == RegressionStatus.FAILED
+                            ]
+                            if failed_checks and agent_report.status == AgentStatus.PASSED:
+                                agent_report.status = AgentStatus.REGRESSION
+                                summary = "; ".join(
+                                    f"{r.name}: {r.message or 'failed'}"
+                                    for r in failed_checks
+                                )
+                                agent_report.message = (
+                                    f"{agent_report.message + ' | ' if agent_report.message else ''}"
+                                    f"Regression: {summary}"
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Regression check infrastructure failed on {agent}: {e}"
+                            )
 
                     # grab only ars result if it exists, otherwise default to failed
                     if "ars" not in report.result:
