@@ -290,6 +290,7 @@ class ResultCollector:
 > Acceptance Test Results:
 > Passed: {self.acceptance_report['PASSED']},
 > Failed: {self.acceptance_report['FAILED']},
+> Regression: {self.acceptance_report['REGRESSION']},
 > Skipped: {self.acceptance_report['SKIPPED']}
 > No Results: {self.acceptance_report['NO_RESULTS']}
 > Errors: {self.acceptance_report['ERROR']}
