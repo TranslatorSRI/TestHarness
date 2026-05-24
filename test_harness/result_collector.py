@@ -325,15 +325,15 @@ class ResultCollector:
                 results_formatted += self._format_performance_target(
                     target_url, target_stats
                 )
-            if len(self.performance_report["failures"].keys()):
-                results_formatted += "\n> Failures:"
-                for failure_stat in self.performance_report["failures"].values():
-                    results_formatted += (
-                        f"\n> ---"
-                        f"\n> {failure_stat.get('name', 'Unknown')}"
-                        f"\n> {failure_stat.get('error', 'Unknown Error')}"
-                        f"\n> occurrences: {failure_stat.get('occurrences', 0)}"
-                    )
+            failures = self.performance_report["failures"]
+            if failures:
+                total_occurrences = sum(
+                    f.get("occurrences", 0) for f in failures.values()
+                )
+                results_formatted += (
+                    f"\n> Failures: {total_occurrences} "
+                    f"({len(failures)} distinct) - see uploaded JSON for details"
+                )
 
         return results_formatted
 
