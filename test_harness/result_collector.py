@@ -1,7 +1,9 @@
 """The Collector of Results."""
 
 import logging
-from typing import Dict, Iterable, List, Optional, Union
+import re
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 from translator_testing_model.datamodel.pydanticmodel import (
     PathfinderTestAsset,
@@ -11,6 +13,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestEnvEnum,
 )
 
+from test_harness import perf_plots
 from test_harness.utils import AgentStatus, TestReport
 
 
@@ -170,6 +173,12 @@ def _summarize_query_lifecycle(
     }
 
 
+def _slugify_host(host_url: str) -> str:
+    """Make a filesystem/Slack-friendly slug for a host URL."""
+    netloc = urlparse(host_url).netloc or host_url
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", netloc).strip("_") or "perf"
+
+
 def _summarize_response_sizes(
     sizes_by_outcome: Dict[str, List[int]], outcome_names: Iterable[str]
 ) -> Dict[str, Dict]:
@@ -297,6 +306,8 @@ class ResultCollector:
             "response_sizes": _summarize_response_sizes(
                 results.get("query_response_sizes") or {}, outcome_names
             ),
+            "history": results.get("stats_history") or [],
+            "summary_html": results.get("summary_html"),
         }
         self.performance_report["failures"] = results.get("failures") or {}
 
@@ -305,6 +316,44 @@ class ResultCollector:
             "information_radiator_url": url,
             **results,
         }
+
+    def render_performance_artifacts(self) -> Iterator[Tuple[str, bytes]]:
+        """Yield (filename, bytes) tuples for per-target performance artifacts.
+
+        Produces up to two files per host:
+          * ``<slug>_perf.png`` - matplotlib chart of stats_history
+          * ``<slug>_perf.html`` - Locust's own HTML report
+        Renderable artifacts are skipped (with a log line) when data is
+        missing; render exceptions are caught so one bad target doesn't
+        block the rest.
+        """
+        for host_url, target_stats in self.performance_report["stats"].items():
+            slug = _slugify_host(host_url)
+
+            history = target_stats.get("history") or []
+            if len(history) >= 2:
+                try:
+                    png_bytes = perf_plots.render_history_png(
+                        history, title=host_url
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to render perf chart for {host_url}: {e}"
+                    )
+                else:
+                    yield f"{slug}_perf.png", png_bytes
+            else:
+                self.logger.info(
+                    f"Skipping perf chart for {host_url}: insufficient history"
+                )
+
+            summary_html = target_stats.get("summary_html")
+            if summary_html:
+                yield f"{slug}_perf.html", summary_html.encode("utf-8")
+            else:
+                self.logger.info(
+                    f"Skipping HTML report for {host_url}: not available"
+                )
 
     def dump_result_summary(self):
         """Format test results summary for Slack."""
@@ -332,7 +381,7 @@ class ResultCollector:
                 )
                 results_formatted += (
                     f"\n> Failures: {total_occurrences} "
-                    f"({len(failures)} distinct) - see uploaded JSON for details"
+                    f"({len(failures)} distinct) - see uploaded HTML report"
                 )
 
         return results_formatted

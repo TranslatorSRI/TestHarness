@@ -8,6 +8,7 @@ import gevent
 from gevent import GreenletExit
 from locust import HttpUser, LoadTestShape, task
 from locust.env import Environment
+from locust.html import get_html_report
 from locust.stats import stats_history, stats_printer
 from translator_testing_model.datamodel.pydanticmodel import (
     AcceptanceTestAsset,
@@ -302,6 +303,14 @@ def run_locust_tests(
 
     print("Done with locust testing!")
 
+    try:
+        summary_html = get_html_report(env, show_download_link=False)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Failed to render Locust HTML report: %s", e
+        )
+        summary_html = None
+
     return {
         "stats": env.stats.serialize_stats(),
         "failures": env.stats.serialize_errors(),
@@ -309,6 +318,8 @@ def run_locust_tests(
         "spawn_rate": spawn_rate,
         "target": target,
         "query_response_sizes": query_response_sizes,
+        "stats_history": list(env.runner.stats.history),
+        "summary_html": summary_html,
     }
 
 

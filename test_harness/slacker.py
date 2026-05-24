@@ -96,3 +96,16 @@ class Slacker:
                 file=tmp_path,
                 initial_comment="Test Results:",
             )
+
+    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
+        """Upload a binary file (PNG, HTML, etc.) to Slack."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = os.path.join(td, filename)
+            with open(tmp_path, "wb") as f:
+                f.write(content)
+            self.client.files_upload_v2(
+                channel=self.channel,
+                title=title or filename,
+                file=tmp_path,
+                initial_comment=initial_comment or "Performance report:",
+            )

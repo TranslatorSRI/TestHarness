@@ -97,6 +97,11 @@ def main(args):
             "json",
             collector.performance_stats,
         )
+        for filename, content in collector.render_performance_artifacts():
+            try:
+                slacker.upload_binary_file(filename, content)
+            except Exception as e:
+                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()
