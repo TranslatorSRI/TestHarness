@@ -170,6 +170,27 @@ def _summarize_query_lifecycle(
     }
 
 
+def _summarize_response_sizes(
+    sizes_by_outcome: Dict[str, List[int]], outcome_names: Iterable[str]
+) -> Dict[str, Dict]:
+    """Per-outcome response-size summary, including distinct-size count so
+    the report can flag queries that finished with the same status but came
+    back with different payloads (eg an error body in place of TRAPI)."""
+    summary: Dict[str, Dict] = {}
+    for name in outcome_names:
+        sizes = sizes_by_outcome.get(name) or []
+        if not sizes:
+            continue
+        summary[name] = {
+            "count": len(sizes),
+            "min": min(sizes),
+            "max": max(sizes),
+            "avg": sum(sizes) / len(sizes),
+            "distinct": len(set(sizes)),
+        }
+    return summary
+
+
 class ResultCollector:
     """Collect results for easy dissemination."""
 
@@ -273,6 +294,9 @@ class ResultCollector:
             "submit": _summarize_layer(submit_stat),
             "poll": _summarize_layer(poll_stat) if target == "ars" else None,
             "queries": lifecycle,
+            "response_sizes": _summarize_response_sizes(
+                results.get("query_response_sizes") or {}, outcome_names
+            ),
         }
         self.performance_report["failures"] = results.get("failures") or {}
 
@@ -332,13 +356,29 @@ class ResultCollector:
         by_outcome = queries.get("by_outcome", {}) or {}
         completed = queries.get("completed_only") or {}
         all_outcomes = queries.get("all_outcomes") or {}
+        response_sizes = target_stats.get("response_sizes") or {}
         run_time_seconds = run_time or 0
 
         lines.append("> - End-to-end queries:")
         lines.append(f">   * Submitted (recorded): {total_queries}")
         for name, count in by_outcome.items():
             label = name.replace("ars_query_", "").replace("ara_query_", "")
-            lines.append(f">   * {label}: {count}")
+            line = f">   * {label}: {count}"
+            size_summary = response_sizes.get(name)
+            if size_summary:
+                line += (
+                    f" [response size bytes: "
+                    f"min={size_summary['min']}, "
+                    f"max={size_summary['max']}, "
+                    f"avg={size_summary['avg']:.0f}, "
+                    f"distinct={size_summary['distinct']}]"
+                )
+            lines.append(line)
+            if size_summary and size_summary["distinct"] > 1:
+                lines.append(
+                    f">     WARNING: {label} responses differ in size; "
+                    "check for partial or error payloads"
+                )
         completed_count = completed.get("count", 0)
         if run_time_seconds:
             throughput = completed_count / (run_time_seconds / 60.0)
