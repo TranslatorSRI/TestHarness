@@ -49,7 +49,7 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
         reporter=MockReporter(
             base_url="http://test",
         ),
-        collector=MockResultCollector(logger),
+        collector=MockResultCollector("dev", logger),
         logger=logger,
         args={
             "suite": "testing",

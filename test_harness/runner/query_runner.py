@@ -86,12 +86,17 @@ class QueryRunner:
         child_pk: str,
         base_url: str,
         infores: str,
-        start_time: float,
     ):
-        """Given a child pk, get response from ARS."""
+        """Given a child pk, get response from ARS.
+
+        Each call gets its own poll deadline so that one slow / timed-out ARA
+        doesn't cause subsequently checked ARAs to be marked as timed out
+        before they're even given a chance to respond.
+        """
         self.logger.info(f"Getting response for {infores}...")
 
-        current_time = time.time()
+        start_time = time.time()
+        current_time = start_time
 
         response = None
         status = 500
@@ -174,7 +179,7 @@ class QueryRunner:
             # add child pk
             pks[infores] = child_pk
             child_responses.append(
-                self.get_ars_child_response(child_pk, base_url, infores, start_time)
+                self.get_ars_child_response(child_pk, base_url, infores)
             )
 
         for child_response in child_responses:
