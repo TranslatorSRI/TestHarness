@@ -14,7 +14,6 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
-
 logger = logging.getLogger(__name__)
 
 

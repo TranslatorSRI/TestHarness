@@ -8,7 +8,6 @@ import tempfile
 import httpx
 from slack_sdk import WebClient
 
-
 # Slack rejects section blocks whose text exceeds 3000 chars. Leave a small
 # safety margin so we never end up at the boundary.
 SLACK_SECTION_TEXT_LIMIT = 2900

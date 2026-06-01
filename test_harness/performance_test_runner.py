@@ -21,7 +21,6 @@ from translator_testing_model.datamodel.pydanticmodel import (
 from test_harness.runner.generate_query import generate_query
 from test_harness.runner.query_runner import QueryRunner, env_map
 
-
 # Custom request_type values used to distinguish layers of the test in stats.
 # Locust groups stats by (method, name); using these as the "method" lets us
 # pull each layer out cleanly in the result collector.

@@ -16,7 +16,6 @@ from translator_testing_model.datamodel.pydanticmodel import (
 from test_harness import perf_plots
 from test_harness.utils import AgentStatus, TestReport
 
-
 # Stat row identifiers produced by the performance test runner. Kept in sync
 # with the constants in performance_test_runner.py.
 QUERY_TYPE = "QUERY"
