@@ -77,17 +77,15 @@ def _summarize_layer(stat: Optional[Dict]) -> Dict:
     num_none = stat.get("num_none_requests", 0)
     measured = max(0, num_requests - num_none)
     response_times = stat.get("response_times", {}) or {}
-    duration = (
-        stat.get("last_request_timestamp", 0) or 0
-    ) - (stat.get("start_time", 0) or 0)
+    duration = (stat.get("last_request_timestamp", 0) or 0) - (
+        stat.get("start_time", 0) or 0
+    )
     return {
         "num_requests": num_requests,
         "num_failures": stat.get("num_failures", 0),
         "min_response_time": stat.get("min_response_time") or 0,
         "max_response_time": stat.get("max_response_time", 0),
-        "avg_response_time": _safe_div(
-            stat.get("total_response_time", 0), measured
-        ),
+        "avg_response_time": _safe_div(stat.get("total_response_time", 0), measured),
         "median_response_time": percentile_from_dict(measured, response_times, 0.5),
         "p95_response_time": percentile_from_dict(measured, response_times, 0.95),
         "requests_per_second": _safe_div(num_requests, duration),
@@ -107,9 +105,7 @@ def _find_stat(
     return None
 
 
-def _summarize_query_lifecycle(
-    stats: List[Dict], outcome_names: Iterable[str]
-) -> Dict:
+def _summarize_query_lifecycle(stats: List[Dict], outcome_names: Iterable[str]) -> Dict:
     """Aggregate end-to-end QUERY events across all outcomes."""
     total_requests = 0
     total_response_time = 0.0
@@ -139,7 +135,9 @@ def _summarize_query_lifecycle(
     completed_name = next(
         (name for name in outcome_names if name.endswith("_completed")), None
     )
-    completed_stat = _find_stat(stats, completed_name, QUERY_TYPE) if completed_name else None
+    completed_stat = (
+        _find_stat(stats, completed_name, QUERY_TYPE) if completed_name else None
+    )
     completed_buckets = (completed_stat or {}).get("response_times", {}) or {}
     completed_count = (completed_stat or {}).get("num_requests", 0)
     completed_total_rt = (completed_stat or {}).get("total_response_time", 0) or 0
@@ -168,7 +166,8 @@ def _summarize_query_lifecycle(
                 completed_count, completed_buckets, 0.95
             ),
             "min_response_time": (completed_stat or {}).get("min_response_time") or 0,
-            "max_response_time": (completed_stat or {}).get("max_response_time", 0) or 0,
+            "max_response_time": (completed_stat or {}).get("max_response_time", 0)
+            or 0,
         },
     }
 
@@ -226,10 +225,7 @@ class ResultCollector:
             ]
         self.agents = agents
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
-        self.acceptance_report = {
-            status_type.value: 0
-            for status_type in AgentStatus
-        }
+        self.acceptance_report = {status_type.value: 0 for status_type in AgentStatus}
         self.acceptance_stats = {}
         for agent in self.agents:
             self.acceptance_stats[agent] = {}
@@ -272,7 +268,8 @@ class ResultCollector:
         agent_results = ",".join(agent_statuses)
         pk_url = (
             f"https://arax.ci.transltr.io/?r={parent_pk}"
-            if parent_pk is not None else ""
+            if parent_pk is not None
+            else ""
         )
         self.acceptance_csv += (
             f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
@@ -333,9 +330,7 @@ class ResultCollector:
             history = target_stats.get("history") or []
             if len(history) >= 2:
                 try:
-                    png_bytes = perf_plots.render_history_png(
-                        history, title=host_url
-                    )
+                    png_bytes = perf_plots.render_history_png(history, title=host_url)
                 except Exception as e:
                     self.logger.warning(
                         f"Failed to render perf chart for {host_url}: {e}"
@@ -351,9 +346,7 @@ class ResultCollector:
             if summary_html:
                 yield f"{slug}_perf.html", summary_html.encode("utf-8")
             else:
-                self.logger.info(
-                    f"Skipping HTML report for {host_url}: not available"
-                )
+                self.logger.info(f"Skipping HTML report for {host_url}: not available")
 
     def dump_result_summary(self):
         """Format test results summary for Slack."""
@@ -431,9 +424,7 @@ class ResultCollector:
         completed_count = completed.get("count", 0)
         if run_time_seconds:
             throughput = completed_count / (run_time_seconds / 60.0)
-            lines.append(
-                f">   * Completed throughput: {throughput:.2f} queries/minute"
-            )
+            lines.append(f">   * Completed throughput: {throughput:.2f} queries/minute")
         if completed_count:
             lines.append(
                 ">   * Completed query time (s): "

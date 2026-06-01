@@ -111,9 +111,7 @@ def run_locust_tests(
                             len(response.content) if response.content else 0
                         )
                     else:
-                        failure_reason = (
-                            f"Got a bad response: {response.status_code}"
-                        )
+                        failure_reason = f"Got a bad response: {response.status_code}"
                         response.failure(failure_reason)
             except GreenletExit:
                 outcome = ARA_QUERY_FAILED
@@ -136,9 +134,7 @@ def run_locust_tests(
             Falls back to the trace response's content length if the merged
             message can't be fetched, so the QUERY event still records a size.
             """
-            fallback = (
-                len(trace_response.content) if trace_response.content else 0
-            )
+            fallback = len(trace_response.content) if trace_response.content else 0
             if not merged_pk:
                 return fallback
             with self.client.get(
@@ -192,9 +188,7 @@ def run_locust_tests(
                 while True:
                     if remaining_test_time() <= 0:
                         outcome = OUTCOME_ABANDONED
-                        failure_reason = (
-                            f"Test ended while polling {parent_pk}"
-                        )
+                        failure_reason = f"Test ended while polling {parent_pk}"
                         return
 
                     with self.client.get(
@@ -215,9 +209,7 @@ def run_locust_tests(
                         try:
                             res = response.json()
                         except ValueError:
-                            failure_reason = (
-                                f"Non-JSON poll body for {parent_pk}"
-                            )
+                            failure_reason = f"Non-JSON poll body for {parent_pk}"
                             outcome = OUTCOME_POLLING_FAILED
                             return
 
@@ -239,9 +231,7 @@ def run_locust_tests(
                     sleep_for = min(POLL_INTERVAL_SECONDS, remaining_test_time())
                     if sleep_for <= 0:
                         outcome = OUTCOME_ABANDONED
-                        failure_reason = (
-                            f"Test ended while polling {parent_pk}"
-                        )
+                        failure_reason = f"Test ended while polling {parent_pk}"
                         return
                     time.sleep(sleep_for)
             except GreenletExit:

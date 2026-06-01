@@ -89,7 +89,9 @@ def run_tests(
                         result={},
                         test_details=None,
                     )
-                    if isinstance(test, PathfinderTestCase) and isinstance(asset, PathfinderTestAsset):
+                    if isinstance(test, PathfinderTestCase) and isinstance(
+                        asset, PathfinderTestAsset
+                    ):
                         report.test_details = {
                             "minimum_required_path_nodes": asset.minimum_required_path_nodes,
                             "expected_path_nodes": "; ".join(
@@ -142,7 +144,9 @@ def run_tests(
                                 agent_report.status = AgentStatus.NO_RESULTS
                                 agent_report.message = "No results"
                                 continue
-                            if isinstance(test, PathfinderTestCase) and isinstance(asset, PathfinderTestAsset):
+                            if isinstance(test, PathfinderTestCase) and isinstance(
+                                asset, PathfinderTestAsset
+                            ):
                                 pathfinder_pass_fail_analysis(
                                     report.result,
                                     agent,
@@ -161,7 +165,11 @@ def run_tests(
                                     report.result,
                                     agent,
                                     response["response"]["message"]["results"],
-                                    normalized_curies.get(asset.output_id, "") if asset.output_id is not None else "",
+                                    (
+                                        normalized_curies.get(asset.output_id, "")
+                                        if asset.output_id is not None
+                                        else ""
+                                    ),
                                     asset.expected_output,
                                 )
                         except Exception as e:
@@ -199,6 +207,7 @@ def run_tests(
                             reporter.upload_labels(test_id, labels)
                         except Exception as e:
                             logger.warning(f"[{test.id}] failed to upload labels: {e}")
+                    logger.info(f"Full report: {json.dumps(asdict(report), indent=4)}")
                     reporter.upload_log(test_id, json.dumps(asdict(report), indent=4))
                 else:
                     status = AgentStatus.SKIPPED
