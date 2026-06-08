@@ -86,12 +86,17 @@ class QueryRunner:
         child_pk: str,
         base_url: str,
         infores: str,
-        start_time: float,
     ):
-        """Given a child pk, get response from ARS."""
+        """Given a child pk, get response from ARS.
+
+        Each call gets its own poll deadline so that one slow / timed-out ARA
+        doesn't cause subsequently checked ARAs to be marked as timed out
+        before they're even given a chance to respond.
+        """
         self.logger.info(f"Getting response for {infores}...")
 
-        current_time = time.time()
+        start_time = time.time()
+        current_time = start_time
 
         response = None
         status = 500
@@ -159,10 +164,9 @@ class QueryRunner:
             "parent_pk": parent_pk,
         }
         with httpx.Client(timeout=30) as client:
-            # retain this response for testing
-            res = client.post(f"{base_url}/ars/api/retain/{parent_pk}")
-            res.raise_for_status()
             # Get all children queries
+            # TODO: race condition in the ARS that will hopefully get fixed
+            time.sleep(10)
             res = client.get(f"{base_url}/ars/api/messages/{parent_pk}?trace=y")
             res.raise_for_status()
             response = res.json()
@@ -175,7 +179,7 @@ class QueryRunner:
             # add child pk
             pks[infores] = child_pk
             child_responses.append(
-                self.get_ars_child_response(child_pk, base_url, infores, start_time)
+                self.get_ars_child_response(child_pk, base_url, infores)
             )
 
         for child_response in child_responses:
@@ -239,6 +243,16 @@ class QueryRunner:
                 "response": {"message": {"results": []}},
                 "status_code": 500,
             }
+
+        with httpx.Client(timeout=30) as client:
+            # retain this response for testing
+            res = client.post(f"{base_url}/ars/api/retain/{parent_pk}")
+            res.raise_for_status()
+            retain_response = res.json()
+            if not retain_response.get("success"):
+                self.logger.error(
+                    f"Failed to retain the query response: {retain_response}"
+                )
 
         return responses, pks
 

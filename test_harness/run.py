@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any, Dict, Union
 
 from tqdm import tqdm
@@ -9,8 +10,10 @@ from tqdm import tqdm
 # from standards_validation_test_runner import StandardsValidationTest
 # from benchmarks_runner import run_benchmarks
 from translator_testing_model.datamodel.pydanticmodel import (
+    PathfinderTestAsset,
     PathfinderTestCase,
     PerformanceTestCase,
+    TestAsset,
     TestCase,
 )
 
@@ -21,8 +24,12 @@ from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.generate_query import generate_query
 from test_harness.runner.query_runner import QueryRunner, env_map
-from test_harness.utils import get_tag, hash_test_asset
-from tests.helpers.mocks import MockQueryRunner
+from test_harness.utils import (
+    AgentReport,
+    AgentStatus,
+    TestReport,
+    hash_test_asset,
+)
 
 
 def run_tests(
@@ -34,12 +41,11 @@ def run_tests(
 ) -> None:
     """Send tests through the Test Runners."""
     logger.info(f"Running {len(tests)} queries...")
-    query_runner = MockQueryRunner(logger)
+    query_runner = QueryRunner(logger)
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=args["trapi_version"])
     # loop over all tests
     for test in tqdm(list(tests.values())):
-        status = "PASSED"
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
             logger.warning(f"Test has missing required fields: {test.id}")
@@ -62,14 +68,14 @@ def run_tests(
                 try:
                     test_id = reporter.create_test(test, asset)
                     test_ids.append(test_id)
-                except Exception as e:
+                except Exception:
                     logger.error(f"Failed to create test: {test.id}")
                     continue
 
                 test_asset_hash = hash_test_asset(asset)
                 test_query = query_responses.get(test_asset_hash)
                 if test_query is not None:
-                    message = json.dumps(test_query["query"], indent=2)
+                    message = json.dumps(test_query["query"], indent=4)
                 else:
                     message = "Unable to retrieve response for test asset."
                 reporter.upload_log(
@@ -78,12 +84,15 @@ def run_tests(
                 )
 
                 if test_query is not None:
-                    report = {
-                        "pks": test_query["pks"],
-                        "result": {},
-                    }
-                    if isinstance(test, PathfinderTestCase):
-                        report["test_details"] = {
+                    report = TestReport(
+                        pks=test_query["pks"],
+                        result={},
+                        test_details=None,
+                    )
+                    if isinstance(test, PathfinderTestCase) and isinstance(
+                        asset, PathfinderTestAsset
+                    ):
+                        report.test_details = {
                             "minimum_required_path_nodes": asset.minimum_required_path_nodes,
                             "expected_path_nodes": "; ".join(
                                 [
@@ -98,17 +107,19 @@ def run_tests(
                             ),
                         }
                     for agent, response in test_query["responses"].items():
-                        report["result"][agent] = {
-                            # "trapi_validation": "NA",
-                        }
-                        agent_report = report["result"][agent]
+                        report.result[agent] = AgentReport(
+                            status=AgentStatus.SKIPPED,
+                            message=None,
+                            actual_output=None,
+                        )
+                        agent_report = report.result[agent]
                         try:
                             if response["status_code"] > 299:
-                                agent_report["status"] = "FAILED"
+                                agent_report.status = AgentStatus.FAILED
                                 if response["status_code"] == "598":
-                                    agent_report["message"] = "Timed out"
+                                    agent_report.message = "Timed out"
                                 else:
-                                    agent_report["message"] = (
+                                    agent_report.message = (
                                         f"Status code: {response['status_code']}"
                                     )
                                 continue
@@ -116,46 +127,28 @@ def run_tests(
                                 "response" not in response
                                 or "message" not in response["response"]
                             ):
-                                agent_report["status"] = "FAILED"
-                                agent_report["message"] = "Test Error"
+                                agent_report.status = AgentStatus.FAILED
+                                agent_report.message = "Test Error"
                                 continue
                         except Exception as e:
                             logger.warning(
                                 f"Failed to parse basic response fields from {agent}: {e}"
                             )
-                        # try:
-                        #     svt = StandardsValidationTest(
-                        #         test_asset=asset,
-                        #         environment=test.test_env,
-                        #         component=agent,
-                        #         trapi_version=args["trapi_version"],
-                        #         biolink_version="suppress",
-                        #         runner_settings="Inferred",
-                        #     )
-                        #     results = svt.test_case_processor(
-                        #         trapi_response=response["response"]
-                        #     )
-                        #     agent_report["trapi_validation"] = results[
-                        #         next(iter(results.keys()))
-                        #     ][agent]["status"]
-                        #     if agent_report["trapi_validation"] == "FAILED":
-                        #         agent_report["status"] = "FAILED"
-                        #         agent_report["message"] = "TRAPI Validation Error"
-                        #         continue
-                        # except Exception as e:
-                        #     logger.warning(f"Failed to run TRAPI validation with {e}")
-                        #     agent_report["trapi_validation"] = "ERROR"
+                            agent_report.status = AgentStatus.FAILED
+                            agent_report.message = "Test Error"
                         try:
                             if (
                                 response["response"]["message"].get("results") is None
                                 or len(response["response"]["message"]["results"]) == 0
                             ):
-                                agent_report["status"] = "DONE"
-                                agent_report["message"] = "No results"
+                                agent_report.status = AgentStatus.NO_RESULTS
+                                agent_report.message = "No results"
                                 continue
-                            if isinstance(test, PathfinderTestCase):
+                            if isinstance(test, PathfinderTestCase) and isinstance(
+                                asset, PathfinderTestAsset
+                            ):
                                 pathfinder_pass_fail_analysis(
-                                    report["result"],
+                                    report.result,
                                     agent,
                                     response["response"]["message"],
                                     [
@@ -167,61 +160,60 @@ def run_tests(
                                     ],
                                     asset.minimum_required_path_nodes,
                                 )
-                            else:
+                            elif isinstance(asset, TestAsset):
                                 run_acceptance_pass_fail_analysis(
-                                    report["result"],
+                                    report.result,
                                     agent,
                                     response["response"]["message"]["results"],
-                                    normalized_curies[asset.output_id],
+                                    (
+                                        normalized_curies.get(asset.output_id, "")
+                                        if asset.output_id is not None
+                                        else ""
+                                    ),
                                     asset.expected_output,
                                 )
                         except Exception as e:
                             logger.error(
                                 f"Failed to run acceptance test analysis on {agent}: {e}"
                             )
-                            agent_report["status"] = "FAILED"
-                            agent_report["message"] = "Test Error"
+                            agent_report.status = AgentStatus.FAILED
+                            agent_report.message = "Test Error"
 
-                    status = "PASSED"
                     # grab only ars result if it exists, otherwise default to failed
-                    ars_status = report["result"].get("arax", {}).get("status")
-                    status = ars_status if ars_status is not None else "SKIPPED"
-                    if status in collector.acceptance_report:
-                        collector.acceptance_report[status] += 1
+                    if "ars" not in report.result:
+                        status = AgentStatus.SKIPPED
+                    else:
+                        status = report.result["ars"].status
 
                     collector.collect_acceptance_result(
                         test,
                         asset,
-                        report["result"],
+                        report,
                         test_query["pks"].get("parent_pk"),
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                     )
 
-                    if status != "SKIPPED":
+                    if status != AgentStatus.SKIPPED:
                         # only upload ara labels if the test ran successfully
                         try:
                             labels = [
                                 {
                                     "key": ara,
-                                    "value": get_tag(report["result"][ara]),
+                                    "value": report.result[ara].status.value,
                                 }
                                 for ara in collector.agents
-                                if ara in report["result"]
+                                if ara in report.result
                             ]
                             reporter.upload_labels(test_id, labels)
                         except Exception as e:
                             logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                    try:
-                        reporter.upload_log(test_id, json.dumps(report, indent=4))
-                    except Exception:
-                        logger.error(f"[{test.id}] failed to upload logs.")
+                    logger.info(f"Full report: {json.dumps(asdict(report), indent=4)}")
+                    reporter.upload_log(test_id, json.dumps(asdict(report), indent=4))
                 else:
-                    status = "SKIPPED"
+                    status = AgentStatus.SKIPPED
 
-                try:
-                    reporter.finish_test(test_id, status)
-                except Exception:
-                    logger.error(f"[{test.id}] failed to upload finished status.")
+                reporter.finish_test(test_id, status.value)
+                collector.acceptance_report[status.value] += 1
         elif test.test_case_objective == "QuantitativeTest":
             # create test in Test Dashboard
             test_ids = []

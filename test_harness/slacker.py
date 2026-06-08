@@ -1,11 +1,41 @@
 """Slack notification integration class."""
 
 import json
+import logging
 import os
 import tempfile
 
 import httpx
 from slack_sdk import WebClient
+
+# Slack rejects section blocks whose text exceeds 3000 chars. Leave a small
+# safety margin so we never end up at the boundary.
+SLACK_SECTION_TEXT_LIMIT = 2900
+
+
+def _chunk_text(text, limit=SLACK_SECTION_TEXT_LIMIT):
+    """Split text into chunks no larger than ``limit`` chars, preferring
+    newline boundaries so quoted-block formatting stays intact."""
+    if len(text) <= limit:
+        return [text]
+    chunks = []
+    current = ""
+    for line in text.split("\n"):
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+            current = ""
+        # A single line longer than the limit (rare) - hard split it.
+        while len(line) > limit:
+            chunks.append(line[:limit])
+            line = line[limit:]
+        current = line
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 class Slacker:
@@ -18,21 +48,23 @@ class Slacker:
         self.url = url if url is not None else os.getenv("SLACK_WEBHOOK_URL")
         slack_token = token if token is not None else os.getenv("SLACK_TOKEN")
         self.client = WebClient(slack_token)
+        self.logger = logging.getLogger(__name__)
 
     def post_notification(self, messages=[]):
         """Post a notification to Slack."""
         # https://gist.github.com/mrjk/079b745c4a8a118df756b127d6499aa0
         blocks = []
         for message in messages:
-            blocks.append(
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": str(message),
-                    },
-                }
-            )
+            for chunk in _chunk_text(str(message)):
+                blocks.append(
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": chunk,
+                        },
+                    }
+                )
         with httpx.Client() as client:
             res = client.post(
                 url=self.url,
@@ -41,6 +73,12 @@ class Slacker:
                     "blocks": blocks,
                 },
             )
+            if res.status_code >= 300:
+                self.logger.warning(
+                    "Slack webhook rejected notification: %s %s",
+                    res.status_code,
+                    res.text,
+                )
 
     def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""
@@ -56,4 +94,17 @@ class Slacker:
                 title=filename,
                 file=tmp_path,
                 initial_comment="Test Results:",
+            )
+
+    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
+        """Upload a binary file (PNG, HTML, etc.) to Slack."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp_path = os.path.join(td, filename)
+            with open(tmp_path, "wb") as f:
+                f.write(content)
+            self.client.files_upload_v2(
+                channel=self.channel,
+                title=title or filename,
+                file=tmp_path,
+                initial_comment=initial_comment or "Performance report:",
             )

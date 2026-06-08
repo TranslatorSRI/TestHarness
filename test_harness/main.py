@@ -5,8 +5,8 @@ from gevent import monkey
 monkey.patch_all()
 
 import json
-from argparse import ArgumentParser
 import time
+from argparse import ArgumentParser
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -55,9 +55,10 @@ def main(args):
         logger=logger,
     )
     reporter.get_auth()
-    reporter.create_test_run(next(iter(tests.values())).test_env, args["suite"])
+    test_env = next(iter(tests.values())).test_env
+    reporter.create_test_run(test_env, args["suite"])
     slacker = MockSlacker()
-    collector = ResultCollector(logger)
+    collector = ResultCollector(test_env, logger)
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
@@ -97,6 +98,11 @@ def main(args):
             "json",
             collector.performance_stats,
         )
+        for filename, content in collector.render_performance_artifacts():
+            try:
+                slacker.upload_binary_file(filename, content)
+            except Exception as e:
+                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()

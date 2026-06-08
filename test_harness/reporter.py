@@ -201,31 +201,35 @@ class Reporter:
 
     def upload_log(self, test_id, message):
         """Upload logs to the IR."""
-        res = self.authenticated_client.post(
-            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
-            json=[
-                {
-                    "testId": f"{test_id}",
-                    "level": "INFO",
-                    "timestamp": datetime.now().timestamp(),
-                    "message": message,
-                },
-            ],
-        )
-        res.raise_for_status()
+        try:
+            res = self.authenticated_client.post(
+                url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/logs",
+                json=[
+                    {
+                        "testId": f"{test_id}",
+                        "level": "INFO",
+                        "timestamp": datetime.now().timestamp(),
+                        "message": message,
+                    },
+                ],
+            )
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"[{test_id}] failed to upload logs: {e}")
 
-    def finish_test(self, test_id, result):
+    def finish_test(self, test_id: str, result: str):
         """Set the final status of a test."""
-        res = self.authenticated_client.put(
-            url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}",
-            json={
-                "result": result,
-                "endedAt": datetime.now().astimezone().isoformat(),
-            },
-        )
-        res.raise_for_status()
-        res_json = res.json()
-        return res_json["result"]
+        try:
+            res = self.authenticated_client.put(
+                url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests/{test_id}",
+                json={
+                    "result": result,
+                    "endedAt": datetime.now().astimezone().isoformat(),
+                },
+            )
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"[{test_id}] failed to upload finished status: {e}")
 
     def finish_test_run(self):
         """Set the final status of a test run."""
