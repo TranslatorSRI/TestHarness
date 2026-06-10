@@ -22,6 +22,7 @@ setup(
     entry_points={
         "console_scripts": [
             "test-harness = test_harness.main:cli",
+            "rerun-from-pk = test_harness.rerun_from_pk:cli",
         ],
     },
 )
