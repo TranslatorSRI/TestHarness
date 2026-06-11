@@ -6,6 +6,7 @@ import logging
 
 from test_harness.rerun_from_pk import (
     _result_confidence,
+    build_acceptance_stats,
     compute_ars_status,
     parse_expected_output,
     parse_pk,
@@ -104,6 +105,44 @@ def test_compute_ars_status_flips_after_resort():
         )
         == "PASSED"
     )
+
+
+def test_build_acceptance_stats():
+    rows = [
+        {"name": "TopAnswer: a", "ars": "PASSED"},
+        {"name": "TopAnswer: b", "ars": "FAILED"},
+        {"name": "TopAnswer: c", "ars": "PASSED"},
+        {"name": "Acceptable: d", "ars": "NO_RESULTS"},
+        {"name": "NeverShow: e", "ars": "PASSED"},
+        {"name": "uncategorized name", "ars": "PASSED"},  # no valid prefix -> ignored
+    ]
+    stats = build_acceptance_stats(rows)
+    # every category and status key is present, ordered as the user expects
+    assert list(stats.keys()) == [
+        "TopAnswer",
+        "Acceptable",
+        "BadButForgivable",
+        "NeverShow",
+    ]
+    assert list(stats["TopAnswer"].keys()) == [
+        "PASSED",
+        "FAILED",
+        "NO_RESULTS",
+        "SKIPPED",
+        "ERROR",
+    ]
+    assert stats["TopAnswer"]["PASSED"] == 2
+    assert stats["TopAnswer"]["FAILED"] == 1
+    assert stats["Acceptable"]["NO_RESULTS"] == 1
+    assert stats["NeverShow"]["PASSED"] == 1
+    # BadButForgivable saw no rows -> all zeros
+    assert stats["BadButForgivable"] == {
+        "PASSED": 0,
+        "FAILED": 0,
+        "NO_RESULTS": 0,
+        "SKIPPED": 0,
+        "ERROR": 0,
+    }
 
 
 def test_compute_ars_status_guards():
@@ -244,6 +283,7 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
         )
 
     output_csv = tmp_path / "output.csv"
+    stats_output = tmp_path / "output.json"
     rerun_csv(
         input_csv=str(input_csv),
         test_suite_path=str(suite_path),
@@ -251,6 +291,7 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
         ars_url="http://fake-ars",
         trapi_version="1.6.0",
         logger=logger,
+        stats_output=str(stats_output),
     )
 
     with open(output_csv, newline="") as f:
@@ -272,6 +313,19 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
     # not-in-suite row: carried over unchanged
     assert out_rows[2]["ars"] == "PASSED"
     assert out_rows[2]["shepherd-aragorn"] == "FAILED"
+
+    # the summary JSON reflects the recomputed ars column (all 3 rows are
+    # "Acceptable" by name, two recomputed to PASSED + one carried-over PASSED)
+    with open(stats_output) as f:
+        stats = json.load(f)
+    assert stats["Acceptable"]["PASSED"] == 3
+    assert stats["Acceptable"]["FAILED"] == 0
+    assert set(stats.keys()) == {
+        "TopAnswer",
+        "Acceptable",
+        "BadButForgivable",
+        "NeverShow",
+    }
 
 
 def test_rerun_csv_resolves_ars_url_once(tmp_path, mocker):

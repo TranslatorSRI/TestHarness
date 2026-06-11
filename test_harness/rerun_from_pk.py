@@ -9,7 +9,9 @@ row:
 3. re-sorts the merged results by ``ordering_components.confidence`` (descending),
 4. re-runs the existing acceptance pass/fail analysis on the re-sorted results,
 5. writes the whole CSV back out in the same format with the ``ars`` column
-   recomputed (all other agent columns are carried over unchanged).
+   recomputed (all other agent columns are carried over unchanged), plus a
+   summary JSON of ``{expected_output_category: {status: count}}`` for the
+   recomputed ars column.
 
 The expected-output category is read from the ``name`` column (which always starts
 with ``"{expected_output}: "``); the expected-output CURIE (``output_id``) is
@@ -184,11 +186,46 @@ def resolve_ars_url(
     return services[0]["url"]
 
 
+def build_acceptance_stats(rows: List[Dict[str, str]]) -> Dict[str, Dict[str, int]]:
+    """Summarize the (recomputed) ars column as ``{category: {status: count}}``.
+
+    Categories come from the name-column prefix and statuses are the final ars
+    values in the output rows, mirroring ``ResultCollector.acceptance_stats`` for
+    the ars agent. The category/status key order matches ``VALID_EXPECTED_OUTPUTS``
+    and the ``AgentStatus`` enum.
+    """
+    stats: Dict[str, Dict[str, int]] = {
+        category: {status.value: 0 for status in AgentStatus}
+        for category in VALID_EXPECTED_OUTPUTS
+    }
+    for row in rows:
+        category = parse_expected_output(row.get("name", ""))
+        if category is None:
+            continue
+        status = row.get("ars", "")
+        if status in stats[category]:
+            stats[category][status] += 1
+    return stats
+
+
 def _write_csv(output_csv: str, fieldnames: List[str], rows: List[Dict[str, str]]) -> None:
     with open(output_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_stats(
+    stats_output: Optional[str],
+    rows: List[Dict[str, str]],
+    logger: logging.Logger,
+) -> Dict[str, Dict[str, int]]:
+    stats = build_acceptance_stats(rows)
+    if stats_output:
+        with open(stats_output, "w") as f:
+            json.dump(stats, f, indent=2)
+        logger.info(f"Wrote acceptance stats to {stats_output}")
+    return stats
 
 
 def rerun_csv(
@@ -198,8 +235,13 @@ def rerun_csv(
     ars_url: Optional[str],
     trapi_version: str,
     logger: logging.Logger,
+    stats_output: Optional[str] = None,
 ) -> str:
-    """Re-run acceptance analysis for every row of ``input_csv`` and write a new CSV."""
+    """Re-run acceptance analysis for every row of ``input_csv`` and write a new CSV.
+
+    If ``stats_output`` is given, also write a per-category pass/fail summary JSON
+    of the recomputed ars column.
+    """
     asset_lookup, run_env = load_test_suite(test_suite_path)
 
     with open(input_csv, newline="") as f:
@@ -219,6 +261,7 @@ def rerun_csv(
             f"Could not resolve an ARS url for env '{run_env}'; writing rows unchanged."
         )
         _write_csv(output_csv, fieldnames, rows)
+        _write_stats(stats_output, rows, logger)
         return output_csv
 
     normalized_cache: Dict[str, Dict[str, str]] = {}
@@ -295,6 +338,7 @@ def rerun_csv(
 
     _write_csv(output_csv, fieldnames, rows)
     logger.info(f"Wrote re-run results to {output_csv}")
+    _write_stats(stats_output, rows, logger)
     return output_csv
 
 
@@ -335,6 +379,14 @@ def cli():
         help="Where to write the re-run CSV. Defaults to '<input>_rerun.csv'.",
     )
     parser.add_argument(
+        "--stats-output",
+        default=None,
+        help=(
+            "Where to write the per-category pass/fail summary JSON. "
+            "Defaults to the output CSV path with a '.json' extension."
+        ),
+    )
+    parser.add_argument(
         "--ars-url",
         default=None,
         help="ARS base url to query. Defaults to the SmartAPI registry entry for the suite's env.",
@@ -358,6 +410,10 @@ def cli():
         input_path = Path(args.input_csv)
         output_csv = str(input_path.with_name(f"{input_path.stem}_rerun.csv"))
 
+    stats_output = args.stats_output
+    if stats_output is None:
+        stats_output = str(Path(output_csv).with_suffix(".json"))
+
     rerun_csv(
         input_csv=args.input_csv,
         test_suite_path=args.test_suite,
@@ -365,6 +421,7 @@ def cli():
         ars_url=args.ars_url,
         trapi_version=args.trapi_version,
         logger=logger,
+        stats_output=stats_output,
     )
 
 
