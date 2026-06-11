@@ -148,37 +148,47 @@ def compute_ars_status(
 
 def load_test_suite(
     path: str,
-) -> Dict[Tuple[str, str], Tuple[Any, Any]]:
-    """Load a test-suite JSON into a ``{(test_id, asset_id): (test, asset)}`` lookup."""
+) -> Tuple[Dict[Tuple[str, str], Tuple[Any, Any]], Optional[str]]:
+    """Load a test-suite JSON.
+
+    Returns a ``{(test_id, asset_id): (test, asset)}`` lookup plus the run's
+    environment (the first test case's ``test_env``); the whole run shares a
+    single env / ARS url.
+    """
     with open(path) as f:
         suite = TestSuite.model_validate(json.load(f))
     lookup: Dict[Tuple[str, str], Tuple[Any, Any]] = {}
+    run_env: Optional[str] = None
     for test in suite.test_cases.values():
+        if run_env is None:
+            run_env = test.test_env
         for asset in test.test_assets:
             lookup[(str(test.id), str(asset.id))] = (test, asset)
-    return lookup
+    return lookup, run_env
 
 
 def resolve_ars_url(
-    test_env: str,
+    test_env: Optional[str],
     trapi_version: str,
     override: Optional[str],
-    cache: Dict[str, str],
     logger: logging.Logger,
 ) -> Optional[str]:
-    """Resolve the ARS base url for an environment (cached), like run.py does."""
+    """Resolve the ARS base url for the run's environment, like run.py does."""
     if override:
         return override
-    if test_env in cache:
-        return cache[test_env]
     registry = retrieve_registry_from_smartapi(trapi_version)
     services = registry.get(env_map.get(test_env, ""), {}).get("ars", [])
     if not services:
         logger.error(f"No ARS service found in registry for env '{test_env}'.")
         return None
-    url = services[0]["url"]
-    cache[test_env] = url
-    return url
+    return services[0]["url"]
+
+
+def _write_csv(output_csv: str, fieldnames: List[str], rows: List[Dict[str, str]]) -> None:
+    with open(output_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def rerun_csv(
@@ -190,7 +200,7 @@ def rerun_csv(
     logger: logging.Logger,
 ) -> str:
     """Re-run acceptance analysis for every row of ``input_csv`` and write a new CSV."""
-    asset_lookup = load_test_suite(test_suite_path)
+    asset_lookup, run_env = load_test_suite(test_suite_path)
 
     with open(input_csv, newline="") as f:
         reader = csv.DictReader(f)
@@ -202,8 +212,22 @@ def rerun_csv(
     if missing:
         raise ValueError(f"Input CSV is missing required columns: {sorted(missing)}")
 
+    # The whole run shares one environment, so resolve the ARS url just once.
+    ars_base_url = resolve_ars_url(run_env, trapi_version, ars_url, logger)
+    if ars_base_url is None:
+        logger.error(
+            f"Could not resolve an ARS url for env '{run_env}'; writing rows unchanged."
+        )
+        _write_csv(output_csv, fieldnames, rows)
+        return output_csv
+
     normalized_cache: Dict[str, Dict[str, str]] = {}
-    ars_url_cache: Dict[str, str] = {}
+    # Many assets share a single ARS response, and same-pk rows are contiguous,
+    # so we hold one merged (already confidence-sorted) message at a time and
+    # only re-fetch when we reach a row whose pk differs from the one we have.
+    cached_pk: Optional[str] = None
+    cached_results: List[Dict[str, Any]] = []
+    cached_status: Any = None
 
     for row in rows:
         case_id = row.get("TestCase", "")
@@ -242,15 +266,6 @@ def rerun_csv(
                 f"falling back to asset value '{expected_output}'."
             )
 
-        ars_base_url = resolve_ars_url(
-            test.test_env, trapi_version, ars_url, ars_url_cache, logger
-        )
-        if ars_base_url is None:
-            logger.warning(
-                f"No ARS url for env '{test.test_env}'; keeping original ars value."
-            )
-            continue
-
         # out_curie: normalized output_id (cached per test case, like run.py).
         if test.id not in normalized_cache:
             normalized_cache[test.id] = normalize_curies(test, logger)
@@ -260,22 +275,25 @@ def rerun_csv(
             else ""
         )
 
-        results, status_code = fetch_merged_message(parent_pk, ars_base_url, logger)
-        sorted_results = sort_results_by_confidence(results)
+        # Only fetch the merged message when the pk changes from the one we hold.
+        if parent_pk != cached_pk:
+            results, cached_status = fetch_merged_message(
+                parent_pk, ars_base_url, logger
+            )
+            cached_results = sort_results_by_confidence(results)
+            cached_pk = parent_pk
+            logger.info(f"Fetched merged ARS message for pk={parent_pk}")
+
         new_status = compute_ars_status(
-            sorted_results, status_code, out_curie, expected_output, logger
+            cached_results, cached_status, out_curie, expected_output, logger
         )
         logger.info(
             f"{case_id}/{asset_id}: ars {original_status} -> {new_status} "
-            f"({len(results)} results, pk={parent_pk})"
+            f"({len(cached_results)} results, pk={parent_pk})"
         )
         row["ars"] = new_status
 
-    with open(output_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
+    _write_csv(output_csv, fieldnames, rows)
     logger.info(f"Wrote re-run results to {output_csv}")
     return output_csv
 

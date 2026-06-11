@@ -141,7 +141,17 @@ SUITE = {
                     "output_id": "CHEBI:OUT",
                     "expected_output": "Acceptable",
                     "qualifiers": [],
-                }
+                },
+                {
+                    "id": "Asset_4",
+                    "name": "Acceptable: chebi c",
+                    "input_id": "MONDO:0010794",
+                    "input_category": "biolink:Disease",
+                    "predicate_id": "biolink:treats",
+                    "output_id": "CHEBI:C",
+                    "expected_output": "Acceptable",
+                    "qualifiers": [],
+                },
             ],
             "components": ["ars"],
             "test_case_objective": "AcceptanceTest",
@@ -159,13 +169,17 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
         _make_result("CHEBI:C", 0.3),
         _make_result("CHEBI:OUT", 0.9),
     ]
-    mocker.patch(
+    mock_fetch = mocker.patch(
         "test_harness.rerun_from_pk.fetch_merged_message",
         return_value=(results, 200),
     )
     mocker.patch(
         "test_harness.rerun_from_pk.normalize_curies",
-        return_value={"CHEBI:OUT": "CHEBI:OUT", "MONDO:0010794": "MONDO:0010794"},
+        return_value={
+            "CHEBI:OUT": "CHEBI:OUT",
+            "CHEBI:C": "CHEBI:C",
+            "MONDO:0010794": "MONDO:0010794",
+        },
     )
 
     suite_path = tmp_path / "suite.json"
@@ -186,7 +200,8 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
     with open(input_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        # row that exists in the suite: ars should flip to PASSED
+        # two rows in the suite that SHARE the same pk: ars should flip to PASSED
+        # for both, but the merged message should only be fetched once.
         writer.writerow(
             {
                 "name": "Acceptable: chebi out",
@@ -198,6 +213,19 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
                 "shepherd-aragorn": "PASSED",
                 "shepherd-arax": "SKIPPED",
                 "shepherd-bte": "NO_RESULTS",
+            }
+        )
+        writer.writerow(
+            {
+                "name": "Acceptable: chebi c",
+                "url": "http://dashboard/1",
+                "pk": "https://arax.ci.transltr.io/?r=PK123",
+                "TestCase": "TestCase_1",
+                "TestAsset": "Asset_4",
+                "ars": "FAILED",
+                "shepherd-aragorn": "FAILED",
+                "shepherd-arax": "PASSED",
+                "shepherd-bte": "SKIPPED",
             }
         )
         # row not in the suite: should be carried over unchanged
@@ -230,13 +258,67 @@ def test_rerun_csv_end_to_end(tmp_path, mocker):
         assert reader.fieldnames == fieldnames
         out_rows = list(reader)
 
-    assert len(out_rows) == 2
-    # in-suite row: ars recomputed to PASSED, other agent columns preserved
+    assert len(out_rows) == 3
+    # the two same-pk rows shared one merged message: only one fetch
+    assert mock_fetch.call_count == 1
+    # in-suite rows: ars recomputed to PASSED, other agent columns preserved
     assert out_rows[0]["ars"] == "PASSED"
     assert out_rows[0]["shepherd-aragorn"] == "PASSED"
     assert out_rows[0]["shepherd-arax"] == "SKIPPED"
     assert out_rows[0]["shepherd-bte"] == "NO_RESULTS"
     assert out_rows[0]["name"] == "Acceptable: chebi out"
-    # not-in-suite row: carried over unchanged
     assert out_rows[1]["ars"] == "PASSED"
-    assert out_rows[1]["shepherd-aragorn"] == "FAILED"
+    assert out_rows[1]["shepherd-arax"] == "PASSED"
+    # not-in-suite row: carried over unchanged
+    assert out_rows[2]["ars"] == "PASSED"
+    assert out_rows[2]["shepherd-aragorn"] == "FAILED"
+
+
+def test_rerun_csv_resolves_ars_url_once(tmp_path, mocker):
+    """The registry lookup should happen once for the whole run, not per row."""
+    results = [_make_result("CHEBI:OUT", 0.9), _make_result("CHEBI:A", 0.1)]
+    mocker.patch(
+        "test_harness.rerun_from_pk.fetch_merged_message",
+        return_value=(results, 200),
+    )
+    mocker.patch(
+        "test_harness.rerun_from_pk.normalize_curies",
+        return_value={"CHEBI:OUT": "CHEBI:OUT", "MONDO:0010794": "MONDO:0010794"},
+    )
+    # env "ci" maps to "staging" in env_map
+    mock_registry = mocker.patch(
+        "test_harness.rerun_from_pk.retrieve_registry_from_smartapi",
+        return_value={"staging": {"ars": [{"url": "http://registry-ars"}]}},
+    )
+
+    suite_path = tmp_path / "suite.json"
+    suite_path.write_text(json.dumps(SUITE))
+
+    fieldnames = ["name", "pk", "TestCase", "TestAsset", "ars"]
+    input_csv = tmp_path / "input.csv"
+    with open(input_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for asset_id in ("Asset_3", "Asset_4"):
+            writer.writerow(
+                {
+                    "name": "Acceptable: x",
+                    "pk": "https://arax.ci.transltr.io/?r=PK123",
+                    "TestCase": "TestCase_1",
+                    "TestAsset": asset_id,
+                    "ars": "FAILED",
+                }
+            )
+
+    output_csv = tmp_path / "output.csv"
+    # ars_url=None forces a registry lookup
+    rerun_csv(
+        input_csv=str(input_csv),
+        test_suite_path=str(suite_path),
+        output_csv=str(output_csv),
+        ars_url=None,
+        trapi_version="1.6.0",
+        logger=logger,
+    )
+
+    assert mock_registry.call_count == 1
