@@ -167,14 +167,29 @@ class MockSlacker(Slacker):
 class MockQueryRunner(QueryRunner):
     def retrieve_registry(self, trapi_version: str):
         self.registry = {
+            "development": {
+                "ara": [
+                    {
+                        "_id": "ARAX Translator Reasoner - TRAPI 1.6.0",
+                        "title": "ARAX Translator Reasoner - TRAPI 1.6.0",
+                        "infores": "infores:arax",
+                        # "url": "http://localhost:5000/api/arax/v1.4"
+                        # "url": "http://localhost:5439/arax"
+                        "url": "https://shepherd.ci.transltr.io/aragorn"
+                        # "url": "https://shepherd.renci.org/aragorn"
+                    }
+                ]
+            },
             "staging": {
                 "ara": [
                     {
                         "_id": "ARAX Translator Reasoner - TRAPI 1.6.0",
                         "title": "ARAX Translator Reasoner - TRAPI 1.6.0",
                         "infores": "infores:arax",
+                        # "url": "http://localhost:5000/api/arax/v1.4"
                         # "url": "http://localhost:5439/arax"
-                        "url": "http://localhost:5000/api/arax/v1.4"
+                        "url": "https://shepherd.ci.transltr.io/aragorn"
+                        # "url": "https://shepherd.renci.org/aragorn"
                     }
                 ]
             },

@@ -24,6 +24,7 @@ from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.generate_query import generate_query
 from test_harness.runner.query_runner import QueryRunner, env_map
+from tests.helpers.mocks import MockQueryRunner
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
@@ -41,7 +42,7 @@ def run_tests(
 ) -> None:
     """Send tests through the Test Runners."""
     logger.info(f"Running {len(tests)} queries...")
-    query_runner = QueryRunner(logger)
+    query_runner = MockQueryRunner(logger)
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=args["trapi_version"])
     # loop over all tests
