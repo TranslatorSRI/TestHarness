@@ -116,7 +116,7 @@ def run_tests(
                         try:
                             if response["status_code"] > 299:
                                 agent_report.status = AgentStatus.FAILED
-                                if response["status_code"] == "598":
+                                if str(response["status_code"]) == "598":
                                     agent_report.message = "Timed out"
                                 else:
                                     agent_report.message = (
@@ -236,18 +236,35 @@ def run_tests(
                         test_id,
                         message,
                     )
-                    host = query_runner.registry[env_map[test.test_env]][
-                        test.components[0]
-                    ][0]["url"]
-                    results = run_performance_test(test, test_query, host)
-
-                    collector.collect_performance_result(
-                        test,
-                        asset,
-                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
-                        host,
-                        results,
-                    )
+                    # Give the performance test a terminal status in the
+                    # Information Radiator. Without this the test is created
+                    # but never finished, so it shows up as perpetually
+                    # incomplete in the dashboard.
+                    status = AgentStatus.PASSED
+                    if test_query is None:
+                        logger.error(
+                            f"Unable to generate performance query for asset: {asset.id}"
+                        )
+                        status = AgentStatus.FAILED
+                    else:
+                        host = query_runner.registry[env_map[test.test_env]][
+                            test.components[0]
+                        ][0]["url"]
+                        try:
+                            results = run_performance_test(test, test_query, host)
+                            collector.collect_performance_result(
+                                test,
+                                asset,
+                                f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                                host,
+                                results,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to run performance test for {test.id}: {e}"
+                            )
+                            status = AgentStatus.FAILED
+                    reporter.finish_test(test_id, status.value)
             # try:
             #     test_inputs = [
             #         assets.id,
