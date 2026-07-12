@@ -3,6 +3,9 @@
 These cover bugs where results were dropped or mangled on their way to the
 Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
 
+* A skipped test case left its assets marked FAILED (for ARAs) / NO_RESULTS
+  (for ARS) instead of SKIPPED, and assets that never got a query were dropped
+  from the per-agent stats entirely.
 * Performance tests were created in the radiator but never finished.
 * Performance failures were overwritten per host instead of accumulated.
 * Agents that returned no response were written to the CSV but omitted from
@@ -20,6 +23,7 @@ from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.utils import AgentReport, AgentStatus, TestReport
 
+from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
 from .helpers.mocks import MockReporter, MockResultCollector, MockQueryRunner
 
@@ -131,10 +135,45 @@ class _RecordingReporter(MockReporter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.finished = []
+        self.labels = []
 
     def finish_test(self, test_id, result):
         self.finished.append((test_id, result))
         return result
+
+    def upload_labels(self, test_id, labels):
+        self.labels.append(labels)
+
+
+def test_force_skipped_records_all_agents_skipped():
+    """A skipped test must mark every agent SKIPPED, even when the report
+    carries incidental per-agent statuses from a partial/errored run."""
+    collector = ResultCollector("dev", logger)
+    report = TestReport(
+        pks={},
+        result={
+            "ars": AgentReport(
+                status=AgentStatus.NO_RESULTS, message=None, actual_output=None
+            ),
+            "shepherd-aragorn": AgentReport(
+                status=AgentStatus.FAILED, message="boom", actual_output=None
+            ),
+        },
+        test_details=None,
+    )
+    collector.collect_acceptance_result(
+        _Case(), _Asset(), report, "pk", "http://ir/1", force_skipped=True
+    )
+
+    for agent in collector.agents:
+        stats = collector.acceptance_stats[agent]["TopAnswer"]
+        assert stats["SKIPPED"] == 1, agent
+        assert stats["FAILED"] == 0 and stats["NO_RESULTS"] == 0, agent
+
+    csv_row = collector.acceptance_csv.strip().splitlines()[-1]
+    # every agent column is SKIPPED; nothing leaks FAILED/NO_RESULTS
+    assert "FAILED" not in csv_row and "NO_RESULTS" not in csv_row
+    assert csv_row.count("SKIPPED") == len(collector.agents)
 
 
 def _performance_test_case():
@@ -232,3 +271,60 @@ def test_performance_test_finished_failed_on_error(mocker):
 
     assert reporter.finished
     assert reporter.finished[0][1] == AgentStatus.FAILED.value
+
+
+class _NoResponseQueryRunner(MockQueryRunner):
+    """Simulates a skipped test case: no query responses come back for any
+    asset (eg the ARS query never ran / query generation failed)."""
+
+    def run_queries(self, test_case):
+        return {}, {}
+
+
+def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
+    """When an acceptance test case is skipped, every asset must be finished
+    as SKIPPED in the radiator and recorded as SKIPPED for every agent in the
+    stats/CSV -- not FAILED for ARAs or NO_RESULTS for ARS, and never dropped
+    from the per-agent stats entirely."""
+    mocker.patch(
+        "test_harness.run.QueryRunner",
+        return_value=_NoResponseQueryRunner(logger),
+    )
+
+    collector = ResultCollector("ci", logger)
+    reporter = _RecordingReporter(base_url="http://ir")
+    run_tests(
+        tests=example_test_cases,
+        reporter=reporter,
+        collector=collector,
+        logger=logger,
+        args={"suite": "acceptance", "trapi_version": "1.6.0"},
+    )
+
+    # 3 assets total across the two acceptance cases in the fixture.
+    assert len(reporter.finished) == 3
+    assert all(result == AgentStatus.SKIPPED.value for _, result in reporter.finished)
+    assert collector.acceptance_report[AgentStatus.SKIPPED.value] == 3
+    assert collector.acceptance_report[AgentStatus.FAILED.value] == 0
+    assert collector.acceptance_report[AgentStatus.NO_RESULTS.value] == 0
+
+    # Every asset shows up in the per-agent stats as SKIPPED (no ARA entry is
+    # silently dropped, so "0 SKIPPED" can't happen).
+    for agent in collector.agents:
+        per_agent = collector.acceptance_stats[agent]
+        skipped_total = sum(
+            per_agent[query_type][AgentStatus.SKIPPED.value]
+            for query_type in collector.query_types
+        )
+        assert skipped_total == 3, f"{agent} should have 3 SKIPPED"
+
+    # CSV has a row per asset (plus header), all SKIPPED, and labels were
+    # uploaded as SKIPPED for every agent on every asset.
+    data_rows = collector.acceptance_csv.strip().splitlines()[1:]
+    assert len(data_rows) == 3
+    for row in data_rows:
+        assert "FAILED" not in row and "NO_RESULTS" not in row
+    assert len(reporter.labels) == 3
+    for label_set in reporter.labels:
+        assert {label["key"] for label in label_set} == set(collector.agents)
+        assert all(label["value"] == AgentStatus.SKIPPED.value for label in label_set)

@@ -179,11 +179,19 @@ def run_tests(
                             agent_report.status = AgentStatus.FAILED
                             agent_report.message = "Test Error"
 
-                    # grab only ars result if it exists, otherwise default to failed
+                    # The overall test status is driven by ARS. If ARS didn't
+                    # produce a result, the whole test is considered skipped.
                     if "ars" not in report.result:
                         status = AgentStatus.SKIPPED
                     else:
                         status = report.result["ars"].status
+
+                    # When the test is skipped, every agent is skipped too: the
+                    # query never really ran, so the incidental per-ARA
+                    # error/no-result statuses would be misleading. Force them
+                    # all to SKIPPED so the radiator labels, CSV, and JSON stats
+                    # stay consistent with the skipped test-level status.
+                    force_skipped = status == AgentStatus.SKIPPED
 
                     collector.collect_acceptance_result(
                         test,
@@ -191,11 +199,19 @@ def run_tests(
                         report,
                         test_query["pks"].get("parent_pk"),
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                        force_skipped=force_skipped,
                     )
 
-                    if status != AgentStatus.SKIPPED:
-                        # only upload ara labels if the test ran successfully
-                        try:
+                    try:
+                        if force_skipped:
+                            labels = [
+                                {
+                                    "key": ara,
+                                    "value": AgentStatus.SKIPPED.value,
+                                }
+                                for ara in collector.agents
+                            ]
+                        else:
                             labels = [
                                 {
                                     "key": ara,
@@ -204,13 +220,35 @@ def run_tests(
                                 for ara in collector.agents
                                 if ara in report.result
                             ]
-                            reporter.upload_labels(test_id, labels)
-                        except Exception as e:
-                            logger.warning(f"[{test.id}] failed to upload labels: {e}")
+                        reporter.upload_labels(test_id, labels)
+                    except Exception as e:
+                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
                     logger.info(f"Full report: {json.dumps(asdict(report), indent=4)}")
                     reporter.upload_log(test_id, json.dumps(asdict(report), indent=4))
                 else:
+                    # No query response for this asset (eg query generation
+                    # failed). Record it as skipped across every agent so it
+                    # still appears in the per-agent stats, CSV, and radiator
+                    # labels as SKIPPED instead of being dropped entirely.
                     status = AgentStatus.SKIPPED
+                    collector.collect_acceptance_result(
+                        test,
+                        asset,
+                        TestReport(pks={}, result={}, test_details=None),
+                        None,
+                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                        force_skipped=True,
+                    )
+                    try:
+                        reporter.upload_labels(
+                            test_id,
+                            [
+                                {"key": ara, "value": AgentStatus.SKIPPED.value}
+                                for ara in collector.agents
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
 
                 reporter.finish_test(test_id, status.value)
                 collector.acceptance_report[status.value] += 1

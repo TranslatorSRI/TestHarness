@@ -249,14 +249,21 @@ class ResultCollector:
         report: TestReport,
         parent_pk: Union[str, None],
         url: str,
+        force_skipped: bool = False,
     ):
-        """Add a single report to the total output."""
+        """Add a single report to the total output.
+
+        ``force_skipped`` records every agent as SKIPPED regardless of what is
+        in ``report``. It is used when the test as a whole was skipped (eg the
+        query never ran) so the per-agent stats/CSV agree with the skipped
+        test-level status instead of reporting incidental per-ARA errors.
+        """
         self.has_acceptance_results = True
         # add result to stats
         agent_statuses = []
         for agent in self.agents:
             query_type = asset.expected_output
-            if agent in report.result:
+            if not force_skipped and agent in report.result:
                 agent_result = report.result[agent]
                 self.acceptance_stats[agent][query_type][agent_result.status.value] += 1
                 agent_statuses.append(agent_result.status.value)
