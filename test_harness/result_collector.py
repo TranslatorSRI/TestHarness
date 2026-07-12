@@ -249,18 +249,31 @@ class ResultCollector:
         report: TestReport,
         parent_pk: Union[str, None],
         url: str,
+        force_skipped: bool = False,
     ):
-        """Add a single report to the total output."""
+        """Add a single report to the total output.
+
+        ``force_skipped`` records every agent as SKIPPED regardless of what is
+        in ``report``. It is used when the test as a whole was skipped (eg the
+        query never ran) so the per-agent stats/CSV agree with the skipped
+        test-level status instead of reporting incidental per-ARA errors.
+        """
         self.has_acceptance_results = True
         # add result to stats
         agent_statuses = []
         for agent in self.agents:
             query_type = asset.expected_output
-            if agent in report.result:
+            if not force_skipped and agent in report.result:
                 agent_result = report.result[agent]
                 self.acceptance_stats[agent][query_type][agent_result.status.value] += 1
                 agent_statuses.append(agent_result.status.value)
             else:
+                # Agent produced no response for this asset. Record it as
+                # SKIPPED in the per-agent stats too, so the JSON summary
+                # uploaded to Slack stays consistent with the CSV (which
+                # already reports SKIPPED here) and every asset is accounted
+                # for in each agent's totals.
+                self.acceptance_stats[agent][query_type][AgentStatus.SKIPPED.value] += 1
                 agent_statuses.append(AgentStatus.SKIPPED.value)
 
         # add result to csv
@@ -305,7 +318,18 @@ class ResultCollector:
             "history": results.get("stats_history") or [],
             "summary_html": results.get("summary_html"),
         }
-        self.performance_report["failures"] = results.get("failures") or {}
+        # Accumulate failures across every performance target/asset. This used
+        # to be a plain assignment, which meant only the last target's failures
+        # ever reached Slack when a suite exercised more than one host. Merge by
+        # error key, summing occurrences so the summary reflects the whole run.
+        for failure_key, failure in (results.get("failures") or {}).items():
+            existing = self.performance_report["failures"].get(failure_key)
+            if existing:
+                existing["occurrences"] = existing.get("occurrences", 0) + failure.get(
+                    "occurrences", 0
+                )
+            else:
+                self.performance_report["failures"][failure_key] = dict(failure)
 
         stats_id = f"{host_url}_case_{test.id}_asset_{asset.id}"
         self.performance_stats[stats_id] = {

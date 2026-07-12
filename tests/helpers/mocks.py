@@ -85,8 +85,11 @@ class MockResultCollector(ResultCollector):
         report: dict,
         parent_pk: str | None,
         url: str,
+        force_skipped: bool = False,
     ):
-        return super().collect_acceptance_result(test, asset, report, parent_pk, url)
+        return super().collect_acceptance_result(
+            test, asset, report, parent_pk, url, force_skipped=force_skipped
+        )
 
     def collect_performance_result(
         self,
