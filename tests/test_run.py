@@ -30,7 +30,7 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
         json=kp_response,
     )
     httpx_mock.add_response(
-        url="https://nodenorm.ci.transltr.io/get_normalized_nodes",
+        url="https://nodenorm-es.ci.transltr.io/get_normalized_nodes",
         json={
             "MONDO:0010794": None,
             "DRUGBANK:DB00313": None,
