@@ -75,9 +75,7 @@ def main(args):
 
     use_local_slacker = local or not Slacker.is_configured()
     if use_local_slacker:
-        logger.info(
-            f"Running without Slack; results will be saved to '{output_dir}'."
-        )
+        logger.info(f"Running without Slack; results will be saved to '{output_dir}'.")
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
