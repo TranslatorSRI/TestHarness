@@ -5,6 +5,7 @@ from gevent import monkey
 monkey.patch_all()
 
 import json
+import os
 import time
 from argparse import ArgumentParser
 from urllib.parse import urlparse
@@ -14,10 +15,10 @@ from setproctitle import setproctitle
 
 from test_harness.download import download_tests
 from test_harness.logger import get_logger, setup_logger
-from test_harness.reporter import Reporter
+from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
-from test_harness.slacker import Slacker
+from test_harness.slacker import LocalSlacker, Slacker
 
 setproctitle("TestHarness")
 setup_logger()
@@ -47,16 +48,37 @@ def main(args):
     if len(tests) < 1:
         return logger.warning("No tests to run. Exiting.")
 
-    # Create test run in the Information Radiator
-    reporter = Reporter(
+    output_dir = args.get("output_dir") or "test_results"
+
+    # Run fully locally when asked to, or fall back to local stand-ins when the
+    # respective service isn't configured, so developers can run the harness
+    # without an Information Radiator or Slack workspace.
+    local = args.get("local", False)
+
+    use_local_reporter = local or not Reporter.is_configured(
         base_url=args.get("reporter_url"),
         refresh_token=args.get("reporter_access_token"),
-        logger=logger,
     )
+    if use_local_reporter:
+        logger.info("Running without the Information Radiator (local reporter).")
+        reporter = LocalReporter(logger=logger)
+    else:
+        # Create test run in the Information Radiator
+        reporter = Reporter(
+            base_url=args.get("reporter_url"),
+            refresh_token=args.get("reporter_access_token"),
+            logger=logger,
+        )
     reporter.get_auth()
     test_env = next(iter(tests.values())).test_env
     reporter.create_test_run(test_env, args["suite"])
-    slacker = Slacker()
+
+    use_local_slacker = local or not Slacker.is_configured()
+    if use_local_slacker:
+        logger.info(f"Running without Slack; results will be saved to '{output_dir}'.")
+        slacker = LocalSlacker(output_dir=output_dir, logger=logger)
+    else:
+        slacker = Slacker()
     collector = ResultCollector(test_env, logger)
     queried_envs = set()
     for test in tests.values():
@@ -107,8 +129,10 @@ def main(args):
     reporter.finish_test_run()
 
     if args["json_output"]:
-        # logger.info("Saving report as JSON...")
-        with open("test_report.json", "w") as f:
+        os.makedirs(output_dir, exist_ok=True)
+        report_path = os.path.join(output_dir, "test_report.json")
+        logger.info(f"Saving report as JSON to {report_path}...")
+        with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
 
     return logger.info("All tests have completed!")
@@ -175,6 +199,25 @@ def cli():
         "--json_output",
         action="store_true",
         help="Save the test results locally in json",
+    )
+
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Run entirely locally without an Information Radiator or Slack. "
+            "Test results (CSV/JSON) and artifacts are saved to --output_dir."
+        ),
+    )
+
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="test_results",
+        help=(
+            "Directory to save local test results and artifacts when Slack is "
+            "not configured or --local is used."
+        ),
     )
 
     parser.add_argument(

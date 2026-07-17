@@ -23,3 +23,20 @@ The Test Harness is a CLI that you need to install:
 
 Once everything is installed, you can call
 - `test-harness -h` to see available options
+
+### Running locally
+By default the Test Harness reports results to an Information Radiator and
+posts them to Slack. To run everything locally without those services (for
+example while developing), pass `--local`:
+- `test-harness --local download <suite>`
+
+In local mode the harness makes no network calls to the Information Radiator or
+Slack. The test results (CSV and JSON) and any performance artifacts are saved
+to a local directory instead (`test_results/` by default, configurable with
+`--output_dir`).
+
+You don't have to use `--local` to get local files: if Slack isn't configured
+(no `SLACK_WEBHOOK_URL` / `SLACK_TOKEN` / `SLACK_CHANNEL`), the results are
+saved to `--output_dir` automatically. Likewise, if the Information Radiator
+isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
+back to a local reporter.
