@@ -242,3 +242,82 @@ class Reporter:
         res.raise_for_status()
         res_json = res.json()
         return res_json["status"]
+
+    @staticmethod
+    def is_configured(base_url=None, refresh_token=None):
+        """Return True if enough config exists to talk to the Information Radiator.
+
+        Falls back to the same environment variables the constructor uses, so
+        callers can decide whether to use a real Reporter or a LocalReporter
+        without instantiating one first.
+        """
+        has_url = bool(base_url or os.getenv("ZE_BASE_URL"))
+        has_token = bool(refresh_token or os.getenv("ZE_REFRESH_TOKEN"))
+        return has_url and has_token
+
+
+class LocalReporter(Reporter):
+    """A Reporter that keeps everything local and makes no network calls.
+
+    Lets developers run the harness without an Information Radiator. It mirrors
+    the Reporter interface but hands out sequential ids and logs instead of
+    uploading, so the rest of the harness is oblivious to the difference.
+    """
+
+    def __init__(
+        self,
+        base_url=None,
+        refresh_token=None,
+        logger: logging.Logger = logging.getLogger(),
+    ):
+        super().__init__(
+            base_url=base_url or "http://localhost",
+            refresh_token=refresh_token,
+            logger=logger,
+        )
+        self._next_test_id = 0
+
+    def get_auth(self):
+        """No authentication needed when running locally."""
+        pass
+
+    def create_test_run(self, test_env, suite_name):
+        """Create a local, in-memory test run."""
+        self.test_name = f"{suite_name}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
+        self.test_run_id = "local"
+        self.logger.info(f"[local] Created test run '{self.test_name}'")
+        return self.test_run_id
+
+    def create_test(self, test, asset):
+        """Hand out a sequential id so downstream URLs still format."""
+        self._next_test_id += 1
+        return self._next_test_id
+
+    def upload_labels(self, test_id, labels):
+        """No-op: labels are not persisted when running locally."""
+        pass
+
+    def upload_logs(self, test_id, logs):
+        """No-op: logs are not persisted when running locally."""
+        pass
+
+    def upload_artifact_references(self, test_id, artifact_references):
+        """No-op: artifact references are not persisted when running locally."""
+        pass
+
+    def upload_screenshot(self, test_id, screenshot):
+        """No-op: screenshots are not persisted when running locally."""
+        pass
+
+    def upload_log(self, test_id, message):
+        """No-op: logs are not persisted when running locally."""
+        pass
+
+    def finish_test(self, test_id, result):
+        """Nothing to send; just echo the result back."""
+        return result
+
+    def finish_test_run(self):
+        """Nothing to finish remotely when running locally."""
+        self.logger.info("[local] Finished test run")
+        return None

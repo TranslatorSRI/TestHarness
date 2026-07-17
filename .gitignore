@@ -6,3 +6,5 @@ logs/
 scripts/
 .env
 .vscode
+test_results/
+test_report.json
