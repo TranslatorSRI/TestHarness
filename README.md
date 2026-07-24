@@ -40,3 +40,21 @@ You don't have to use `--local` to get local files: if Slack isn't configured
 saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
+
+### Overriding the target service
+Tests specify which component to run against (`ars`, `ara`, ...), and the
+harness normally resolves those components to deployed services through the
+SmartAPI registry. To run the tests against a service that isn't deployed yet —
+for example a locally running ARA you want to check before releasing — you can
+override the target with `--target_url` and `--target`:
+- `test-harness --local --target_url http://localhost:8080 --target aragorn download <suite>`
+
+With an override in place:
+- Every query is sent directly to `--target_url`, regardless of the `components`
+  specified in the tests, and the SmartAPI registry is not consulted.
+- `--target` is the infores identifier of the service (with or without the
+  `infores:` prefix). Any target other than `ars` is treated as a single
+  service and queried with a `POST` to `<target_url>/query`; use `--target ars`
+  to run a local ARS with the usual submit/poll flow.
+- Pass/fail results are reported for the override target (instead of being
+  driven by the ARS), and performance tests are pointed at the override URL.

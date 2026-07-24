@@ -35,6 +35,10 @@ def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
+    if bool(args.get("target_url")) != bool(args.get("target")):
+        return logger.error(
+            "--target_url and --target must be provided together."
+        )
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -79,7 +83,7 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    collector = ResultCollector(test_env, logger)
+    collector = ResultCollector(test_env, logger, target=args.get("target"))
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
@@ -186,6 +190,28 @@ def cli():
         "--save_to_dashboard",
         action="store_true",
         help="Have the Test Harness send the test results to the Testing Dashboard",
+    )
+
+    parser.add_argument(
+        "--target_url",
+        type=url_type,
+        help=(
+            "Override the target service specified in the tests and send all "
+            "queries to this URL instead, e.g. http://localhost:8080 for a "
+            "locally running service. Must be used with --target."
+        ),
+    )
+
+    parser.add_argument(
+        "--target",
+        type=str,
+        help=(
+            "The infores identifier of the service at --target_url, with or "
+            "without the 'infores:' prefix, e.g. aragorn or infores:aragorn. "
+            "Anything other than ars is queried directly as a single service "
+            "(POST to <target_url>/query); ars uses the normal ARS "
+            "submit/poll flow. Must be used with --target_url."
+        ),
     )
 
     parser.add_argument(

@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import gevent
 from gevent import GreenletExit
@@ -312,9 +312,19 @@ def run_locust_tests(
     }
 
 
-def run_performance_test(test: PerformanceTestCase, test_query: Dict, host: str):
-    """Wrapper function to run load tests with custom parameters"""
-    target = test.components[0]
+def run_performance_test(
+    test: PerformanceTestCase,
+    test_query: Dict,
+    host: str,
+    target: Optional[str] = None,
+):
+    """Wrapper function to run load tests with custom parameters.
+
+    ``target`` overrides the component specified in the test case, so the
+    load test can be pointed at eg a locally running ARA regardless of what
+    the test says. Any target that isn't the ARS is queried as an ARA.
+    """
+    target = target or test.components[0]
 
     results = run_locust_tests(
         host,

@@ -201,8 +201,20 @@ def _summarize_response_sizes(
 class ResultCollector:
     """Collect results for easy dissemination."""
 
-    def __init__(self, test_env: Optional[TestEnvEnum], logger: logging.Logger):
-        """Initialize the Collector."""
+    def __init__(
+        self,
+        test_env: Optional[TestEnvEnum],
+        logger: logging.Logger,
+        target: Optional[str] = None,
+    ):
+        """Initialize the Collector.
+
+        ``target`` is the infores of an override target service (with or
+        without the ``infores:`` prefix). A non-ARS override queries a single
+        service directly, so results are collected for that one agent instead
+        of the ARS + ARA roster; an ARS override still fans out to ARAs and
+        keeps the usual roster.
+        """
         self.logger = logger
         self.has_acceptance_results = False
         self.has_performance_results = False
@@ -222,6 +234,10 @@ class ResultCollector:
                 "shepherd-arax",
                 "shepherd-bte",
             ]
+        if target is not None:
+            target = target.split("infores:")[-1]
+            if target != "ars":
+                agents = [target]
         self.agents = agents
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.acceptance_report = {status_type.value: 0 for status_type in AgentStatus}

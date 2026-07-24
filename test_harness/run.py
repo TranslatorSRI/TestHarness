@@ -41,9 +41,17 @@ def run_tests(
 ) -> None:
     """Send tests through the Test Runners."""
     logger.info(f"Running {len(tests)} queries...")
-    query_runner = QueryRunner(logger)
+    target_url = args.get("target_url")
+    target = args.get("target")
+    query_runner = QueryRunner(logger, target_url=target_url, target=target)
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=args["trapi_version"])
+    # The overall test status is normally driven by the ARS. When the target
+    # service specified in the tests is overridden (eg to run against a
+    # locally running ARA), it is driven by the override target instead.
+    status_agent = "ars"
+    if target_url is not None and target is not None:
+        status_agent = target.split("infores:")[-1]
     # loop over all tests
     for test in tqdm(list(tests.values())):
         # check if acceptance test
@@ -179,12 +187,14 @@ def run_tests(
                             agent_report.status = AgentStatus.FAILED
                             agent_report.message = "Test Error"
 
-                    # The overall test status is driven by ARS. If ARS didn't
-                    # produce a result, the whole test is considered skipped.
-                    if "ars" not in report.result:
+                    # The overall test status is driven by the status agent
+                    # (the ARS, or the override target when one is given). If
+                    # it didn't produce a result, the whole test is considered
+                    # skipped.
+                    if status_agent not in report.result:
                         status = AgentStatus.SKIPPED
                     else:
-                        status = report.result["ars"].status
+                        status = report.result[status_agent].status
 
                     # When the test is skipped, every agent is skipped too: the
                     # query never really ran, so the incidental per-ARA
@@ -285,11 +295,18 @@ def run_tests(
                         )
                         status = AgentStatus.FAILED
                     else:
-                        host = query_runner.registry[env_map[test.test_env]][
-                            test.components[0]
-                        ][0]["url"]
+                        if target_url is not None:
+                            host = query_runner.target_url
+                            perf_target = status_agent
+                        else:
+                            host = query_runner.registry[env_map[test.test_env]][
+                                test.components[0]
+                            ][0]["url"]
+                            perf_target = None
                         try:
-                            results = run_performance_test(test, test_query, host)
+                            results = run_performance_test(
+                                test, test_query, host, target=perf_target
+                            )
                             collector.collect_performance_result(
                                 test,
                                 asset,

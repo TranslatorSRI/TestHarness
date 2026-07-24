@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Dict, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import httpx
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -28,11 +28,36 @@ env_map = {
 class QueryRunner:
     """Translator Test Query Runner."""
 
-    def __init__(self, logger: logging.Logger):
+    def __init__(
+        self,
+        logger: logging.Logger,
+        target_url: Optional[str] = None,
+        target: Optional[str] = None,
+    ):
+        """Initialize the Query Runner.
+
+        ``target_url`` and ``target`` override the target service specified in
+        the tests themselves: when given, every query is sent to ``target_url``
+        instead of the services registered for the test's components, and the
+        service is identified as ``target`` (an infores curie, with or without
+        the ``infores:`` prefix). This is how the harness is pointed at a
+        locally running ARA/ARS before it is released and deployed.
+        """
         self.registry = {}
         self.logger = logger
+        self.target_url = target_url.rstrip("/") if target_url else None
+        if target is not None and not target.startswith("infores:"):
+            target = f"infores:{target}"
+        self.target_infores = target
 
     def retrieve_registry(self, trapi_version: str):
+        if self.target_url is not None:
+            # all queries go to the override target, so the registry of
+            # deployed services is never consulted
+            self.logger.info(
+                "Target override in use; skipping SmartAPI registry retrieval."
+            )
+            return
         self.registry = retrieve_registry_from_smartapi(trapi_version)
 
     def run_query(
@@ -290,29 +315,47 @@ class QueryRunner:
                 except Exception as e:
                     self.logger.warning(e)
 
-        # send queries to a single type of component at a time
-        for component in test_case.components:
-            # component = "ara"
-            # loop over all specified components, i.e. ars, ara, kp, utilities
+        if self.target_url is not None:
+            # ignore the components specified in the test case and send every
+            # query straight to the override target
             self.logger.info(
-                f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
+                f"Overriding test-specified components; sending queries to {self.target_infores} at {self.target_url}"
             )
-            try:
-                all_responses = []
-                for service in self.registry[env_map[test_case.test_env]][component]:
-                    for query_hash, query in queries.items():
-                        all_responses.append(
-                            self.run_query(
-                                query_hash,
-                                query["query"],
-                                service["url"],
-                                service["infores"],
-                            )
-                        )
-                    for query_hash, responses, pks in all_responses:
-                        queries[query_hash]["responses"].update(responses)
-                        queries[query_hash]["pks"].update(pks)
-            except Exception as e:
-                self.logger.error(f"Something went wrong with the queries: {e}")
+            self._send_queries(
+                [{"url": self.target_url, "infores": self.target_infores}],
+                queries,
+            )
+        else:
+            # send queries to a single type of component at a time
+            for component in test_case.components:
+                # component = "ara"
+                # loop over all specified components, i.e. ars, ara, kp, utilities
+                self.logger.info(
+                    f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
+                )
+                self._send_queries(
+                    self.registry[env_map[test_case.test_env]][component],
+                    queries,
+                )
 
         return queries, normalized_curies
+
+    def _send_queries(self, services: List[Dict[str, str]], queries: Dict[int, dict]):
+        """Send all generated queries to each of the given services."""
+        try:
+            all_responses = []
+            for service in services:
+                for query_hash, query in queries.items():
+                    all_responses.append(
+                        self.run_query(
+                            query_hash,
+                            query["query"],
+                            service["url"],
+                            service["infores"],
+                        )
+                    )
+                for query_hash, responses, pks in all_responses:
+                    queries[query_hash]["responses"].update(responses)
+                    queries[query_hash]["pks"].update(pks)
+        except Exception as e:
+            self.logger.error(f"Something went wrong with the queries: {e}")
