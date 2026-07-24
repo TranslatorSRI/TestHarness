@@ -36,9 +36,7 @@ def main(args):
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     if bool(args.get("target_url")) != bool(args.get("target")):
-        return logger.error(
-            "--target_url and --target must be provided together."
-        )
+        return logger.error("--target_url and --target must be provided together.")
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
