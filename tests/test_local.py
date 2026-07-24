@@ -119,3 +119,50 @@ def test_main_local_flag_uses_local_stand_ins(mocker, monkeypatch, tmp_path):
     # The real (networked) reporter/slacker are never constructed in local mode.
     reporter_cls.assert_not_called()
     slacker_cls.assert_not_called()
+
+
+def test_target_override_prefixes_saved_filenames(mocker, tmp_path):
+    """With a target override, every saved filename is prefixed with the target."""
+
+    def fake_run_tests(tests, reporter, collector, logger, args):
+        collector.has_acceptance_results = True
+
+    mocker.patch("test_harness.main.run_tests", side_effect=fake_run_tests)
+
+    main(
+        {
+            "tests": example_test_cases,
+            "suite": "testing",
+            "save_to_dashboard": False,
+            "json_output": True,
+            "log_level": "ERROR",
+            "local": True,
+            "output_dir": str(tmp_path),
+            "target_url": "http://localhost:8080",
+            "target": "infores:aragorn",
+        }
+    )
+
+    saved = os.listdir(tmp_path)
+    # acceptance json + csv and the json report were all saved with the prefix
+    assert len(saved) == 3
+    assert all(name.startswith("aragorn_") for name in saved)
+    assert "aragorn_test_report.json" in saved
+
+
+def test_target_override_requires_both_flags(mocker, tmp_path):
+    """--target_url and --target must be given together."""
+    run_tests = mocker.patch("test_harness.main.run_tests")
+
+    args = {
+        "tests": example_test_cases,
+        "suite": "testing",
+        "save_to_dashboard": False,
+        "json_output": False,
+        "log_level": "ERROR",
+        "local": True,
+        "output_dir": str(tmp_path),
+    }
+    main({**args, "target_url": "http://localhost:8080"})
+    main({**args, "target": "aragorn"})
+    run_tests.assert_not_called()

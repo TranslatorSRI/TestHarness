@@ -35,6 +35,8 @@ def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
+    if bool(args.get("target_url")) != bool(args.get("target")):
+        return logger.error("--target_url and --target must be provided together.")
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -49,6 +51,12 @@ def main(args):
         return logger.warning("No tests to run. Exiting.")
 
     output_dir = args.get("output_dir") or "test_results"
+
+    # prefix saved/uploaded result filenames with the override target so runs
+    # against different local services don't produce indistinguishable files
+    target_prefix = ""
+    if args.get("target"):
+        target_prefix = f"{args['target'].split('infores:')[-1]}_"
 
     # Run fully locally when asked to, or fall back to local stand-ins when the
     # respective service isn't configured, so developers can run the harness
@@ -79,7 +87,7 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    collector = ResultCollector(test_env, logger)
+    collector = ResultCollector(test_env, logger, target=args.get("target"))
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
@@ -104,22 +112,23 @@ def main(args):
     )
     if collector.has_acceptance_results:
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "json",
             collector.acceptance_stats,
         )
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "csv",
             collector.acceptance_csv,
         )
     if collector.has_performance_results:
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "json",
             collector.performance_stats,
         )
         for filename, content in collector.render_performance_artifacts():
+            filename = f"{target_prefix}{filename}"
             try:
                 slacker.upload_binary_file(filename, content)
             except Exception as e:
@@ -130,7 +139,7 @@ def main(args):
 
     if args["json_output"]:
         os.makedirs(output_dir, exist_ok=True)
-        report_path = os.path.join(output_dir, "test_report.json")
+        report_path = os.path.join(output_dir, f"{target_prefix}test_report.json")
         logger.info(f"Saving report as JSON to {report_path}...")
         with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
@@ -186,6 +195,28 @@ def cli():
         "--save_to_dashboard",
         action="store_true",
         help="Have the Test Harness send the test results to the Testing Dashboard",
+    )
+
+    parser.add_argument(
+        "--target_url",
+        type=url_type,
+        help=(
+            "Override the target service specified in the tests and send all "
+            "queries to this URL instead, e.g. http://localhost:8080 for a "
+            "locally running service. Must be used with --target."
+        ),
+    )
+
+    parser.add_argument(
+        "--target",
+        type=str,
+        help=(
+            "The infores identifier of the service at --target_url, with or "
+            "without the 'infores:' prefix, e.g. aragorn or infores:aragorn. "
+            "Anything other than ars is queried directly as a single service "
+            "(POST to <target_url>/query); ars uses the normal ARS "
+            "submit/poll flow. Must be used with --target_url."
+        ),
     )
 
     parser.add_argument(
