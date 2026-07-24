@@ -54,6 +54,12 @@ def main(args):
 
     output_dir = args.get("output_dir") or "test_results"
 
+    # prefix saved/uploaded result filenames with the override target so runs
+    # against different local services don't produce indistinguishable files
+    target_prefix = ""
+    if args.get("target"):
+        target_prefix = f"{args['target'].split('infores:')[-1]}_"
+
     # Run fully locally when asked to, or fall back to local stand-ins when the
     # respective service isn't configured, so developers can run the harness
     # without an Information Radiator or Slack workspace.
@@ -108,22 +114,23 @@ def main(args):
     )
     if collector.has_acceptance_results:
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "json",
             collector.acceptance_stats,
         )
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "csv",
             collector.acceptance_csv,
         )
     if collector.has_performance_results:
         slacker.upload_test_results_file(
-            reporter.test_name,
+            f"{target_prefix}{reporter.test_name}",
             "json",
             collector.performance_stats,
         )
         for filename, content in collector.render_performance_artifacts():
+            filename = f"{target_prefix}{filename}"
             try:
                 slacker.upload_binary_file(filename, content)
             except Exception as e:
@@ -134,7 +141,7 @@ def main(args):
 
     if args["json_output"]:
         os.makedirs(output_dir, exist_ok=True)
-        report_path = os.path.join(output_dir, "test_report.json")
+        report_path = os.path.join(output_dir, f"{target_prefix}test_report.json")
         logger.info(f"Saving report as JSON to {report_path}...")
         with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
