@@ -19,6 +19,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestObjectiveEnum,
 )
 
+from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.utils import AgentReport, AgentStatus, TestReport
@@ -69,6 +70,148 @@ def test_skipped_agents_are_counted_in_stats():
     csv_row = collector.acceptance_csv.strip().splitlines()[-1]
     assert csv_row.count("SKIPPED") == 3
     assert "PASSED" in csv_row
+
+
+def _ara_result(curie, score):
+    """An ARA-shaped result: scored by its own analyses, ranked by position."""
+    return {
+        "node_bindings": {"n1": [{"id": curie}]},
+        "analyses": [{"score": score}],
+    }
+
+
+def _ars_result(curie, sugeno, rank):
+    """An ARS-shaped result: already scored (sugeno) and ranked by the ARS."""
+    return {
+        "node_bindings": {"n1": [{"id": curie}]},
+        "analyses": [{"score": 0.1}],
+        "sugeno": sugeno,
+        "rank": rank,
+    }
+
+
+def test_csv_reports_expected_answer_rank_and_score():
+    """The CSV must say whether the expected answer was in each agent's
+    response, and at what rank/score, using the same numbers the report JSON
+    uploaded to the radiator carries."""
+    collector = ResultCollector("dev", logger)
+    report = TestReport(pks={}, result={}, test_details=None)
+    # ARS found it 2nd with a sugeno score; an ARA found it 3rd with its own
+    # analysis score; another ARA didn't return it at all.
+    report.result["ars"] = AgentReport(AgentStatus.SKIPPED, None, None)
+    run_acceptance_pass_fail_analysis(
+        report.result,
+        "ars",
+        [
+            _ars_result("MONDO:1", 0.9, 1),
+            _ars_result("CHEBI:2", 0.8, 2),
+        ],
+        "CHEBI:2",
+        "TopAnswer",
+    )
+    report.result["shepherd-aragorn"] = AgentReport(AgentStatus.SKIPPED, None, None)
+    run_acceptance_pass_fail_analysis(
+        report.result,
+        "shepherd-aragorn",
+        [
+            _ara_result("MONDO:1", 0.7),
+            _ara_result("MONDO:3", 0.6),
+            _ara_result("CHEBI:2", 0.5),
+        ],
+        "CHEBI:2",
+        "TopAnswer",
+    )
+    report.result["shepherd-arax"] = AgentReport(AgentStatus.SKIPPED, None, None)
+    run_acceptance_pass_fail_analysis(
+        report.result,
+        "shepherd-arax",
+        [_ara_result("MONDO:1", 0.7)],
+        "CHEBI:2",
+        "TopAnswer",
+    )
+
+    collector.collect_acceptance_result(_Case(), _Asset(), report, "pk", "http://ir/1")
+
+    header = collector.acceptance_csv.splitlines()[0].split(",")
+    row = dict(
+        zip(header, collector.acceptance_csv.strip().splitlines()[-1].split(","))
+    )
+    for agent in collector.agents:
+        for suffix in ("_found", "_rank", "_score"):
+            assert f"{agent}{suffix}" in header
+
+    # ARS: found, with the sugeno rank/score.
+    assert row["ars"] == AgentStatus.PASSED.value
+    assert row["ars_found"] == "true"
+    assert row["ars_rank"] == "2"
+    assert row["ars_score"] == "0.8"
+    # ARA: found, ranked by its position in the result list.
+    assert row["shepherd-aragorn_found"] == "true"
+    assert row["shepherd-aragorn_rank"] == "3"
+    assert row["shepherd-aragorn_score"] == "0.5"
+    # ARA that never returned the expected answer: found is false, and there
+    # is no rank/score to report.
+    assert row["shepherd-arax_found"] == "false"
+    assert row["shepherd-arax_rank"] == ""
+    assert row["shepherd-arax_score"] == ""
+    # Agent that didn't respond at all: the question has no answer.
+    assert row["shepherd-bte"] == AgentStatus.SKIPPED.value
+    assert row["shepherd-bte_found"] == ""
+
+
+def test_csv_expected_answer_columns_blank_when_no_analysis():
+    """Skipped/errored agents get blank detail columns; an agent that came
+    back with no results at all definitively didn't have the answer."""
+    collector = ResultCollector("dev", logger)
+    report = TestReport(
+        pks={},
+        result={
+            "ars": AgentReport(
+                status=AgentStatus.NO_RESULTS, message="No results", actual_output=None
+            ),
+            "shepherd-aragorn": AgentReport(
+                status=AgentStatus.FAILED, message="Test Error", actual_output=None
+            ),
+        },
+        test_details=None,
+    )
+    collector.collect_acceptance_result(_Case(), _Asset(), report, "pk", "http://ir/1")
+
+    header = collector.acceptance_csv.splitlines()[0].split(",")
+    row = dict(
+        zip(header, collector.acceptance_csv.strip().splitlines()[-1].split(","))
+    )
+    assert row["ars_found"] == "false"
+    assert row["ars_rank"] == "" and row["ars_score"] == ""
+    assert row["shepherd-aragorn_found"] == ""
+    assert row["shepherd-aragorn_rank"] == ""
+
+
+def test_analysis_records_expected_answer_found_flag():
+    """The analysis records whether the expected answer was in the response,
+    even when the test passes because it was correctly absent."""
+    report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
+    run_acceptance_pass_fail_analysis(
+        report,
+        "ars",
+        [_ara_result("MONDO:1", 0.7)],
+        "CHEBI:2",
+        "NeverShow",
+    )
+    assert report["ars"].status == AgentStatus.PASSED
+    assert report["ars"].actual_output["found"] is False
+
+    report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
+    run_acceptance_pass_fail_analysis(
+        report,
+        "ars",
+        [_ara_result("CHEBI:2", 0.7)],
+        "CHEBI:2",
+        "NeverShow",
+    )
+    assert report["ars"].status == AgentStatus.FAILED
+    assert report["ars"].actual_output["found"] is True
+    assert report["ars"].actual_output["ara_rank"] == 1
 
 
 def _perf_results(target, failures):

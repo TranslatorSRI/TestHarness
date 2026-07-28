@@ -42,6 +42,17 @@ def run_acceptance_pass_fail_analysis(
                     ids = str(val["id"])
                     if ids not in n_perc_ids:
                         n_perc_ids.append(ids)
+        # Record up front whether the expected answer came back at all. The
+        # rank/score below only exist when it did, so this flag is what tells
+        # "in the response, but unranked" apart from "never showed up".
+        no_scores = {
+            "ars_score": None,
+            "ars_rank": None,
+            "ara_score": None,
+            "ara_rank": None,
+        }
+        not_found_output = {"found": False, **no_scores}
+        report[agent].actual_output = {"found": out_curie in all_ids, **no_scores}
         # get the sugeno score & rank
         for idx, res in enumerate(results):
             node_bindings = res.get("node_bindings", {})
@@ -65,6 +76,7 @@ def run_acceptance_pass_fail_analysis(
                         ara_rank = idx + 1
 
                     report[agent].actual_output = {
+                        "found": True,
                         "ars_score": ars_score,
                         "ars_rank": ars_rank,
                         "ara_score": ara_score,
@@ -79,12 +91,7 @@ def run_acceptance_pass_fail_analysis(
                     report[agent].status = AgentStatus.FAILED
                 else:
                     report[agent].status = AgentStatus.FAILED
-                    report[agent].actual_output = {
-                        "ars_score": None,
-                        "ars_rank": None,
-                        "ara_score": None,
-                        "ara_rank": None,
-                    }
+                    report[agent].actual_output = dict(not_found_output)
 
         elif expect_output == "BadButForgivable":
             if out_curie in n_perc_ids:
@@ -93,24 +100,14 @@ def run_acceptance_pass_fail_analysis(
                 report[agent].status = AgentStatus.FAILED
             elif out_curie not in n_perc_ids and out_curie not in all_ids:
                 report[agent].status = AgentStatus.PASSED
-                report[agent].actual_output = {
-                    "ars_score": None,
-                    "ars_rank": None,
-                    "ara_score": None,
-                    "ara_rank": None,
-                }
+                report[agent].actual_output = dict(not_found_output)
 
         elif expect_output == "NeverShow":
             if out_curie in n_perc_ids:
                 report[agent].status = AgentStatus.FAILED
             elif out_curie not in all_ids:
                 report[agent].status = AgentStatus.PASSED
-                report[agent].actual_output = {
-                    "ars_score": None,
-                    "ars_rank": None,
-                    "ara_score": None,
-                    "ara_rank": None,
-                }
+                report[agent].actual_output = dict(not_found_output)
     except Exception as e:
         report[agent].status = AgentStatus.FAILED
         report[agent].message = f"An exception happened: {type(e), str(e)}"

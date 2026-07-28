@@ -41,6 +41,26 @@ saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
+### Result files
+The acceptance results CSV has a row per test asset, with the asset's name, its
+Information Radiator URL, the ARS pk, and the test case/asset ids. Every agent
+then contributes four columns:
+- `<agent>` - the agent's status for the asset (`PASSED`, `FAILED`,
+  `NO_RESULTS`, `SKIPPED`, `ERROR`).
+- `<agent>_found` - `true`/`false` for whether the expected answer was anywhere
+  in that agent's response, regardless of whether that made the test pass. It
+  is blank when the agent never got far enough for the question to have an
+  answer (it was skipped, or errored before returning results).
+- `<agent>_rank` - the rank the expected answer came back at (the ARS's own
+  rank for ARS results, the result's position for an ARA's results). Blank when
+  the expected answer wasn't found.
+- `<agent>_score` - the score the expected answer came back with (the ARS
+  sugeno score for ARS results, the analysis score for an ARA's). Blank when
+  the expected answer wasn't found.
+
+These are the same numbers as the `actual_output` in the per-test report JSON
+uploaded to the Information Radiator.
+
 ### Overriding the target service
 Tests specify which component to run against (`ars`, `ara`, ...), and the
 harness normally resolves those components to deployed services through the

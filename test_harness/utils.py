@@ -35,7 +35,9 @@ class AgentReport:
 
     status: AgentStatus
     message: Optional[str]
-    actual_output: Optional[dict[str, Optional[int]]]
+    # Where the expected answer landed in this agent's response: a "found"
+    # flag plus the ARS/ARA rank (int) and score (float) when it was found.
+    actual_output: Optional[dict[str, Union[bool, int, float, None]]]
 
 
 @dataclass
