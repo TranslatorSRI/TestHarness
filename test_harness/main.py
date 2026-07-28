@@ -19,6 +19,7 @@ from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.slacker import LocalSlacker, Slacker
+from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 
 setproctitle("TestHarness")
 setup_logger()
@@ -50,13 +51,24 @@ def main(args):
     if len(tests) < 1:
         return logger.warning("No tests to run. Exiting.")
 
+    # optionally run only one type of query out of the suite, eg to evaluate a
+    # change that only affects drug-treats-disease queries
+    query_type = args.get("query_type")
+    if query_type is not None:
+        tests = filter_tests_by_query_type(tests, query_type, logger)
+        if len(tests) < 1:
+            return logger.warning(f"No {query_type} tests to run. Exiting.")
+
     output_dir = args.get("output_dir") or "test_results"
 
-    # prefix saved/uploaded result filenames with the override target so runs
-    # against different local services don't produce indistinguishable files
+    # prefix saved/uploaded result filenames with the override target and the
+    # query type so runs against different local services, or of different
+    # slices of a suite, don't produce indistinguishable files
     target_prefix = ""
     if args.get("target"):
         target_prefix = f"{args['target'].split('infores:')[-1]}_"
+    if query_type is not None:
+        target_prefix += f"{query_type}_"
 
     # Run fully locally when asked to, or fall back to local stand-ins when the
     # respective service isn't configured, so developers can run the harness
@@ -216,6 +228,18 @@ def cli():
             "Anything other than ars is queried directly as a single service "
             "(POST to <target_url>/query); ars uses the normal ARS "
             "submit/poll flow. Must be used with --target_url."
+        ),
+    )
+
+    parser.add_argument(
+        "--query_type",
+        type=str.upper,
+        choices=list(QUERY_TYPE_PREDICATES),
+        help=(
+            "Only run the tests of a single query type: MVP1 for the drug "
+            "treats disease queries, MVP2 for the chemical affects gene "
+            "queries. Every test in the suite is run if this isn't given. "
+            "Mainly useful for local evaluation runs."
         ),
     )
 

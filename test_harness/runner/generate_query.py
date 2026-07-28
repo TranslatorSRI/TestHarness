@@ -8,7 +8,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestAsset,
 )
 
-from test_harness.utils import get_qualifier_constraints
+from test_harness.utils import QUERY_TYPE_PREDICATES, get_qualifier_constraints
 
 MVP1 = {
     "message": {
@@ -96,7 +96,7 @@ def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
             "ids": [target_id],
             "categories": [test_asset.target_input_category],
         }
-    elif test_asset.predicate_id == "biolink:treats":
+    elif test_asset.predicate_id == QUERY_TYPE_PREDICATES["MVP1"]:
         # MVP1
         query = copy.deepcopy(MVP1)
         # add id to node
@@ -113,7 +113,7 @@ def generate_query(test_asset: Union[TestAsset, PathfinderTestAsset]) -> dict:
             query["message"]["query_graph"]["edges"]["t_edge"][
                 "knowledge_type"
             ] = "inferred"
-    elif test_asset.predicate_id == "biolink:affects":
+    elif test_asset.predicate_id == QUERY_TYPE_PREDICATES["MVP2"]:
         # MVP2
         query = copy.deepcopy(MVP2)
         # add id to corresponding node

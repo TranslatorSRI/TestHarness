@@ -41,6 +41,24 @@ saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
+### Running one type of query
+A suite normally mixes the MVP query types. To run just one of them — handy
+for a local evaluation run of a change that only affects one — pass
+`--query_type`:
+- `test-harness --local --query_type MVP1 download <suite>`
+
+- `MVP1` runs the drug treats disease queries (test assets with a
+  `biolink:treats` predicate).
+- `MVP2` runs the chemical affects gene queries (`biolink:affects`).
+- Without the flag, every test in the suite is run, as before.
+
+Filtering happens per test asset, so a test case that mixes both types
+contributes only its matching assets, and a test case left with no assets is
+dropped. Pathfinder test cases don't generate an MVP query, so they're skipped
+whenever `--query_type` is given. Saved result filenames are prefixed with the
+query type (eg `MVP1_test_report.json`) so runs of different slices stay
+distinguishable.
+
 ### Result files
 The acceptance results CSV has a row per test asset, with the asset's name, its
 Information Radiator URL, the ARS pk, and the test case/asset ids. Every agent
