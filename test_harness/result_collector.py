@@ -227,7 +227,7 @@ class ResultCollector:
             "unsecret-agent",
             "cqs",
         ]
-        if test_env == "dev" or test_env == "ci":
+        if test_env == "dev" or test_env == "ci" or test_env == "test":
             agents = [
                 "ars",
                 "shepherd-aragorn",
