@@ -14,7 +14,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness import perf_plots
-from test_harness.utils import AgentStatus, TestReport
+from test_harness.utils import AgentReport, AgentStatus, TestReport
 
 # Stat row identifiers produced by the performance test runner. Kept in sync
 # with the constants in performance_test_runner.py.
@@ -227,7 +227,7 @@ class ResultCollector:
             "unsecret-agent",
             "cqs",
         ]
-        if test_env == "dev" or test_env == "ci":
+        if test_env == "dev" or test_env == "ci" or test_env == "test":
             agents = [
                 "ars",
                 "shepherd-aragorn",
@@ -249,7 +249,22 @@ class ResultCollector:
                 for result_type in self.acceptance_report.keys():
                     self.acceptance_stats[agent][query_type][result_type] = 0
 
-        self.columns = ["name", "url", "pk", "TestCase", "TestAsset", *self.agents]
+        # Each agent gets its status plus the detail the report JSON already
+        # carries for it: whether the expected answer was anywhere in that
+        # agent's response, and the rank/score it came back with.
+        self.agent_columns = ["", "_found", "_rank", "_score"]
+        self.columns = [
+            "name",
+            "url",
+            "pk",
+            "TestCase",
+            "TestAsset",
+            *[
+                f"{agent}{suffix}"
+                for agent in self.agents
+                for suffix in self.agent_columns
+            ],
+        ]
         header = ",".join(self.columns)
         self.acceptance_csv = f"{header}\n"
         self.performance_stats = {}
@@ -276,13 +291,14 @@ class ResultCollector:
         """
         self.has_acceptance_results = True
         # add result to stats
-        agent_statuses = []
+        agent_cells = []
         for agent in self.agents:
             query_type = asset.expected_output
             if not force_skipped and agent in report.result:
                 agent_result = report.result[agent]
                 self.acceptance_stats[agent][query_type][agent_result.status.value] += 1
-                agent_statuses.append(agent_result.status.value)
+                agent_cells.append(agent_result.status.value)
+                agent_cells.extend(self._expected_answer_cells(agent_result))
             else:
                 # Agent produced no response for this asset. Record it as
                 # SKIPPED in the per-agent stats too, so the JSON summary
@@ -290,10 +306,13 @@ class ResultCollector:
                 # already reports SKIPPED here) and every asset is accounted
                 # for in each agent's totals.
                 self.acceptance_stats[agent][query_type][AgentStatus.SKIPPED.value] += 1
-                agent_statuses.append(AgentStatus.SKIPPED.value)
+                agent_cells.append(AgentStatus.SKIPPED.value)
+                # Nothing came back, so there's nothing to say about where the
+                # expected answer landed.
+                agent_cells.extend([""] * (len(self.agent_columns) - 1))
 
         # add result to csv
-        agent_results = ",".join(agent_statuses)
+        agent_results = ",".join(agent_cells)
         pk_url = (
             f"https://arax.ci.transltr.io/?r={parent_pk}"
             if parent_pk is not None
@@ -302,6 +321,42 @@ class ResultCollector:
         self.acceptance_csv += (
             f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
+
+    @staticmethod
+    def _expected_answer_cells(agent_report: AgentReport) -> List[str]:
+        """CSV cells for where the expected answer landed for a single agent.
+
+        Returns (found, rank, score), pulled from the same ``actual_output``
+        that goes into the report JSON uploaded to the radiator. ARS results
+        are scored/ranked by the ARS itself (sugeno), ARA results by their own
+        analyses, so whichever of the two the analysis filled in is used.
+        Cells are left blank when the agent never got far enough for the
+        question to have an answer (eg it errored out).
+        """
+        actual_output = agent_report.actual_output or {}
+        if not actual_output:
+            # No results at all means the expected answer definitely wasn't in
+            # the response; anything else (an error, a timeout) is unknown.
+            found = "false" if agent_report.status == AgentStatus.NO_RESULTS else ""
+            return [found, "", ""]
+
+        rank = actual_output.get("ars_rank")
+        if rank is None:
+            rank = actual_output.get("ara_rank")
+        score = actual_output.get("ars_score")
+        if score is None:
+            score = actual_output.get("ara_score")
+        found = actual_output.get("found")
+        if found is None:
+            # Report without the explicit flag: a rank/score only exists for an
+            # answer that was in the response.
+            found = rank is not None or score is not None
+
+        return [
+            "true" if found else "false",
+            "" if rank is None else str(rank),
+            "" if score is None else str(score),
+        ]
 
     def collect_performance_result(
         self,

@@ -20,6 +20,15 @@ NODE_NORM_URL = {
     "prod": "https://nodenorm.transltr.io/1.4",
 }
 
+# The MVP query types, keyed by the test asset predicate that decides which
+# query template an asset gets in runner/generate_query.py.
+QUERY_TYPE_PREDICATES = {
+    # drug treats disease
+    "MVP1": "biolink:treats",
+    # chemical affects gene
+    "MVP2": "biolink:affects",
+}
+
 
 class AgentStatus(str, Enum):
     PASSED = "PASSED"
@@ -35,7 +44,9 @@ class AgentReport:
 
     status: AgentStatus
     message: Optional[str]
-    actual_output: Optional[dict[str, Optional[int]]]
+    # Where the expected answer landed in this agent's response: a "found"
+    # flag plus the ARS/ARA rank (int) and score (float) when it was found.
+    actual_output: Optional[dict[str, Union[bool, int, float, None]]]
 
 
 @dataclass
@@ -103,6 +114,51 @@ def normalize_curies(
             for curie in curies:
                 normalized_curies[curie] = curie
     return normalized_curies
+
+
+def filter_tests_by_query_type(
+    tests: Dict[str, Union[TestCase, PathfinderTestCase]],
+    query_type: Optional[str],
+    logger: logging.Logger = logging.getLogger(__name__),
+) -> Dict[str, Union[TestCase, PathfinderTestCase]]:
+    """Keep only the tests whose queries are of the given MVP query type.
+
+    ``query_type`` is ``MVP1`` (drug treats disease), ``MVP2`` (chemical
+    affects gene), or ``None`` to run everything. Filtering happens per test
+    asset, because that's what a query is generated from, and a test case
+    drops out once none of its assets are left. Pathfinder test cases never
+    produce an MVP query, so they're dropped whenever a query type is given.
+    """
+    if query_type is None:
+        return tests
+    predicate = QUERY_TYPE_PREDICATES.get(query_type)
+    if predicate is None:
+        raise ValueError(
+            f"Unknown query type '{query_type}'. "
+            f"Expected one of: {', '.join(QUERY_TYPE_PREDICATES)}."
+        )
+
+    filtered: Dict[str, Union[TestCase, PathfinderTestCase]] = {}
+    kept_assets = 0
+    total_assets = 0
+    for test_id, test in tests.items():
+        assets = test.test_assets or []
+        total_assets += len(assets)
+        if isinstance(test, PathfinderTestCase):
+            continue
+        matching = [asset for asset in assets if asset.predicate_id == predicate]
+        if not matching:
+            continue
+        kept_assets += len(matching)
+        # Copy rather than mutate: the caller's tests are left as they were.
+        filtered[test_id] = test.model_copy(update={"test_assets": matching})
+
+    logger.info(
+        f"Running only {query_type} ({predicate}) queries: "
+        f"{len(filtered)} of {len(tests)} test cases, "
+        f"{kept_assets} of {total_assets} test assets."
+    )
+    return filtered
 
 
 def hash_test_asset(test_asset: Union[TestAsset, PathfinderTestAsset]) -> int:
