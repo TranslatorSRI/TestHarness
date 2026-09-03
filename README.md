@@ -79,6 +79,68 @@ then contributes four columns:
 These are the same numbers as the `actual_output` in the per-test report JSON
 uploaded to the Information Radiator.
 
+### Performance tests
+Performance tests (`QuantitativeTest` cases) are run by
+[**HelmsDeep**](https://github.com/TranslatorSRI/HelmsDeep), installed from
+`requirements-runners.txt`. The harness does not measure anything itself: it
+picks the HelmsDeep run type for the test case, runs its CLI, and reports what
+came back.
+
+HelmsDeep owns two things the harness used to own, and this is deliberate:
+
+- **The ramp.** HelmsDeep's `LoadTestShape` drives users, spawn rate, and
+  duration from its own per-layer `stages` table, so a test case's
+  `test_run_time` and `spawn_rate` are ignored. A run takes as long as the run
+  type's ramp says (tens of minutes to over an hour). HelmsDeep can compress a
+  run to a wall-clock budget, but its own docs are explicit that a compressed
+  run is indicative rather than a measurement, so the harness never asks for it.
+- **The queries.** HelmsDeep sends its own corpus and varies the pinned entity
+  per request, so the numbers cover a real cost surface instead of warming one
+  cache. The test asset's TRAPI query is not what goes under load; the
+  Information Radiator log for the test records the *run plan* (layer, ramp,
+  SLO, checkpoints) instead, which is what you need to read the result.
+
+#### Which run type a test gets
+The layer follows the component: `ars` uses HelmsDeep's async submit/poll/merge
+targets, and every other component is queried as an ARA (a blocking
+`POST /query`). The stack cascades ARS → ARAs → KPs, so exactly one layer is
+loaded per run.
+
+The query profile within that layer defaults to `default` — the layer's own
+single-class corpus, which answers the open question *how far can we go?* and
+reports a **knee** (max sustainable concurrency). Two heavier profiles are
+available:
+
+- `mixed` — the 2:1 inferred/Pathfinder acceptance profile. This is the only
+  profile that carries **pass/fail checkpoints** (does 30 concurrent hold? 45?
+  does 60 avoid substantial failures?).
+- `pathfinder` — the two-pinned-endpoint path queries, the heaviest class.
+
+Select one with `--performance_profile`, or per test case with a `mixed` /
+`pathfinder` entry in its `test_runner_settings`; the flag wins over the test
+case.
+- `test-harness --local --performance_profile mixed download <suite>`
+
+#### What gets reported
+Two artifacts per run are uploaded to Slack (or saved to `--output_dir`):
+- `<host>_<run_type>_summary.json` — HelmsDeep's `summary.json` verbatim. This
+  is the authoritative result: the knee, every stage's numbers, the checkpoint
+  verdicts, measurement-quality warnings, and (for ARS runs) health and red
+  flags.
+- `<host>_<run_type>_report.html` — locust's own HTML report: charts and
+  request/failure tables.
+
+Both are uploaded with a comment carrying the run's checkpoint verdict, and the
+Slack summary message leads with the overall pass/fail. A run with no
+checkpoints reports its knee and says so explicitly rather than claiming a pass
+it never tested for. A missed checkpoint, or a HelmsDeep run that never produced
+a summary at all, is reported as `FAILED` in the Information Radiator too, so
+the dashboard agrees with Slack.
+
+The rest of HelmsDeep's output (`_stages.csv`, `_by_qtype.csv`,
+`_checkpoints.csv`, and the ARS debug logs) is left on disk under
+`--output_dir` for digging in.
+
 ### Overriding the target service
 Tests specify which component to run against (`ars`, `ara`, ...), and the
 harness normally resolves those components to deployed services through the

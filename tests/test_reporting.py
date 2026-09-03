@@ -7,11 +7,15 @@ Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
   (for ARS) instead of SKIPPED, and assets that never got a query were dropped
   from the per-agent stats entirely.
 * Performance tests were created in the radiator but never finished.
-* Performance failures were overwritten per host instead of accumulated.
+* A failed performance checkpoint, or a HelmsDeep run that never produced a
+  summary at all, has to reach Slack as a FAIL rather than reading as a pass.
 * Agents that returned no response were written to the CSV but omitted from
   the per-agent JSON stats.
 """
 
+import json
+
+import pytest
 from translator_testing_model.datamodel.pydanticmodel import (
     ComponentEnum,
     PerformanceTestCase,
@@ -20,6 +24,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
+from test_harness.performance_test_runner import (
+    PROFILES,
+    helmsdeep_target,
+    resolve_profile,
+)
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.utils import AgentReport, AgentStatus, TestReport
@@ -214,64 +223,192 @@ def test_analysis_records_expected_answer_found_flag():
     assert report["ars"].actual_output["ara_rank"] == 1
 
 
-def _perf_results(target, failures):
+def _helmsdeep_summary(checkpoints=None, concurrency=42.5):
+    """A minimal HelmsDeep summary.json, shaped like the real thing."""
+    summary = {
+        "config": {
+            "target": "aras_mixed",
+            "time_scale": 1.0,
+            "component": "Shepherd (Mixed 2:1 inferred/Pathfinder)",
+            "endpoint": "/query",
+            "protocol": "sync",
+            "p99_slo_ms": 300000,
+            "max_error_rate": 0.01,
+        },
+        "stages": [],
+        "knee": {
+            "stage": 1,
+            "users": 30,
+            "p99_ms": 120000.0,
+            "error_rate": 0.0,
+            "rps": 2.5,
+            "concurrency": concurrency,
+        },
+        "max_sustainable_concurrency": concurrency,
+        "stage_warnings": [],
+        "knee_unsupported": False,
+    }
+    if checkpoints is not None:
+        summary["checkpoints"] = checkpoints
+        summary["checkpoints_passed"] = all(c["verdict"] == "PASS" for c in checkpoints)
+    return summary
+
+
+def _checkpoint(users, verdict, goal="sustain peak load"):
     return {
-        "stats": [],
-        "failures": failures,
-        "test_run_time": 10,
-        "spawn_rate": 1,
-        "target": target,
-        "query_response_sizes": {},
-        "stats_history": [],
-        "summary_html": None,
+        "users": users,
+        "goal": goal,
+        "p99_slo_ms": 300000,
+        "max_error_rate": 0.01,
+        "stage": 1,
+        "requests": 500,
+        "p99_ms": 120000.0 if verdict == "PASS" else 400000.0,
+        "error_rate": 0.0 if verdict == "PASS" else 0.08,
+        "concurrency": 29.4,
+        "verdict": verdict,
+        "detail": "within limits" if verdict == "PASS" else "p99 400000ms > 300000ms",
     }
 
 
-def test_performance_failures_accumulate_across_hosts():
-    """Failures from every performance target must survive to the summary."""
+def _perf_results(summary, error=None, target="aras_mixed", exit_code=0):
+    """What the HelmsDeep driver hands the collector."""
+    return {
+        "runner": "helmsdeep",
+        "helmsdeep_target": target,
+        "component": "aragorn",
+        "profile": "mixed",
+        "host": "http://ara",
+        "prefix": "test_results/run",
+        "exit_code": exit_code,
+        "summary": summary,
+        "report_html": "<html>report</html>",
+        "artifacts": {},
+        "error": error,
+        "output": "",
+    }
+
+
+def test_performance_checkpoint_failure_reaches_the_summary():
+    """A missed checkpoint must be the pass/fail Slack shows."""
     collector = ResultCollector("prod", logger)
     collector.collect_performance_result(
         _Case(),
         _Asset(),
         "http://ir/1",
-        "hostA",
+        "http://ara",
         _perf_results(
-            "ars",
-            {
-                "k1": {
-                    "method": "POST",
-                    "name": "submit",
-                    "error": "x",
-                    "occurrences": 3,
-                }
-            },
+            _helmsdeep_summary(
+                checkpoints=[
+                    _checkpoint(30, "PASS"),
+                    _checkpoint(45, "FAIL", "headroom above peak"),
+                ]
+            ),
+            exit_code=1,
         ),
     )
+    assert collector.performance_checkpoints_passed is False
+    summary = collector.dump_result_summary()
+    assert "checkpoints: *FAIL*" in summary
+    assert "45 users - headroom above peak: FAIL" in summary
+    assert "Max sustainable concurrency: 42.5" in summary
+
+
+def test_performance_checkpoints_pass():
+    collector = ResultCollector("prod", logger)
     collector.collect_performance_result(
         _Case(),
         _Asset(),
-        "http://ir/2",
-        "hostB",
+        "http://ir/1",
+        "http://ara",
+        _perf_results(_helmsdeep_summary(checkpoints=[_checkpoint(30, "PASS")])),
+    )
+    assert collector.performance_checkpoints_passed is True
+    assert "checkpoints: *PASS*" in collector.dump_result_summary()
+
+
+def test_performance_run_without_checkpoints_has_no_verdict():
+    """A knee-finding run has nothing to pass or fail; don't claim a pass."""
+    collector = ResultCollector("prod", logger)
+    collector.collect_performance_result(
+        _Case(),
+        _Asset(),
+        "http://ir/1",
+        "http://ara",
+        _perf_results(_helmsdeep_summary(), target="aras"),
+    )
+    assert collector.performance_checkpoints_passed is None
+    summary = collector.dump_result_summary()
+    assert "no checkpoints configured" in summary
+    assert "Checkpoints: none configured for this run type" in summary
+
+
+def test_performance_run_that_never_completed_counts_as_a_failure():
+    """No summary.json means the run broke -- it must not read as a pass."""
+    collector = ResultCollector("prod", logger)
+    collector.collect_performance_result(
+        _Case(),
+        _Asset(),
+        "http://ir/1",
+        "http://ara",
+        _perf_results(None, error="HelmsDeep exited 2 without writing a summary"),
+    )
+    assert collector.performance_checkpoints_passed is False
+    assert "RUN FAILED" in collector.dump_result_summary()
+    assert collector.performance_report["failures"]
+
+
+def test_performance_artifacts_are_summary_json_and_report_html():
+    """Both deliverables are uploaded, each carrying the checkpoint verdict."""
+    collector = ResultCollector("prod", logger)
+    collector.collect_performance_result(
+        _Case(),
+        _Asset(),
+        "http://ir/1",
+        "http://ara.example.org",
         _perf_results(
-            "ars",
-            {
-                "k1": {
-                    "method": "POST",
-                    "name": "submit",
-                    "error": "x",
-                    "occurrences": 2,
-                },
-                "k2": {"method": "GET", "name": "poll", "error": "y", "occurrences": 5},
-            },
+            _helmsdeep_summary(checkpoints=[_checkpoint(30, "FAIL")]),
+            exit_code=1,
         ),
     )
-    failures = collector.performance_report["failures"]
-    assert set(failures) == {"k1", "k2"}
-    # k1 seen on both hosts -> occurrences summed.
-    assert failures["k1"]["occurrences"] == 5
-    assert failures["k2"]["occurrences"] == 5
-    total = sum(f.get("occurrences", 0) for f in failures.values())
-    assert total == 10
+    artifacts = list(collector.render_performance_artifacts())
+    names = [name for name, _content, _comment in artifacts]
+    assert names == [
+        "ara.example.org_aras_mixed_summary.json",
+        "ara.example.org_aras_mixed_report.html",
+    ]
+    # The uploaded JSON is HelmsDeep's summary verbatim, not a reformatting.
+    assert json.loads(artifacts[0][1].decode()) == _helmsdeep_summary(
+        checkpoints=[_checkpoint(30, "FAIL")]
+    )
+    for _name, _content, comment in artifacts:
+        assert "checkpoints FAIL (0/1 passed)" in comment
+
+
+def test_helmsdeep_target_mapping():
+    """Only the ARS speaks the async protocol; everything else is an ARA."""
+    assert helmsdeep_target("ars") == "ars"
+    assert helmsdeep_target("infores:ars", "mixed") == "ars_mixed"
+    assert helmsdeep_target("aragorn") == "aras"
+    assert helmsdeep_target("arax", "pathfinder") == "aras_pathfinder"
+    # Every run type the harness can ask for must actually exist upstream.
+    from helmsdeep import config as helmsdeep_config
+
+    for component in ("ars", "aragorn"):
+        for profile in PROFILES:
+            assert helmsdeep_target(component, profile) in helmsdeep_config.TARGETS
+
+
+def test_profile_comes_from_test_runner_settings_then_the_override():
+    case = _performance_test_case()
+    assert resolve_profile(case) == "default"
+
+    case.test_runner_settings = ["inferred", "mixed"]
+    assert resolve_profile(case) == "mixed"
+    # An explicit --performance_profile wins over the test case.
+    assert resolve_profile(case, "pathfinder") == "pathfinder"
+
+    with pytest.raises(ValueError):
+        resolve_profile(case, "nonsense")
 
 
 class _RecordingReporter(MockReporter):
@@ -375,7 +512,9 @@ def test_performance_test_is_finished_in_radiator(mocker):
     )
     mocker.patch(
         "test_harness.run.run_performance_test",
-        return_value=_perf_results("ars", {}),
+        return_value=_perf_results(
+            _helmsdeep_summary(checkpoints=[_checkpoint(30, "PASS")]), target="ars"
+        ),
     )
 
     reporter = _RecordingReporter(base_url="http://ir")
@@ -389,6 +528,59 @@ def test_performance_test_is_finished_in_radiator(mocker):
 
     assert reporter.finished, "performance test was never finished in the radiator"
     assert reporter.finished[0][1] == AgentStatus.PASSED.value
+
+
+def test_performance_checkpoint_failure_fails_the_radiator_test(mocker):
+    """A missed checkpoint is a measured failure, so the radiator agrees with
+    Slack instead of showing the run as PASSED."""
+    mocker.patch(
+        "test_harness.run.QueryRunner",
+        return_value=MockQueryRunner(logger),
+    )
+    mocker.patch(
+        "test_harness.run.run_performance_test",
+        return_value=_perf_results(
+            _helmsdeep_summary(checkpoints=[_checkpoint(30, "FAIL")]),
+            target="ars",
+            exit_code=1,
+        ),
+    )
+
+    reporter = _RecordingReporter(base_url="http://ir")
+    run_tests(
+        tests={"TestCase_1": _performance_test_case()},
+        reporter=reporter,
+        collector=MockResultCollector("ci", logger),
+        logger=logger,
+        args={"suite": "perf", "trapi_version": "1.6.0"},
+    )
+
+    assert reporter.finished[0][1] == AgentStatus.FAILED.value
+
+
+def test_performance_run_without_a_summary_fails_the_radiator_test(mocker):
+    """HelmsDeep exiting without a summary must not be reported as PASSED."""
+    mocker.patch(
+        "test_harness.run.QueryRunner",
+        return_value=MockQueryRunner(logger),
+    )
+    mocker.patch(
+        "test_harness.run.run_performance_test",
+        return_value=_perf_results(
+            None, error="HelmsDeep exited 2 without writing a summary", target="ars"
+        ),
+    )
+
+    reporter = _RecordingReporter(base_url="http://ir")
+    run_tests(
+        tests={"TestCase_1": _performance_test_case()},
+        reporter=reporter,
+        collector=MockResultCollector("ci", logger),
+        logger=logger,
+        args={"suite": "perf", "trapi_version": "1.6.0"},
+    )
+
+    assert reporter.finished[0][1] == AgentStatus.FAILED.value
 
 
 def test_performance_test_finished_failed_on_error(mocker):

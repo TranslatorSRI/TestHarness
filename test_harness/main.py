@@ -15,6 +15,7 @@ from setproctitle import setproctitle
 
 from test_harness.download import download_tests
 from test_harness.logger import get_logger, setup_logger
+from test_harness.performance_test_runner import PROFILES
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
@@ -134,15 +135,14 @@ def main(args):
             collector.acceptance_csv,
         )
     if collector.has_performance_results:
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "json",
-            collector.performance_stats,
-        )
-        for filename, content in collector.render_performance_artifacts():
+        # HelmsDeep's own summary.json is the authoritative result, so it is
+        # uploaded verbatim alongside its HTML report rather than being
+        # reformatted into a second, divergent JSON. Each carries the run's
+        # checkpoint pass/fail as its comment.
+        for filename, content, comment in collector.render_performance_artifacts():
             filename = f"{target_prefix}{filename}"
             try:
-                slacker.upload_binary_file(filename, content)
+                slacker.upload_binary_file(filename, content, initial_comment=comment)
             except Exception as e:
                 logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
@@ -240,6 +240,21 @@ def cli():
             "treats disease queries, MVP2 for the chemical affects gene "
             "queries. Every test in the suite is run if this isn't given. "
             "Mainly useful for local evaluation runs."
+        ),
+    )
+
+    parser.add_argument(
+        "--performance_profile",
+        type=str.lower,
+        choices=list(PROFILES),
+        help=(
+            "Which HelmsDeep query profile performance tests run: 'default' "
+            "for the layer's own single-class corpus (lookup for KPs, "
+            "inferred for ARAs/the ARS), 'mixed' for the 2:1 "
+            "inferred/Pathfinder acceptance profile that carries pass/fail "
+            "checkpoints, or 'pathfinder' for the two-pinned-endpoint path "
+            "queries. Overrides a 'mixed'/'pathfinder' entry in a test case's "
+            "test_runner_settings; without either, 'default' is used."
         ),
     )
 

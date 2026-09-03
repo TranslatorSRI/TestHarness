@@ -2,4 +2,10 @@
 # benchmarks-runner==0.1.3
 # ui-test-runner==0.0.2
 # graph-validation-test-runners==0.1.5
+# HelmsDeep is the performance runner: it owns the step-load ramps, the TRAPI
+# corpuses, the ARS submit/poll/merge protocol, and the knee/checkpoint
+# arithmetic. test_harness/performance_test_runner.py only drives its CLI.
+helmsdeep @ git+https://github.com/TranslatorSRI/HelmsDeep@main
+# HelmsDeep brings locust in; pinned here so the harness's image is
+# reproducible rather than tracking whatever HelmsDeep's floor resolves to.
 locust==2.38.1

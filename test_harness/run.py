@@ -19,10 +19,14 @@ from translator_testing_model.datamodel.pydanticmodel import (
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
 from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
-from test_harness.performance_test_runner import run_performance_test
+from test_harness.performance_test_runner import (
+    describe_run,
+    helmsdeep_target,
+    resolve_profile,
+    run_performance_test,
+)
 from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
-from test_harness.runner.generate_query import generate_query
 from test_harness.runner.query_runner import QueryRunner, env_map
 from test_harness.utils import (
     AgentReport,
@@ -275,50 +279,74 @@ def run_tests(
                     continue
 
                 if isinstance(test, PerformanceTestCase):
-                    test_query = generate_query(asset)
-                    if test_query is not None:
-                        message = json.dumps(test_query, indent=2)
+                    if target_url is not None:
+                        host = query_runner.target_url
+                        perf_target = status_agent
                     else:
-                        message = "Unable to retrieve response for test asset."
-                    reporter.upload_log(
-                        test_id,
-                        message,
-                    )
+                        host = query_runner.registry[env_map[test.test_env]][
+                            test.components[0]
+                        ][0]["url"]
+                        perf_target = None
+                    # HelmsDeep sends its own varied corpus, so the asset's
+                    # TRAPI query is not what goes under load. Log the run plan
+                    # -- layer, ramp, SLO, checkpoints -- which is what the
+                    # radiator's reader actually needs to interpret the result.
+                    try:
+                        profile = resolve_profile(
+                            test, args.get("performance_profile"), logger
+                        )
+                        run_type = helmsdeep_target(
+                            perf_target or test.components[0], profile
+                        )
+                        reporter.upload_log(
+                            test_id,
+                            describe_run(test, host, run_type, profile),
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not describe the HelmsDeep plan for "
+                            f"{test.id}: {e}"
+                        )
                     # Give the performance test a terminal status in the
                     # Information Radiator. Without this the test is created
                     # but never finished, so it shows up as perpetually
                     # incomplete in the dashboard.
                     status = AgentStatus.PASSED
-                    if test_query is None:
-                        logger.error(
-                            f"Unable to generate performance query for asset: {asset.id}"
+                    try:
+                        results = run_performance_test(
+                            test,
+                            host,
+                            target=perf_target,
+                            output_dir=args.get("output_dir") or "test_results",
+                            profile=args.get("performance_profile"),
+                            logger=logger,
                         )
-                        status = AgentStatus.FAILED
-                    else:
-                        if target_url is not None:
-                            host = query_runner.target_url
-                            perf_target = status_agent
-                        else:
-                            host = query_runner.registry[env_map[test.test_env]][
-                                test.components[0]
-                            ][0]["url"]
-                            perf_target = None
-                        try:
-                            results = run_performance_test(
-                                test, test_query, host, target=perf_target
-                            )
-                            collector.collect_performance_result(
-                                test,
-                                asset,
-                                f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
-                                host,
-                                results,
-                            )
-                        except Exception as e:
+                        collector.collect_performance_result(
+                            test,
+                            asset,
+                            f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                            host,
+                            results,
+                        )
+                        # A run that never produced a summary failed outright.
+                        # One that produced a summary with a missed checkpoint
+                        # is a real, measured failure -- both belong in the
+                        # radiator as FAILED, so the dashboard agrees with what
+                        # Slack says.
+                        summary = results.get("summary") or {}
+                        if results.get("error"):
                             logger.error(
-                                f"Failed to run performance test for {test.id}: {e}"
+                                f"Performance run for {test.id} did not "
+                                f"complete: {results['error']}"
                             )
                             status = AgentStatus.FAILED
+                        elif summary.get("checkpoints_passed") is False:
+                            status = AgentStatus.FAILED
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to run performance test for {test.id}: {e}"
+                        )
+                        status = AgentStatus.FAILED
                     reporter.finish_test(test_id, status.value)
             # try:
             #     test_inputs = [

@@ -1,8 +1,9 @@
 """The Collector of Results."""
 
+import json
 import logging
 import re
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -13,189 +14,21 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestEnvEnum,
 )
 
-from test_harness import perf_plots
+from test_harness.performance_test_runner import checkpoint_verdicts
 from test_harness.utils import AgentReport, AgentStatus, TestReport
 
-# Stat row identifiers produced by the performance test runner. Kept in sync
-# with the constants in performance_test_runner.py.
-QUERY_TYPE = "QUERY"
-SUBMIT_NAME = "submit_query"
-POLL_NAME = "poll_status"
 
-ARS_OUTCOMES = (
-    "ars_query_completed",
-    "ars_query_errored",
-    "ars_query_polling_failed",
-    "ars_query_timed_out",
-    "ars_query_abandoned",
-)
-ARA_OUTCOMES = (
-    "ara_query_completed",
-    "ara_query_failed",
-)
-
-
-def percentile_from_dict(total: int, counts: Dict[int, int], pct: float) -> int:
-    """Return the response_time bucket at a given percentile (0..1)."""
-    if total <= 0 or not counts:
-        return 0
-    target = max(0.0, min(1.0, pct)) * (total - 1)
-    cumulative = 0
-    last_bucket = 0
-    for bucket in sorted(counts.keys()):
-        cumulative += counts[bucket]
-        last_bucket = bucket
-        if cumulative > target:
-            return bucket
-    return last_bucket
-
-
-def median_from_dict(total: int, count: Dict[int, int]) -> int:
-    """Backwards-compatible median helper."""
-    return percentile_from_dict(total, count, 0.5)
-
-
-def _safe_div(numerator: float, denominator: float) -> float:
-    return numerator / denominator if denominator else 0.0
-
-
-def _summarize_layer(stat: Optional[Dict]) -> Dict:
-    """Pull the metrics we care about out of a single Locust stats row."""
-    if not stat:
-        return {
-            "num_requests": 0,
-            "num_failures": 0,
-            "min_response_time": 0,
-            "max_response_time": 0,
-            "avg_response_time": 0.0,
-            "median_response_time": 0,
-            "p95_response_time": 0,
-            "requests_per_second": 0.0,
-        }
-    num_requests = stat.get("num_requests", 0)
-    num_none = stat.get("num_none_requests", 0)
-    measured = max(0, num_requests - num_none)
-    response_times = stat.get("response_times", {}) or {}
-    duration = (stat.get("last_request_timestamp", 0) or 0) - (
-        stat.get("start_time", 0) or 0
-    )
-    return {
-        "num_requests": num_requests,
-        "num_failures": stat.get("num_failures", 0),
-        "min_response_time": stat.get("min_response_time") or 0,
-        "max_response_time": stat.get("max_response_time", 0),
-        "avg_response_time": _safe_div(stat.get("total_response_time", 0), measured),
-        "median_response_time": percentile_from_dict(measured, response_times, 0.5),
-        "p95_response_time": percentile_from_dict(measured, response_times, 0.95),
-        "requests_per_second": _safe_div(num_requests, duration),
-    }
-
-
-def _find_stat(
-    stats: Iterable[Dict], name: str, method: Optional[str] = None
-) -> Optional[Dict]:
-    for stat in stats:
-        if stat.get("name") != name:
-            continue
-            ##
-        if method is not None and stat.get("method") != method:
-            continue
-        return stat
-    return None
-
-
-def _summarize_query_lifecycle(stats: List[Dict], outcome_names: Iterable[str]) -> Dict:
-    """Aggregate end-to-end QUERY events across all outcomes."""
-    total_requests = 0
-    total_response_time = 0.0
-    min_rt: Optional[int] = None
-    max_rt = 0
-    combined_buckets: Dict[int, int] = {}
-    by_outcome: Dict[str, int] = {name: 0 for name in outcome_names}
-
-    for stat in stats:
-        if stat.get("method") != QUERY_TYPE:
-            continue
-        name = stat.get("name", "")
-        count = stat.get("num_requests", 0)
-        if name in by_outcome:
-            by_outcome[name] = count
-        total_requests += count
-        total_response_time += stat.get("total_response_time", 0) or 0
-        stat_min = stat.get("min_response_time")
-        if stat_min is not None and (min_rt is None or stat_min < min_rt):
-            min_rt = stat_min
-        stat_max = stat.get("max_response_time", 0) or 0
-        if stat_max > max_rt:
-            max_rt = stat_max
-        for bucket, n in (stat.get("response_times") or {}).items():
-            combined_buckets[bucket] = combined_buckets.get(bucket, 0) + n
-
-    completed_name = next(
-        (name for name in outcome_names if name.endswith("_completed")), None
-    )
-    completed_stat = (
-        _find_stat(stats, completed_name, QUERY_TYPE) if completed_name else None
-    )
-    completed_buckets = (completed_stat or {}).get("response_times", {}) or {}
-    completed_count = (completed_stat or {}).get("num_requests", 0)
-    completed_total_rt = (completed_stat or {}).get("total_response_time", 0) or 0
-
-    return {
-        "total_queries": total_requests,
-        "by_outcome": by_outcome,
-        "all_outcomes": {
-            "min_response_time": min_rt or 0,
-            "max_response_time": max_rt,
-            "avg_response_time": _safe_div(total_response_time, total_requests),
-            "median_response_time": percentile_from_dict(
-                total_requests, combined_buckets, 0.5
-            ),
-            "p95_response_time": percentile_from_dict(
-                total_requests, combined_buckets, 0.95
-            ),
-        },
-        "completed_only": {
-            "count": completed_count,
-            "avg_response_time": _safe_div(completed_total_rt, completed_count),
-            "median_response_time": percentile_from_dict(
-                completed_count, completed_buckets, 0.5
-            ),
-            "p95_response_time": percentile_from_dict(
-                completed_count, completed_buckets, 0.95
-            ),
-            "min_response_time": (completed_stat or {}).get("min_response_time") or 0,
-            "max_response_time": (completed_stat or {}).get("max_response_time", 0)
-            or 0,
-        },
-    }
+def _fmt_ms(ms: Optional[float]) -> str:
+    """Milliseconds as seconds, the unit every latency in the report uses."""
+    if ms is None:
+        return "n/a"
+    return f"{ms / 1000.0:.1f}s"
 
 
 def _slugify_host(host_url: str) -> str:
     """Make a filesystem/Slack-friendly slug for a host URL."""
     netloc = urlparse(host_url).netloc or host_url
     return re.sub(r"[^A-Za-z0-9._-]+", "_", netloc).strip("_") or "perf"
-
-
-def _summarize_response_sizes(
-    sizes_by_outcome: Dict[str, List[int]], outcome_names: Iterable[str]
-) -> Dict[str, Dict]:
-    """Per-outcome response-size summary, including distinct-size count so
-    the report can flag queries that finished with the same status but came
-    back with different payloads (eg an error body in place of TRAPI)."""
-    summary: Dict[str, Dict] = {}
-    for name in outcome_names:
-        sizes = sizes_by_outcome.get(name) or []
-        if not sizes:
-            continue
-        summary[name] = {
-            "count": len(sizes),
-            "min": min(sizes),
-            "max": max(sizes),
-            "avg": sum(sizes) / len(sizes),
-            "distinct": len(set(sizes)),
-        }
-    return summary
 
 
 class ResultCollector:
@@ -366,81 +199,141 @@ class ResultCollector:
         host_url: str,
         results: Dict,
     ):
-        """Add a single report for a performance test."""
+        """Add a single report for a performance test.
+
+        ``results`` is what the HelmsDeep driver returned: the parsed
+        ``summary.json``, the HTML report, the process exit code, and the paths
+        of everything HelmsDeep wrote. The numbers are HelmsDeep's -- nothing is
+        recomputed here, so what Slack shows and what ``summary.json`` says can
+        never drift apart.
+        """
         self.has_performance_results = True
-        results_stats = results.get("stats") or []
-        target = (results.get("target") or "").lower()
-        outcome_names = ARS_OUTCOMES if target == "ars" else ARA_OUTCOMES
+        summary = results.get("summary") or {}
+        config = summary.get("config") or {}
+        checkpoints = checkpoint_verdicts(summary)
 
-        submit_stat = _find_stat(results_stats, SUBMIT_NAME)
-        poll_stat = _find_stat(results_stats, POLL_NAME) if target == "ars" else None
-        lifecycle = _summarize_query_lifecycle(results_stats, outcome_names)
-
-        self.performance_report["stats"][host_url] = {
-            "target": target,
-            "test_run_time": results.get("test_run_time"),
-            "spawn_rate": results.get("spawn_rate"),
-            "submit": _summarize_layer(submit_stat),
-            "poll": _summarize_layer(poll_stat) if target == "ars" else None,
-            "queries": lifecycle,
-            "response_sizes": _summarize_response_sizes(
-                results.get("query_response_sizes") or {}, outcome_names
-            ),
-            "history": results.get("stats_history") or [],
-            "summary_html": results.get("summary_html"),
+        run_key = f"{host_url} ({results.get('helmsdeep_target', 'unknown')})"
+        self.performance_report["stats"][run_key] = {
+            "host": host_url,
+            "helmsdeep_target": results.get("helmsdeep_target"),
+            "component": config.get("component") or results.get("component"),
+            "profile": results.get("profile"),
+            "protocol": config.get("protocol"),
+            "exit_code": results.get("exit_code"),
+            "error": results.get("error"),
+            # < 1.0 means HelmsDeep compressed the run to a wall-clock budget.
+            # The harness never asks for that, but a summary carries the field
+            # either way and a compressed number must not be quoted as one.
+            "time_scale": config.get("time_scale"),
+            "p99_slo_ms": config.get("p99_slo_ms"),
+            "max_error_rate": config.get("max_error_rate"),
+            "knee": summary.get("knee"),
+            "max_sustainable_concurrency": summary.get("max_sustainable_concurrency"),
+            "knee_unsupported": summary.get("knee_unsupported"),
+            "stage_warnings": summary.get("stage_warnings") or [],
+            "checkpoints": checkpoints,
+            "checkpoints_passed": summary.get("checkpoints_passed"),
+            "red_flags": summary.get("red_flags") or [],
+            "stages": summary.get("stages") or [],
+            "summary": summary,
+            "report_html": results.get("report_html"),
+            "artifacts": results.get("artifacts") or {},
         }
-        # Accumulate failures across every performance target/asset. This used
-        # to be a plain assignment, which meant only the last target's failures
-        # ever reached Slack when a suite exercised more than one host. Merge by
-        # error key, summing occurrences so the summary reflects the whole run.
-        for failure_key, failure in (results.get("failures") or {}).items():
-            existing = self.performance_report["failures"].get(failure_key)
-            if existing:
-                existing["occurrences"] = existing.get("occurrences", 0) + failure.get(
-                    "occurrences", 0
-                )
-            else:
-                self.performance_report["failures"][failure_key] = dict(failure)
+        # A run that never produced a summary is a failure of the run itself,
+        # not a measured one. Keep it out of the checkpoint tally so a crashed
+        # host can't read as "everything passed".
+        if results.get("error"):
+            self.performance_report["failures"][run_key] = {
+                "error": results["error"],
+                "exit_code": results.get("exit_code"),
+                "output": results.get("output", ""),
+            }
 
         stats_id = f"{host_url}_case_{test.id}_asset_{asset.id}"
         self.performance_stats[stats_id] = {
             "information_radiator_url": url,
-            **results,
+            "helmsdeep_target": results.get("helmsdeep_target"),
+            "profile": results.get("profile"),
+            "host": host_url,
+            "exit_code": results.get("exit_code"),
+            "error": results.get("error"),
+            "summary": summary,
         }
 
-    def render_performance_artifacts(self) -> Iterator[Tuple[str, bytes]]:
-        """Yield (filename, bytes) tuples for per-target performance artifacts.
+    @property
+    def performance_checkpoints_passed(self) -> Optional[bool]:
+        """Overall checkpoint verdict across every performance run.
 
-        Produces up to two files per host:
-          * ``<slug>_perf.png`` - matplotlib chart of stats_history
-          * ``<slug>_perf.html`` - Locust's own HTML report
-        Renderable artifacts are skipped (with a log line) when data is
-        missing; render exceptions are caught so one bad target doesn't
-        block the rest.
+        ``None`` when no run configured any checkpoints -- a knee-finding run
+        has nothing to pass or fail, and reporting it as a pass would be a
+        claim the run never made. A run that failed to produce a summary at all
+        counts as a failure.
         """
-        for host_url, target_stats in self.performance_report["stats"].items():
-            slug = _slugify_host(host_url)
+        verdicts = []
+        for run_stats in self.performance_report["stats"].values():
+            if run_stats.get("error"):
+                verdicts.append(False)
+            elif run_stats.get("checkpoints"):
+                verdicts.append(bool(run_stats.get("checkpoints_passed")))
+        if not verdicts:
+            return None
+        return all(verdicts)
 
-            history = target_stats.get("history") or []
-            if len(history) >= 2:
-                try:
-                    png_bytes = perf_plots.render_history_png(history, title=host_url)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to render perf chart for {host_url}: {e}"
-                    )
-                else:
-                    yield f"{slug}_perf.png", png_bytes
+    def render_performance_artifacts(self) -> Iterator[Tuple[str, bytes, str]]:
+        """Yield ``(filename, content, comment)`` for each performance artifact.
+
+        Two files per run -- HelmsDeep's ``summary.json`` (the authoritative
+        numbers) and its ``report.html`` (locust's charts and request tables) --
+        each carrying the run's checkpoint verdict as the comment they're
+        uploaded with, so the pass/fail is attached to the file rather than
+        buried in a separate message.
+        """
+        for run_key, run_stats in self.performance_report["stats"].items():
+            slug = _slugify_host(run_stats.get("host") or run_key)
+            target = run_stats.get("helmsdeep_target") or "perf"
+            base = f"{slug}_{target}"
+            comment = self._artifact_comment(run_key, run_stats)
+
+            summary = run_stats.get("summary")
+            if summary:
+                yield (
+                    f"{base}_summary.json",
+                    json.dumps(summary, indent=2).encode("utf-8"),
+                    comment,
+                )
             else:
                 self.logger.info(
-                    f"Skipping perf chart for {host_url}: insufficient history"
+                    f"Skipping summary.json for {run_key}: HelmsDeep produced none"
                 )
 
-            summary_html = target_stats.get("summary_html")
-            if summary_html:
-                yield f"{slug}_perf.html", summary_html.encode("utf-8")
+            report_html = run_stats.get("report_html")
+            if report_html:
+                yield f"{base}_report.html", report_html.encode("utf-8"), comment
             else:
-                self.logger.info(f"Skipping HTML report for {host_url}: not available")
+                self.logger.info(f"Skipping HTML report for {run_key}: not available")
+
+    @staticmethod
+    def _artifact_comment(run_key: str, run_stats: Dict) -> str:
+        """One-line pass/fail headline to upload the artifacts with."""
+        if run_stats.get("error"):
+            return (
+                f"Performance run FAILED TO COMPLETE - {run_key}: {run_stats['error']}"
+            )
+        checkpoints = run_stats.get("checkpoints") or []
+        if not checkpoints:
+            concurrency = run_stats.get("max_sustainable_concurrency")
+            knee = (
+                f"max sustainable concurrency {concurrency:.1f}"
+                if concurrency is not None
+                else "no stage met the SLO"
+            )
+            return f"Performance report - {run_key}: no checkpoints, {knee}"
+        passed = sum(1 for c in checkpoints if c["verdict"] == "PASS")
+        verdict = "PASS" if run_stats.get("checkpoints_passed") else "FAIL"
+        return (
+            f"Performance report - {run_key}: checkpoints {verdict} "
+            f"({passed}/{len(checkpoints)} passed)"
+        )
 
     def dump_result_summary(self):
         """Format test results summary for Slack."""
@@ -455,111 +348,100 @@ class ResultCollector:
 > Errors: {self.acceptance_report['ERROR']}
 """
         if self.has_performance_results:
-            results_formatted += """
-> Performance Test Results:"""
-            for target_url, target_stats in self.performance_report["stats"].items():
-                results_formatted += self._format_performance_target(
-                    target_url, target_stats
-                )
-            failures = self.performance_report["failures"]
-            if failures:
-                total_occurrences = sum(
-                    f.get("occurrences", 0) for f in failures.values()
-                )
-                results_formatted += (
-                    f"\n> Failures: {total_occurrences} "
-                    f"({len(failures)} distinct) - see uploaded HTML report"
-                )
+            overall = self.performance_checkpoints_passed
+            if overall is None:
+                headline = "no checkpoints configured"
+            else:
+                headline = "*PASS*" if overall else "*FAIL*"
+            results_formatted += (
+                f"\n> Performance Test Results (HelmsDeep) - "
+                f"checkpoints: {headline}"
+            )
+            for run_key, run_stats in self.performance_report["stats"].items():
+                results_formatted += self._format_performance_run(run_key, run_stats)
 
         return results_formatted
 
     @staticmethod
-    def _format_performance_target(target_url: str, target_stats: Dict) -> str:
-        """Render the per-host performance section of the summary."""
-        ms_to_s = lambda ms: ms / 1000.0  # noqa: E731
+    def _format_performance_run(run_key: str, run_stats: Dict) -> str:
+        """Render one HelmsDeep run's section of the Slack summary.
 
-        lines = [f"> {target_url}"]
-        target = target_stats.get("target") or "unknown"
-        run_time = target_stats.get("test_run_time")
-        spawn_rate = target_stats.get("spawn_rate")
-        if run_time is not None or spawn_rate is not None:
-            lines.append(
-                f"> - Target: {target} | run_time={run_time}s, spawn_rate={spawn_rate}"
-            )
+        Leads with the checkpoint verdicts, because that is the pass/fail the
+        run was asked for; the knee follows as the headline measurement every
+        run produces whether or not it has checkpoints.
+        """
+        lines = [f"> {run_key}"]
 
-        queries = target_stats.get("queries") or {}
-        total_queries = queries.get("total_queries", 0)
-        by_outcome = queries.get("by_outcome", {}) or {}
-        completed = queries.get("completed_only") or {}
-        all_outcomes = queries.get("all_outcomes") or {}
-        response_sizes = target_stats.get("response_sizes") or {}
-        run_time_seconds = run_time or 0
+        if run_stats.get("error"):
+            lines.append(f"> - RUN FAILED: {run_stats['error']}")
+            return "\n" + "\n".join(lines)
 
-        lines.append("> - End-to-end queries:")
-        lines.append(f">   * Submitted (recorded): {total_queries}")
-        for name, count in by_outcome.items():
-            label = name.replace("ars_query_", "").replace("ara_query_", "")
-            line = f">   * {label}: {count}"
-            size_summary = response_sizes.get(name)
-            if size_summary:
-                line += (
-                    f" [response size bytes: "
-                    f"min={size_summary['min']}, "
-                    f"max={size_summary['max']}, "
-                    f"avg={size_summary['avg']:.0f}, "
-                    f"distinct={size_summary['distinct']}]"
+        profile = run_stats.get("profile") or "default"
+        protocol = run_stats.get("protocol") or "unknown"
+        lines.append(f"> - Profile: {profile} | protocol: {protocol}")
+
+        checkpoints = run_stats.get("checkpoints") or []
+        if checkpoints:
+            verdict = "PASS" if run_stats.get("checkpoints_passed") else "FAIL"
+            lines.append(f"> - Checkpoints: *{verdict}*")
+            for cp in checkpoints:
+                mark = {"PASS": ":white_check_mark:", "FAIL": ":x:"}.get(
+                    cp["verdict"], ":grey_question:"
                 )
-            lines.append(line)
-            if size_summary and size_summary["distinct"] > 1:
                 lines.append(
-                    f">     WARNING: {label} responses differ in size; "
-                    "check for partial or error payloads"
+                    f">   * {mark} {cp['users']} users - {cp['goal']}: "
+                    f"{cp['verdict']} ({cp['detail']})"
                 )
-        completed_count = completed.get("count", 0)
-        if run_time_seconds:
-            throughput = completed_count / (run_time_seconds / 60.0)
-            lines.append(f">   * Completed throughput: {throughput:.2f} queries/minute")
-        if completed_count:
-            lines.append(
-                ">   * Completed query time (s): "
-                f"avg={ms_to_s(completed['avg_response_time']):.1f}, "
-                f"median={ms_to_s(completed['median_response_time']):.1f}, "
-                f"p95={ms_to_s(completed['p95_response_time']):.1f}, "
-                f"min={ms_to_s(completed['min_response_time']):.1f}, "
-                f"max={ms_to_s(completed['max_response_time']):.1f}"
+                if cp.get("p99_ms") is not None:
+                    lines.append(
+                        f">     p99={_fmt_ms(cp['p99_ms'])}, "
+                        f"errors={cp['error_rate'] * 100:.2f}%, "
+                        f"requests={cp['requests']}"
+                    )
+        else:
+            lines.append("> - Checkpoints: none configured for this run type")
+
+        concurrency = run_stats.get("max_sustainable_concurrency")
+        knee = run_stats.get("knee") or {}
+        if concurrency is not None:
+            caveat = (
+                " (UNSUPPORTED - see stage warnings)"
+                if run_stats.get("knee_unsupported")
+                else ""
             )
-        if total_queries:
+            lines.append(f"> - Max sustainable concurrency: {concurrency:.1f}{caveat}")
             lines.append(
-                ">   * All-outcome query time (s): "
-                f"avg={ms_to_s(all_outcomes['avg_response_time']):.1f}, "
-                f"median={ms_to_s(all_outcomes['median_response_time']):.1f}, "
-                f"p95={ms_to_s(all_outcomes['p95_response_time']):.1f}, "
-                f"min={ms_to_s(all_outcomes['min_response_time']):.1f}, "
-                f"max={ms_to_s(all_outcomes['max_response_time']):.1f}"
+                f">   * Knee at stage {knee.get('stage')} "
+                f"({knee.get('users')} users): "
+                f"p99={_fmt_ms(knee.get('p99_ms'))}, "
+                f"errors={(knee.get('error_rate') or 0) * 100:.2f}%, "
+                f"rps={knee.get('rps', 0):.2f}"
+            )
+        else:
+            lines.append(
+                "> - Max sustainable concurrency: none - no stage met the "
+                f"p99 SLO ({_fmt_ms(run_stats.get('p99_slo_ms'))}) and error cap"
             )
 
-        submit = target_stats.get("submit") or {}
-        if submit.get("num_requests"):
+        warnings = run_stats.get("stage_warnings") or []
+        if warnings:
+            kinds = sorted({i["kind"] for w in warnings for i in w["issues"]})
             lines.append(
-                "> - Submit requests: "
-                f"count={submit['num_requests']}, "
-                f"failures={submit['num_failures']}, "
-                f"avg={ms_to_s(submit['avg_response_time']):.2f}s, "
-                f"median={ms_to_s(submit['median_response_time']):.2f}s, "
-                f"p95={ms_to_s(submit['p95_response_time']):.2f}s, "
-                f"rps={submit['requests_per_second']:.3f}"
+                f"> - Measurement quality: {len(warnings)} stage(s) flagged "
+                f"({', '.join(kinds)})"
             )
 
-        poll = target_stats.get("poll")
-        if poll and poll.get("num_requests"):
+        red_flags = run_stats.get("red_flags") or []
+        if red_flags:
+            lines.append(f"> - ARS red flags: {len(red_flags)}")
+            for flag in red_flags[:3]:
+                lines.append(f">   * {flag}")
+
+        time_scale = run_stats.get("time_scale")
+        if time_scale is not None and time_scale < 1.0:
             lines.append(
-                "> - Poll requests: "
-                f"count={poll['num_requests']}, "
-                f"failures={poll['num_failures']}, "
-                f"avg={ms_to_s(poll['avg_response_time']):.2f}s, "
-                f"median={ms_to_s(poll['median_response_time']):.2f}s, "
-                f"p95={ms_to_s(poll['p95_response_time']):.2f}s, "
-                f"rps={poll['requests_per_second']:.3f}"
+                f"> - WARNING: compressed run (time scale {time_scale:.2f}); "
+                "treat these numbers as indicative, not a measurement"
             )
 
         return "\n" + "\n".join(lines)
