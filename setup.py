@@ -16,6 +16,10 @@ setup(
     long_description=readme,
     packages=["test_harness"],
     include_package_data=True,
+    # The editable local test suites ship with the package so `test-harness
+    # load <suite>` works from a plain (non-editable) install too, not just
+    # from a checkout.
+    package_data={"test_harness": ["test_suites/*.json", "test_suites/README.md"]},
     zip_safe=False,
     license="MIT",
     python_requires=">=3.9",

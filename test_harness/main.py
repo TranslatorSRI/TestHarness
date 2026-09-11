@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from setproctitle import setproctitle
 
-from test_harness.download import download_tests
+from test_harness.download import download_tests, load_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.performance_test_runner import PROFILES
 from test_harness.reporter import LocalReporter, Reporter
@@ -42,6 +42,8 @@ def main(args):
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
+    elif "tests_dir" in args:
+        tests = load_tests(args["suite"], args["tests_dir"], logger)
     elif "tests" in args:
         tests = args["tests"]
     else:
@@ -183,12 +185,39 @@ def cli():
         help="URL to download in order to find the test files",
     )
 
+    load_parser = subparsers.add_parser(
+        "load",
+        help="Run a test suite from a local JSON file instead of downloading one",
+    )
+
+    load_parser.add_argument(
+        "suite",
+        type=str,
+        help=(
+            "The name of the local suite to run: the JSON file's name without "
+            "the extension, e.g. 'local_acceptance' for "
+            "test_suites/local_acceptance.json."
+        ),
+    )
+
+    load_parser.add_argument(
+        "--tests_dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory to read the suite from. Defaults to 'test_suites' in "
+            "the working directory when it exists, and otherwise to the copy "
+            "shipped with the repo, so a checkout's edited suites are found "
+            "without this flag."
+        ),
+    )
+
     run_parser = subparsers.add_parser("run", help="Run a given set of tests")
 
     run_parser.add_argument(
         "tests",
         type=json.loads,
-        help="Path to a file of tests to be run. This would be the same output from downloading the tests via `download_tests()`",
+        help="The tests to be run, as a JSON string. This is the same structure `download_tests()` returns; to run tests from a file, use the `load` subcommand instead.",
     )
 
     parser.add_argument(

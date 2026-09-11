@@ -41,6 +41,35 @@ saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
+### Running local test files
+`test-harness download <suite>` fetches the suites from
+[NCATSTranslator/Tests](https://github.com/NCATSTranslator/Tests) every run,
+which is no good when you want to change a CURIE and see what happens. A few
+small, editable suites ship in `test_harness/test_suites/`; run one with `load`
+instead of `download`:
+- `test-harness --local load local_acceptance`
+
+| Suite | What it is |
+| --- | --- |
+| `local_acceptance` | Two acceptance cases — one MVP1 (drug treats disease), one MVP2 (chemical affects gene) — so `--query_type` has something to filter. |
+| `local_performance` | One `QuantitativeTest` case, run by HelmsDeep. |
+| `local_pathfinder` | One Pathfinder case: two pinned endpoints, expecting a named node on a path between them. |
+
+The suite name is the file's name without `.json`, the same way the downloaded
+suites are named, so the same name works with either subcommand.
+
+The harness reads `test_suites/` in the working directory when that exists —
+so a suite you're editing in your checkout is found without a flag — and
+otherwise the copy shipped with the package. `--tests_dir` overrides both:
+- `test-harness --local load my_suite --tests_dir ~/scratch/suites`
+
+These are ordinary Translator Testing Model `TestSuite` documents, identical in
+shape to the downloaded ones. Copy one, change the CURIEs, run it. See
+[`test_harness/test_suites/README.md`](test_harness/test_suites/README.md) for
+which fields actually drive behavior — in particular, a performance case's
+`test_run_time`/`spawn_rate` and its asset's query are inert, because HelmsDeep
+owns the ramp and the corpus (see [Performance tests](#performance-tests)).
+
 ### Running one type of query
 A suite normally mixes the MVP query types. To run just one of them — handy
 for a local evaluation run of a change that only affects one — pass
