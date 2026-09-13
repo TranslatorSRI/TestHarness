@@ -26,6 +26,9 @@ setup(
     entry_points={
         "console_scripts": [
             "test-harness = test_harness.main:cli",
+            # Runs one suite against several services in turn, so a single
+            # scheduled Job can sweep the ARS and each ARA sequentially.
+            "test-harness-sweep = test_harness.sweep:cli",
         ],
     },
 )

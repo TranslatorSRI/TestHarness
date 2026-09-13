@@ -170,6 +170,54 @@ The rest of HelmsDeep's output (`_stages.csv`, `_by_qtype.csv`,
 `_checkpoints.csv`, and the ARS debug logs) is left on disk under
 `--output_dir` for digging in.
 
+### Sweeping several services in one scheduled job
+HelmsDeep loads exactly one layer per run, and the harness resolves one target
+per invocation, so measuring the ARS and each ARA means several runs. They must
+not overlap: the stack cascades ARS → ARAs → KPs, so loading two layers at once
+double-loads whatever sits underneath and corrupts both measurements.
+
+`test-harness-sweep` runs them sequentially in one process tree, which is what
+lets a single Kubernetes Job (or `docker run`, or a local shell) do the whole
+sweep:
+
+```bash
+test-harness-sweep --suite performance_tests --download \
+    ars=https://ars.ci.transltr.io \
+    aragorn=https://aragorn.ci.transltr.io \
+    arax=https://arax.ci.transltr.io \
+    bte=https://bte.ci.transltr.io \
+    -- --performance_profile mixed
+```
+
+Each `NAME=URL` pair becomes one `test-harness --target_url URL --target NAME`
+invocation, in the order given, and the sweep waits for each to finish before
+starting the next. Anything after `--` is passed through to every invocation.
+Targets can come from the `PERFORMANCE_TARGETS` environment variable instead, as
+a comma-separated list of the same pairs — usually the easier knob in a CronJob,
+since changing the sweep is then a manifest edit rather than an image rebuild.
+
+Two behaviors worth knowing:
+- **Every target runs even if an earlier one fails.** A broken ARS shouldn't
+  cost you the ARA numbers. The sweep exits non-zero if any target failed, and
+  prints a per-target summary with exit codes and durations.
+- **Each target gets its own `--output_dir` subdirectory.** HelmsDeep names its
+  raw files after the run type and test case id, neither of which mentions the
+  host, so every ARA in a sweep writes the same `helmsdeep_aras_case_<id>_*`
+  names and would otherwise overwrite the previous target's files.
+
+[`deploy/cronjob.example.yaml`](deploy/cronjob.example.yaml) is a worked CronJob
+for this, with the fields a multi-hour job actually needs — `concurrencyPolicy:
+Forbid` so the next schedule can't start a second overlapping sweep,
+`backoffLimit: 0` so a failure doesn't re-run hours of load, an
+`activeDeadlineSeconds` ceiling, `PYTHONUNBUFFERED` so `kubectl logs` shows
+progress, and CPU requests that keep the load generator from measuring its own
+scheduling delay.
+
+Budget the time before you schedule it: with `--performance_profile mixed` a
+four-service sweep is roughly 70 min for the ARS plus 61 min per ARA (~4.2
+hours); the single-class default profile is ~58 + ~35 × 3 (~2.7 hours). Nothing
+overlaps, by design.
+
 ### Overriding the target service
 Tests specify which component to run against (`ars`, `ara`, ...), and the
 harness normally resolves those components to deployed services through the

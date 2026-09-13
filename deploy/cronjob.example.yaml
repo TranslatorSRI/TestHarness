@@ -1,0 +1,119 @@
+# Example CronJob for a sequential performance sweep.
+#
+# One Job, four harness runs, strictly in order: the ARS first, then each ARA.
+# They must not overlap -- the Translator stack cascades ARS -> ARAs -> KPs, so
+# loading two layers at once double-loads whatever sits underneath and corrupts
+# both measurements. `test-harness-sweep` runs them one at a time and waits.
+#
+# This is an example to adapt, not a manifest to apply as-is: the image tag,
+# namespace, secret names, and hosts are all placeholders.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-harness-performance-sweep
+spec:
+  # Weekly, Sunday 02:00. A full sweep is hours long (see activeDeadlineSeconds
+  # below), so this is not a thing to run hourly.
+  schedule: "0 2 * * 0"
+  timeZone: "America/New_York"        # requires Kubernetes >= 1.27
+
+  # The single most important field here. A sweep runs for hours; without
+  # Forbid, the next schedule starts a second sweep while the first is still
+  # loading the same services, which is exactly the concurrent load the
+  # layering rule forbids. Both runs' numbers would be garbage.
+  concurrencyPolicy: Forbid
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      # Never retry. A retry re-runs the whole multi-hour sweep and re-posts
+      # every Slack message; if a service is genuinely down, the next scheduled
+      # run is soon enough.
+      backoffLimit: 0
+
+      # Hard ceiling, comfortably above the expected duration. With the `mixed`
+      # profile a sweep is roughly 70 min (ARS) + 61 min per ARA ~= 4.2 h; the
+      # single-class default profile is ~2.7 h. 6 h leaves room without letting
+      # a wedged run hold the schedule indefinitely.
+      activeDeadlineSeconds: 21600
+
+      template:
+        spec:
+          restartPolicy: Never
+
+          # HelmsDeep drains in-flight queries at the end of a run (the ARS
+          # completion sidecar keeps polling past the failure threshold). Give
+          # it room to finish rather than killing it mid-drain.
+          terminationGracePeriodSeconds: 120
+
+          containers:
+            - name: test-harness
+              image: ghcr.io/translatorsri/testharness:latest
+              imagePullPolicy: IfNotPresent
+
+              command: ["test-harness-sweep"]
+              args:
+                - "--suite"
+                - "performance_tests"
+                - "--download"
+                # Everything after `--` is passed to each harness invocation.
+                - "--"
+                - "--performance_profile"
+                - "mixed"
+                - "--log_level"
+                - "INFO"
+
+              env:
+                # The sweep, in order. Keeping the list here means changing
+                # which services get swept is a manifest edit, not an image
+                # rebuild. ARS first: it loads the ARAs as a side effect, so
+                # measuring it before them keeps each ARA's own run clean.
+                - name: PERFORMANCE_TARGETS
+                  value: >-
+                    ars=https://ars.ci.transltr.io,
+                    aragorn=https://aragorn.ci.transltr.io,
+                    arax=https://arax.ci.transltr.io,
+                    bte=https://bte.ci.transltr.io
+
+                # Without this, Python buffers stdout when it isn't a terminal
+                # and `kubectl logs` shows nothing for hours.
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-webhook-url}
+                - name: SLACK_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-token}
+                - name: SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-channel}
+                - name: ZE_BASE_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: ze-base-url}
+                - name: ZE_REFRESH_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}
+
+              resources:
+                # The load generator is the workload here: locust drives up to
+                # 60 concurrent users in the mixed profile, all in one process,
+                # and a CPU-starved generator measures its own scheduling delay
+                # instead of the service's latency. Give it real CPU, and make
+                # requests == limits so throttling can't silently skew a run.
+                requests: {cpu: "2", memory: "2Gi"}
+                limits: {cpu: "2", memory: "4Gi"}
+
+              volumeMounts:
+                - name: results
+                  mountPath: /app/test_results
+
+          volumes:
+            # Results land here per target; the reportable artifacts are
+            # uploaded to Slack by each run, so this only needs to outlive the
+            # pod if you want the raw CSVs. Swap for a PVC if you do.
+            - name: results
+              emptyDir: {}
