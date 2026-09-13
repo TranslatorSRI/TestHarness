@@ -205,6 +205,23 @@ Two behaviors worth knowing:
   host, so every ARA in a sweep writes the same `helmsdeep_aras_case_<id>_*`
   names and would otherwise overwrite the previous target's files.
 
+#### Exit status
+The harness's exit status answers **"did the run happen?"**, never "did the
+tests pass?":
+
+- **Exit 0** — the run happened, whatever it found. Failed acceptance tests, a
+  missed performance checkpoint, a service that was down and produced no
+  summary: those are *results*. They go to Slack and the Information Radiator,
+  and a scheduled job stays green, because a slow ARA is news for the channel
+  rather than a broken cron.
+- **Exit 1** — the harness couldn't carry out the run: `--target_url` without
+  `--target`, a suite that isn't there, a suite that `--query_type` filtered
+  down to nothing, or a crash. That job produced no results at all, which is
+  exactly the failure that otherwise sits green and silent for months.
+
+The sweep inherits this: it exits non-zero only if a harness invocation couldn't
+carry out its run, so a red Job always means something operational.
+
 [`deploy/cronjob.example.yaml`](deploy/cronjob.example.yaml) is a worked CronJob
 for this, with the fields a multi-hour job actually needs — `concurrencyPolicy:
 Forbid` so the next schedule can't start a second overlapping sweep,

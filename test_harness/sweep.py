@@ -9,8 +9,15 @@ four Jobs racing each other: it shells out to ``test-harness`` once per target,
 in the order given, and waits for each to finish before starting the next.
 
 Every target runs even when an earlier one fails -- a broken ARS shouldn't cost
-you the ARA numbers -- and the sweep exits non-zero if any of them failed, so
-the Job still reports failure.
+you the ARA numbers.
+
+The sweep's exit status inherits the harness's contract: it answers "did the
+runs happen?", not "did the tests pass?". A service that misses every
+performance checkpoint is a *result* -- it reaches Slack as a FAIL and the sweep
+still exits 0, because a slow ARA is news for the channel, not a broken cron.
+The sweep exits non-zero only when a harness invocation could not carry out its
+run at all: bad arguments, a suite that isn't there, a crash, an OOM kill, or
+the binary missing from the image.
 
     test-harness-sweep --suite performance_tests --download \\
         ars=https://ars.ci.transltr.io \\
@@ -125,6 +132,10 @@ def run_sweep(
 
     A target that fails is recorded and the sweep continues to the next one, so
     one unreachable service can't cost you the rest of the sweep's results.
+
+    The returned code reports whether the runs *happened*: the harness exits 0
+    for any test outcome and non-zero only when it couldn't carry out the run,
+    so a non-zero here always means something operational, never a red test.
     """
     results = []
     for position, (target, url) in enumerate(targets, start=1):
@@ -161,7 +172,10 @@ def run_sweep(
         flush=True,
     )
     if failed:
-        print(f"Failed targets: {', '.join(failed)}", flush=True)
+        print(
+            f"Targets whose run could not be carried out: {', '.join(failed)}",
+            flush=True,
+        )
         return 1
     return 0
 

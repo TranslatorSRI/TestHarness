@@ -31,6 +31,11 @@ spec:
       # Never retry. A retry re-runs the whole multi-hour sweep and re-posts
       # every Slack message; if a service is genuinely down, the next scheduled
       # run is soon enough.
+      #
+      # Note this Job only ever fails for operational reasons. Test results --
+      # a missed checkpoint, a service that never answered -- exit 0 and are
+      # reported in Slack, so a red Job here means the sweep itself could not
+      # run (bad config, a missing suite, a crash, an OOM kill).
       backoffLimit: 0
 
       # Hard ceiling, comfortably above the expected duration. With the `mixed`

@@ -6,6 +6,7 @@ monkey.patch_all()
 
 import json
 import os
+import sys
 import time
 from argparse import ArgumentParser
 from urllib.parse import urlparse
@@ -25,6 +26,17 @@ from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 setproctitle("TestHarness")
 setup_logger()
 
+# The harness's exit status answers "did the run happen?", never "did the tests
+# pass?". A failed acceptance test or a missed performance checkpoint is a
+# *result*: it goes to Slack and the Information Radiator, and a scheduled job
+# must not go red for it -- a service being slow is news for the channel, not a
+# broken cron. What does earn a non-zero exit is the harness being unable to
+# carry out the run at all (bad arguments, a suite that isn't there, nothing
+# left to run), because that job produced no results and would otherwise sit
+# green and silent indefinitely.
+EXIT_OK = 0
+EXIT_COULD_NOT_RUN = 1
+
 
 def url_type(arg):
     url = urlparse(arg)
@@ -38,7 +50,8 @@ def main(args):
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     if bool(args.get("target_url")) != bool(args.get("target")):
-        return logger.error("--target_url and --target must be provided together.")
+        logger.error("--target_url and --target must be provided together.")
+        return EXIT_COULD_NOT_RUN
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -47,12 +60,12 @@ def main(args):
     elif "tests" in args:
         tests = args["tests"]
     else:
-        return logger.error(
-            "Please run this command with `-h` to see the available options."
-        )
+        logger.error("Please run this command with `-h` to see the available options.")
+        return EXIT_COULD_NOT_RUN
 
     if len(tests) < 1:
-        return logger.warning("No tests to run. Exiting.")
+        logger.error("No tests to run. Exiting.")
+        return EXIT_COULD_NOT_RUN
 
     # optionally run only one type of query out of the suite, eg to evaluate a
     # change that only affects drug-treats-disease queries
@@ -60,7 +73,8 @@ def main(args):
     if query_type is not None:
         tests = filter_tests_by_query_type(tests, query_type, logger)
         if len(tests) < 1:
-            return logger.warning(f"No {query_type} tests to run. Exiting.")
+            logger.error(f"No {query_type} tests to run. Exiting.")
+            return EXIT_COULD_NOT_RUN
 
     output_dir = args.get("output_dir") or "test_results"
 
@@ -158,7 +172,8 @@ def main(args):
         with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
 
-    return logger.info("All tests have completed!")
+    logger.info("All tests have completed!")
+    return EXIT_OK
 
 
 def cli():
@@ -328,7 +343,7 @@ def cli():
     )
 
     args = parser.parse_args()
-    main(vars(args))
+    sys.exit(main(vars(args)))
 
 
 if __name__ == "__main__":
