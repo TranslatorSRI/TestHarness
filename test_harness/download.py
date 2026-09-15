@@ -1,4 +1,4 @@
-"""Download tests."""
+"""Download tests, or read them from local files."""
 
 import glob
 import io
@@ -15,6 +15,71 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestCase,
     TestSuite,
 )
+
+# The editable test suites shipped with the repo, used when --tests_dir isn't
+# given and there's no `test_suites/` in the working directory.
+BUNDLED_TESTS_DIR = Path(__file__).resolve().parent / "test_suites"
+DEFAULT_TESTS_DIR = "test_suites"
+
+
+def _read_test_suite(
+    path: Union[str, Path],
+) -> Dict[str, Union[TestCase, PathfinderTestCase]]:
+    """Parse one test suite JSON file into its test cases."""
+    with open(path) as f:
+        return TestSuite.model_validate(json.load(f)).test_cases
+
+
+def resolve_tests_dir(tests_dir: Union[str, None]) -> Path:
+    """Pick the directory to read local test suites out of.
+
+    An explicit ``--tests_dir`` is used as given. Otherwise `test_suites/` in
+    the working directory wins when it exists -- so a suite you are editing in
+    your own checkout is found without a flag -- and the copy shipped next to
+    the package is the fallback, which is what makes this work from anywhere in
+    an editable install.
+    """
+    if tests_dir:
+        return Path(tests_dir)
+    cwd_dir = Path(DEFAULT_TESTS_DIR)
+    if cwd_dir.is_dir():
+        return cwd_dir
+    return BUNDLED_TESTS_DIR
+
+
+def load_tests(
+    suite: str,
+    tests_dir: Union[str, None],
+    logger: logging.Logger,
+) -> Dict[str, Union[TestCase, PathfinderTestCase]]:
+    """Read a test suite from a local JSON file instead of downloading a zip.
+
+    ``suite`` is the file's basename without ``.json``, matching how the
+    downloaded suites are named, so the same suite name works either way.
+    """
+    directory = resolve_tests_dir(tests_dir)
+    path = directory / f"{suite}.json"
+    if not path.is_file():
+        if directory.is_dir():
+            available = sorted(p.stem for p in directory.glob("*.json"))
+            hint = (
+                f"available suites: {', '.join(available)}"
+                if available
+                else "that directory has no .json suites in it"
+            )
+        else:
+            hint = "that directory doesn't exist"
+        logger.error(f"No test suite '{suite}' in {directory.resolve()}; {hint}.")
+        return {}
+
+    logger.info(f"Reading tests from {path.resolve()}...")
+    try:
+        test_cases = _read_test_suite(path)
+    except Exception as e:
+        logger.error(f"Failed to parse {path.resolve()}: {e}")
+        return {}
+    logger.info(f"Passing along {len(test_cases.keys())} queries")
+    return test_cases
 
 
 def download_tests(
@@ -39,8 +104,7 @@ def download_tests(
 
         tests_paths = glob.glob(f"{tmpdir}/*/test_suites/{suite}.json")
 
-        with open(tests_paths[0]) as f:
-            test_suite = TestSuite.model_validate(json.load(f))
+        test_cases = _read_test_suite(tests_paths[0])
 
         # all_tests = []
         # suites = suite if type(suite) == list else [suite]
@@ -87,8 +151,8 @@ def download_tests(
     #     test.test_case_type = "acceptance"
     # tests = all_tests
     # tests = list(filter((lambda x: x for x in all_tests for asset in x.test_assets if asset.output_id), all_tests))
-    logger.info(f"Passing along {len(test_suite.test_cases.keys())} queries")
-    return test_suite.test_cases
+    logger.info(f"Passing along {len(test_cases.keys())} queries")
+    return test_cases
 
 
 if __name__ == "__main__":

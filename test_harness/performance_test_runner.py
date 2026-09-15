@@ -1,423 +1,315 @@
-"""Translator Performance Test Runner."""
+"""Translator Performance Test Runner.
 
+This is a thin driver for **HelmsDeep**, which owns the measurement: it holds
+the per-layer step-load ramps, the TRAPI corpuses, the ARS submit/poll/merge
+protocol, and the knee/checkpoint arithmetic. The harness's job here is only to
+(a) pick the right HelmsDeep run type for the test case, (b) run it, and
+(c) hand the two artifacts it produces -- ``summary.json`` and ``report.html``
+-- back to the collector for reporting.
+
+Two things the old in-harness locust runner did are deliberately NOT done here,
+because HelmsDeep owns them:
+
+* **The ramp.** HelmsDeep's ``LoadTestShape`` drives users, spawn rate, and
+  duration from the per-target ``stages`` table in its own config, so a test
+  case's ``test_run_time`` and ``spawn_rate`` are not used. A run takes as long
+  as the target's ramp says it takes (tens of minutes), and that is the point:
+  HelmsDeep's own compression mode exists but explicitly does not produce a
+  quotable measurement, so the harness never asks for it.
+* **The query.** HelmsDeep sends its own corpus, varying the pinned entity per
+  request so the numbers cover a real cost surface instead of warming one
+  cache. The test case's asset is not turned into the query under load.
+"""
+
+import json
 import logging
-import time
+import os
+import re
+import subprocess
+import sys
 from typing import Dict, List, Optional
 
-import gevent
-from gevent import GreenletExit
-from locust import HttpUser, LoadTestShape, task
-from locust.env import Environment
-from locust.html import get_html_report
-from locust.stats import stats_history, stats_printer
-from translator_testing_model.datamodel.pydanticmodel import (
-    AcceptanceTestAsset,
-    ComponentEnum,
-    PerformanceTestCase,
-    TestEnvEnum,
-    TestObjectiveEnum,
+from translator_testing_model.datamodel.pydanticmodel import PerformanceTestCase
+
+# HelmsDeep is installed as a dependency (see requirements-runners.txt) and run
+# as a subprocess: it launches locust itself, and locust is emphatically not
+# safe to drive twice in one interpreter.
+HELMSDEEP_MODULE = "helmsdeep.cli"
+
+# HelmsDeep names one run type per (layer, query profile). The layer is fixed by
+# which component the test targets -- the stack cascades ARS -> ARAs -> KPs, so
+# exactly one layer is loaded per run.
+ARS_COMPONENT = "ars"
+LAYER_ARS = "ars"
+LAYER_ARA = "aras"
+
+# The query profile within that layer. "default" is the layer's own single-class
+# corpus (lookup for KPs, inferred for ARAs/ARS) and answers the open question
+# "how far can we go?" -- it is what a test case gets unless it asks otherwise.
+# "mixed" and "pathfinder" are HelmsDeep's heavier run types; "mixed" is the one
+# that carries pass/fail checkpoints.
+PROFILE_DEFAULT = "default"
+PROFILES = (PROFILE_DEFAULT, "mixed", "pathfinder")
+
+# Artifacts HelmsDeep writes next to the CSV prefix. The first two are the
+# reportable deliverables; the rest are kept on disk for anyone digging in.
+SUMMARY_SUFFIX = "_summary.json"
+REPORT_SUFFIX = "_report.html"
+EXTRA_SUFFIXES = (
+    "_stages.csv",
+    "_by_qtype.csv",
+    "_checkpoints.csv",
+    "_ars_health.csv",
+    "_ars_queries.csv",
+    "_ars_completion.csv",
 )
 
-from test_harness.runner.generate_query import generate_query
-from test_harness.runner.query_runner import QueryRunner, env_map
-
-# Custom request_type values used to distinguish layers of the test in stats.
-# Locust groups stats by (method, name); using these as the "method" lets us
-# pull each layer out cleanly in the result collector.
-SUBMIT_TYPE = "POST"
-POLL_TYPE = "GET"
-QUERY_TYPE = "QUERY"
-
-# Single names per layer so stats aggregate across all queries instead of
-# one row per parent_pk.
-SUBMIT_NAME = "submit_query"
-POLL_NAME = "poll_status"
-# The /trace poll only returns status metadata; the final TRAPI message lives
-# at the merged_version PK. Fetch it on completion so we can record the size
-# of the actual response.
-MERGED_FETCH_NAME = "fetch_merged"
-
-# Per-outcome names for the end-to-end QUERY event. Distinct names give us
-# a count for each outcome directly out of Locust's stats serialization.
-OUTCOME_COMPLETED = "ars_query_completed"
-OUTCOME_ERRORED = "ars_query_errored"
-OUTCOME_POLLING_FAILED = "ars_query_polling_failed"
-OUTCOME_TIMED_OUT = "ars_query_timed_out"
-OUTCOME_ABANDONED = "ars_query_abandoned"
-
-ARA_QUERY_COMPLETED = "ara_query_completed"
-ARA_QUERY_FAILED = "ara_query_failed"
-
-POLL_INTERVAL_SECONDS = 5
+# How much of HelmsDeep's output to keep when it fails, so the failure reaches
+# the log with its reason attached instead of just an exit code.
+OUTPUT_TAIL_CHARS = 4000
 
 
-def run_locust_tests(
-    host: str,
-    test_query: Dict,
-    test_run_time: int,
-    spawn_rate: float,
-    target: str,
-):
-    print("Starting locust testing")
+def _slugify(text: str) -> str:
+    """Make ``text`` safe to use inside a filename."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(text)).strip("_") or "perf"
 
-    test_started_at = time.time()
 
-    def remaining_test_time() -> float:
-        """Seconds left in the test window; clamped at 0."""
-        return max(0.0, test_run_time - (time.time() - test_started_at))
+def resolve_profile(
+    test: PerformanceTestCase,
+    override: Optional[str] = None,
+    logger: logging.Logger = logging.getLogger(__name__),
+) -> str:
+    """Pick the HelmsDeep query profile for ``test``.
 
-    class TestShape(LoadTestShape):
-        time_limit = test_run_time
-        user_spawn_rate = spawn_rate
-
-        def tick(self):
-            run_time = self.get_run_time()
-            if run_time < self.time_limit:
-                user_count = round(run_time, -1) * self.user_spawn_rate
-                return (user_count, self.user_spawn_rate)
-
-            return None
-
-    def fire_query_event(env, name, response_time_ms, exception=None, length=0):
-        env.events.request.fire(
-            request_type=QUERY_TYPE,
-            name=name,
-            response_time=response_time_ms,
-            response_length=length,
-            exception=exception,
-            context={},
+    An explicit ``override`` (the ``--performance_profile`` CLI flag) wins;
+    otherwise a ``mixed`` or ``pathfinder`` entry in the test case's
+    ``test_runner_settings`` selects that profile. With neither, the layer's own
+    single-class corpus is used.
+    """
+    if override:
+        if override not in PROFILES:
+            raise ValueError(
+                f"Unknown performance profile {override!r}; "
+                f"expected one of {', '.join(PROFILES)}"
+            )
+        return override
+    settings = {str(s).strip().lower() for s in (test.test_runner_settings or [])}
+    selected = [p for p in PROFILES if p != PROFILE_DEFAULT and p in settings]
+    if len(selected) > 1:
+        logger.warning(
+            f"Test {test.id} asks for more than one performance profile "
+            f"({', '.join(selected)}); using {selected[0]}."
         )
+    return selected[0] if selected else PROFILE_DEFAULT
 
-    class ARAUser(HttpUser):
-        @task
-        def send_query(self):
-            query_started = time.time()
-            outcome = ARA_QUERY_FAILED
-            failure_reason = "ARA query did not complete"
-            response_length = 0
-            try:
-                with self.client.post(
-                    "/query",
-                    json=test_query,
-                    catch_response=True,
-                    name=SUBMIT_NAME,
-                ) as response:
-                    if response.status_code == 200:
-                        response.success()
-                        outcome = ARA_QUERY_COMPLETED
-                        failure_reason = None
-                        response_length = (
-                            len(response.content) if response.content else 0
-                        )
-                    else:
-                        failure_reason = f"Got a bad response: {response.status_code}"
-                        response.failure(failure_reason)
-            except GreenletExit:
-                outcome = ARA_QUERY_FAILED
-                failure_reason = "Test stopped before ARA query finished"
-                raise
-            finally:
-                elapsed_ms = (time.time() - query_started) * 1000
-                fire_query_event(
-                    self.environment,
-                    outcome,
-                    elapsed_ms,
-                    exception=failure_reason,
-                    length=response_length,
-                )
 
-    class ARSUser(HttpUser):
-        def _fetch_merged_size(self, merged_pk, trace_response) -> int:
-            """Pull the actual final-response byte size for a completed query.
+def helmsdeep_target(component: str, profile: str = PROFILE_DEFAULT) -> str:
+    """Map a Translator component + query profile onto a HelmsDeep run type.
 
-            Falls back to the trace response's content length if the merged
-            message can't be fetched, so the QUERY event still records a size.
-            """
-            fallback = len(trace_response.content) if trace_response.content else 0
-            if not merged_pk:
-                return fallback
-            with self.client.get(
-                f"/ars/api/messages/{merged_pk}",
-                catch_response=True,
-                name=MERGED_FETCH_NAME,
-            ) as merged_res:
-                if merged_res.status_code != 200:
-                    merged_res.failure(
-                        f"Failed to fetch merged {merged_pk}: "
-                        f"{merged_res.status_code}"
-                    )
-                    return fallback
-                merged_res.success()
-                return len(merged_res.content) if merged_res.content else 0
+    Only the ARS speaks the async submit/poll/merge protocol; every other
+    component is queried as an ARA (a blocking ``POST /query``).
+    """
+    component = str(component).split("infores:")[-1].lower()
+    layer = LAYER_ARS if component == ARS_COMPONENT else LAYER_ARA
+    return layer if profile == PROFILE_DEFAULT else f"{layer}_{profile}"
 
-        @task
-        def send_query(self):
-            query_started = time.time()
-            outcome = OUTCOME_ABANDONED
-            failure_reason = "Test ended before query reached a terminal state"
-            response_length = 0
-            parent_pk = ""
 
-            try:
-                # Submit the query.
-                with self.client.post(
-                    "/ars/api/submit",
-                    json=test_query,
-                    catch_response=True,
-                    name=SUBMIT_NAME,
-                ) as response:
-                    if response.status_code != 201:
-                        failure_reason = (
-                            f"Failed to start a query: "
-                            f"{response.status_code} {response.content!r}"
-                        )
-                        response.failure(failure_reason)
-                        outcome = OUTCOME_POLLING_FAILED
-                        return
-                    response.success()
-                    parent_pk = response.json().get("pk", "")
+def _artifact_paths(prefix: str) -> Dict[str, str]:
+    """Every HelmsDeep output that actually got written, keyed by suffix."""
+    paths = {}
+    for suffix in (SUMMARY_SUFFIX, REPORT_SUFFIX, *EXTRA_SUFFIXES):
+        path = f"{prefix}{suffix}"
+        if os.path.exists(path):
+            paths[suffix.lstrip("_")] = path
+    return paths
 
-                if not parent_pk:
-                    failure_reason = "ARS submit returned no parent_pk"
-                    outcome = OUTCOME_POLLING_FAILED
-                    return
 
-                # Poll until terminal state, the test window closes, or the
-                # greenlet is killed.
-                while True:
-                    if remaining_test_time() <= 0:
-                        outcome = OUTCOME_ABANDONED
-                        failure_reason = f"Test ended while polling {parent_pk}"
-                        return
-
-                    with self.client.get(
-                        f"/ars/api/messages/{parent_pk}?trace=y",
-                        catch_response=True,
-                        name=POLL_NAME,
-                    ) as response:
-                        if response.status_code != 200:
-                            failure_reason = (
-                                f"Failed to poll {parent_pk}: "
-                                f"{response.status_code} {response.content!r}"
-                            )
-                            response.failure(failure_reason)
-                            outcome = OUTCOME_POLLING_FAILED
-                            return
-                        response.success()
-
-                        try:
-                            res = response.json()
-                        except ValueError:
-                            failure_reason = f"Non-JSON poll body for {parent_pk}"
-                            outcome = OUTCOME_POLLING_FAILED
-                            return
-
-                        status = res.get("status")
-                        if status == "Done":
-                            outcome = OUTCOME_COMPLETED
-                            failure_reason = None
-                            response_length = self._fetch_merged_size(
-                                res.get("merged_version"),
-                                response,
-                            )
-                            return
-                        if status == "Error":
-                            failure_reason = f"ARS reported Error for {parent_pk}"
-                            outcome = OUTCOME_ERRORED
-                            return
-
-                    # Don't sleep past the end of the test window.
-                    sleep_for = min(POLL_INTERVAL_SECONDS, remaining_test_time())
-                    if sleep_for <= 0:
-                        outcome = OUTCOME_ABANDONED
-                        failure_reason = f"Test ended while polling {parent_pk}"
-                        return
-                    time.sleep(sleep_for)
-            except GreenletExit:
-                # Runner is shutting down. Record the in-flight query and
-                # re-raise so locust stops the user cleanly.
-                outcome = OUTCOME_ABANDONED
-                failure_reason = (
-                    f"Greenlet killed while query {parent_pk} was in flight"
-                )
-                raise
-            finally:
-                elapsed_ms = (time.time() - query_started) * 1000
-                fire_query_event(
-                    self.environment,
-                    outcome,
-                    elapsed_ms,
-                    exception=failure_reason,
-                    length=response_length,
-                )
-
-    # Create environment
-    USER_TYPE_MAP = {
-        "ars": ARSUser,
-        "aragorn": ARAUser,
-        "arax": ARAUser,
-        "bte": ARAUser,
-    }
-    user_class = USER_TYPE_MAP.get(target, ARAUser)
-    env = Environment(user_classes=[user_class], host=host, shape_class=TestShape())
-    runner = env.create_local_runner()
-
-    # Capture per-query response sizes (one entry per query, keyed by
-    # outcome name) so the report can flag cases where queries reported the
-    # same status but came back with different payload sizes.
-    query_response_sizes: Dict[str, List[int]] = {}
-
-    def _record_query_size(
-        request_type, name, response_time, response_length, exception, context, **kwargs
-    ):
-        if request_type != QUERY_TYPE:
-            return
-        query_response_sizes.setdefault(name, []).append(response_length or 0)
-
-    env.events.request.add_listener(_record_query_size)
-
-    # Start stats printer
-    gevent.spawn(stats_printer(env.stats))
-    gevent.spawn(stats_history, runner)
-
-    # Start test
-    runner.start_shape()
-
-    # Run for specified duration
-    gevent.spawn_later(test_run_time, runner.quit)
-
-    # Wait for completion
-    runner.greenlet.join()
-    runner.quit()
-
-    print("Done with locust testing!")
-
+def _read_text(path: Optional[str], logger: logging.Logger) -> Optional[str]:
+    if not path:
+        return None
     try:
-        summary_html = get_html_report(env, show_download_link=False)
-    except Exception as e:
-        logging.getLogger(__name__).warning(
-            "Failed to render Locust HTML report: %s", e
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        logger.warning(f"Failed to read HelmsDeep artifact {path}: {e}")
+        return None
+
+
+def _tail(text: Optional[str]) -> str:
+    text = (text or "").strip()
+    return text[-OUTPUT_TAIL_CHARS:]
+
+
+def run_helmsdeep(
+    helmsdeep_run_type: str,
+    host: str,
+    prefix: str,
+    logger: logging.Logger = logging.getLogger(__name__),
+) -> Dict:
+    """Run one HelmsDeep load test and collect what it wrote.
+
+    Returns the parsed ``summary.json``, the HTML report, and the process exit
+    code.
+
+    The exit code is recorded but is NOT the pass/fail signal. HelmsDeep sets it
+    to 1 on a missed checkpoint, but locust -- which HelmsDeep runs -- also exits
+    1 whenever any single request failed, so a run with every checkpoint met and
+    one 500 along the way still exits 1. The verdicts live in the summary
+    (``checkpoints`` / ``checkpoints_passed``); whether the run happened at all
+    is told by whether ``summary`` came back.
+    """
+    os.makedirs(os.path.dirname(prefix) or ".", exist_ok=True)
+    cmd = [
+        sys.executable,
+        "-m",
+        HELMSDEEP_MODULE,
+        "--targets",
+        helmsdeep_run_type,
+        "--host",
+        host,
+        "--csv-prefix",
+        prefix,
+        # The harness is not a terminal session: HelmsDeep's sticky live footer
+        # would fight the harness's own logging. It falls back to a periodic
+        # plain status line, which is what we want in a log.
+        "--no-live",
+    ]
+    logger.info(f"Running HelmsDeep: {' '.join(cmd)}")
+
+    error = None
+    stdout = stderr = ""
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        summary_html = None
+        exit_code = completed.returncode
+        stdout, stderr = completed.stdout, completed.stderr
+    except OSError as e:
+        exit_code = None
+        error = f"Failed to launch HelmsDeep: {e}"
+        logger.error(error)
+
+    artifacts = _artifact_paths(prefix)
+    summary_text = _read_text(artifacts.get("summary.json"), logger)
+    summary = None
+    if summary_text:
+        try:
+            summary = json.loads(summary_text)
+        except ValueError as e:
+            error = error or f"HelmsDeep wrote an unparseable summary.json: {e}"
+            logger.error(error)
+    elif error is None:
+        error = (
+            f"HelmsDeep exited {exit_code} without writing " f"{prefix}{SUMMARY_SUFFIX}"
+        )
+        logger.error(f"{error}\n{_tail(stderr) or _tail(stdout)}")
 
     return {
-        "stats": env.stats.serialize_stats(),
-        "failures": env.stats.serialize_errors(),
-        "test_run_time": test_run_time,
-        "spawn_rate": spawn_rate,
-        "target": target,
-        "query_response_sizes": query_response_sizes,
-        "stats_history": list(env.runner.stats.history),
-        "summary_html": summary_html,
+        "runner": "helmsdeep",
+        "helmsdeep_target": helmsdeep_run_type,
+        "host": host,
+        "prefix": prefix,
+        "exit_code": exit_code,
+        "summary": summary,
+        "report_html": _read_text(artifacts.get("report.html"), logger),
+        "artifacts": artifacts,
+        "error": error,
+        # Only kept when something went wrong; a successful run's stdout is a
+        # long progress narration nobody needs in the report JSON.
+        "output": _tail(stderr) or _tail(stdout) if error else "",
     }
 
 
 def run_performance_test(
     test: PerformanceTestCase,
-    test_query: Dict,
     host: str,
     target: Optional[str] = None,
-):
-    """Wrapper function to run load tests with custom parameters.
+    output_dir: str = "test_results",
+    profile: Optional[str] = None,
+    logger: logging.Logger = logging.getLogger(__name__),
+) -> Dict:
+    """Run a performance test case through HelmsDeep.
 
-    ``target`` overrides the component specified in the test case, so the
-    load test can be pointed at eg a locally running ARA regardless of what
-    the test says. Any target that isn't the ARS is queried as an ARA.
+    ``target`` overrides the component specified in the test case, so the load
+    test can be pointed at eg a locally running ARA regardless of what the test
+    says. Any target that isn't the ARS is queried as an ARA.
+
+    ``profile`` overrides the HelmsDeep query profile the test case asks for.
     """
-    target = target or test.components[0]
+    component = str(target or (test.components or [ARS_COMPONENT])[0])
+    component = component.split("infores:")[-1].lower()
+    resolved_profile = resolve_profile(test, profile, logger)
+    run_type = helmsdeep_target(component, resolved_profile)
 
-    results = run_locust_tests(
-        host,
-        test_query,
-        test.test_run_time,
-        test.spawn_rate,
-        target,
+    prefix = os.path.join(
+        output_dir, f"helmsdeep_{_slugify(run_type)}_case_{_slugify(test.id)}"
     )
-
+    results = run_helmsdeep(run_type, host, prefix, logger)
+    results["component"] = component
+    results["profile"] = resolved_profile
     return results
 
 
-def initialize():
-    test_asset = AcceptanceTestAsset.model_validate(
-        {
-            "id": "Asset_1",
-            "name": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
-            "description": "NeverShow: Iron (PUBCHEM) treats Aceruloplasminemia",
-            "tags": [],
-            "test_runner_settings": ["inferred"],
-            "input_id": "MONDO:0011426",
-            "input_name": "Aceruloplasminemia",
-            "input_category": "biolink:Disease",
-            "predicate_id": "biolink:treats",
-            "predicate_name": "treats",
-            "output_id": "PUBCHEM.COMPOUND:23925",
-            "output_name": "Iron (PUBCHEM)",
-            "output_category": "biolink:ChemicalEntity",
-            "association": None,
-            "qualifiers": [
-                {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
-                {"parameter": "biolink_object_aspect_qualifier", "value": ""},
-                {"parameter": "biolink_object_direction_qualifier", "value": ""},
-            ],
-            "expected_output": "NeverShow",
-            "test_issue": None,
-            "semantic_severity": None,
-            "in_v1": None,
-            "well_known": False,
-            "test_reference": None,
-            "test_metadata": {
-                "id": "1",
-                "name": None,
-                "description": None,
-                "tags": [],
-                "test_runner_settings": [],
-                "test_source": "SMURF",
-                "test_reference": "https://github.com/NCATSTranslator/Feedback/issues/506",
-                "test_objective": "AcceptanceTest",
-                "test_annotations": [],
-            },
+def describe_run(
+    test: PerformanceTestCase,
+    host: str,
+    run_type: str,
+    profile: str,
+) -> str:
+    """A human-readable plan for the run, for the Information Radiator log.
+
+    The asset's TRAPI query is *not* what gets sent (HelmsDeep sends its own
+    varied corpus), so logging the asset query would be misleading. Log what
+    will actually happen instead.
+    """
+    try:
+        from helmsdeep import config as helmsdeep_config
+
+        cfg = helmsdeep_config.TARGETS[run_type]
+        stages = [
+            {"users": users, "spawn_rate": rate, "hold_s": hold}
+            for users, rate, hold in cfg["stages"]
+        ]
+        plan: Dict = {
+            "component": cfg["label"],
+            "protocol": cfg["protocol"],
+            "endpoint": f"{host}{cfg['endpoint']}",
+            "corpus": cfg["corpus"],
+            "p99_slo_ms": cfg["p99_slo_ms"],
+            "cooldown_s": cfg.get("cooldown_s", 0),
+            "stages": stages,
+            "estimated_duration_s": helmsdeep_config.natural_duration_s(cfg),
+            "checkpoints": cfg.get("checkpoints", []),
         }
-    )
-    test = PerformanceTestCase(
-        id="1",
-        name="ExamplePerformanceTest",
-        description="Iron treats Aceruloplasminemia",
-        tags=[],
-        test_runner_settings=["inferred"],
-        test_run_time=20,
-        spawn_rate=0.1,
-        query_type=None,
-        test_assets=[test_asset],
-        preconditions=[],
-        trapi_template=None,
-        test_case_objective=TestObjectiveEnum.QuantitativeTest,
-        test_case_source=None,
-        test_case_predicate_name="treats",
-        test_case_predicate_id="biolink_treats",
-        test_case_input_id="MONDO:0011426",
-        qualifiers=[],
-        input_category="biolink:Disease",
-        output_category=None,
-        components=[ComponentEnum.ars],
-        test_env=TestEnvEnum.ci,
-    )
-    logger = logging.getLogger(__name__)
-    query_runner = QueryRunner(logger)
-    query_runner.retrieve_registry("1.6.0")
-    # print(query_runner.registry)
+    except Exception as e:  # HelmsDeep missing or its registry changed shape.
+        plan = {"error": f"Could not describe the HelmsDeep plan: {e}"}
 
-    host = query_runner.registry[env_map[test.test_env]][test.components[0]][0]["url"]
-
-    test_query = generate_query(test.test_assets[0])
-
-    results = run_performance_test(
-        test,
-        test_query,
-        host,
+    return json.dumps(
+        {
+            "runner": "helmsdeep",
+            "test_case": test.id,
+            "helmsdeep_target": run_type,
+            "profile": profile,
+            "host": host,
+            "plan": plan,
+            "note": (
+                "HelmsDeep owns the ramp and the corpus: the test case's "
+                "test_run_time, spawn_rate, and assets do not shape this run."
+            ),
+        },
+        indent=2,
     )
 
-    print(results)
 
+def checkpoint_verdicts(summary: Optional[Dict]) -> List[Dict]:
+    """The checkpoint rows from a HelmsDeep summary, or an empty list.
 
-if __name__ == "__main__":
-    initialize()
+    Only HelmsDeep's ``*_mixed`` run types define checkpoints; every other run
+    type reports the knee and nothing to pass or fail.
+    """
+    if not summary:
+        return []
+    return list(summary.get("checkpoints") or [])

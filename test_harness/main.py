@@ -6,6 +6,7 @@ monkey.patch_all()
 
 import json
 import os
+import sys
 import time
 from argparse import ArgumentParser
 from urllib.parse import urlparse
@@ -13,8 +14,9 @@ from uuid import uuid4
 
 from setproctitle import setproctitle
 
-from test_harness.download import download_tests
+from test_harness.download import download_tests, load_tests
 from test_harness.logger import get_logger, setup_logger
+from test_harness.performance_test_runner import PROFILES
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
@@ -23,6 +25,17 @@ from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 
 setproctitle("TestHarness")
 setup_logger()
+
+# The harness's exit status answers "did the run happen?", never "did the tests
+# pass?". A failed acceptance test or a missed performance checkpoint is a
+# *result*: it goes to Slack and the Information Radiator, and a scheduled job
+# must not go red for it -- a service being slow is news for the channel, not a
+# broken cron. What does earn a non-zero exit is the harness being unable to
+# carry out the run at all (bad arguments, a suite that isn't there, nothing
+# left to run), because that job produced no results and would otherwise sit
+# green and silent indefinitely.
+EXIT_OK = 0
+EXIT_COULD_NOT_RUN = 1
 
 
 def url_type(arg):
@@ -37,19 +50,22 @@ def main(args):
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     if bool(args.get("target_url")) != bool(args.get("target")):
-        return logger.error("--target_url and --target must be provided together.")
+        logger.error("--target_url and --target must be provided together.")
+        return EXIT_COULD_NOT_RUN
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
+    elif "tests_dir" in args:
+        tests = load_tests(args["suite"], args["tests_dir"], logger)
     elif "tests" in args:
         tests = args["tests"]
     else:
-        return logger.error(
-            "Please run this command with `-h` to see the available options."
-        )
+        logger.error("Please run this command with `-h` to see the available options.")
+        return EXIT_COULD_NOT_RUN
 
     if len(tests) < 1:
-        return logger.warning("No tests to run. Exiting.")
+        logger.error("No tests to run. Exiting.")
+        return EXIT_COULD_NOT_RUN
 
     # optionally run only one type of query out of the suite, eg to evaluate a
     # change that only affects drug-treats-disease queries
@@ -57,7 +73,8 @@ def main(args):
     if query_type is not None:
         tests = filter_tests_by_query_type(tests, query_type, logger)
         if len(tests) < 1:
-            return logger.warning(f"No {query_type} tests to run. Exiting.")
+            logger.error(f"No {query_type} tests to run. Exiting.")
+            return EXIT_COULD_NOT_RUN
 
     output_dir = args.get("output_dir") or "test_results"
 
@@ -134,15 +151,14 @@ def main(args):
             collector.acceptance_csv,
         )
     if collector.has_performance_results:
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "json",
-            collector.performance_stats,
-        )
-        for filename, content in collector.render_performance_artifacts():
+        # HelmsDeep's own summary.json is the authoritative result, so it is
+        # uploaded verbatim alongside its HTML report rather than being
+        # reformatted into a second, divergent JSON. Each carries the run's
+        # checkpoint pass/fail as its comment.
+        for filename, content, comment in collector.render_performance_artifacts():
             filename = f"{target_prefix}{filename}"
             try:
-                slacker.upload_binary_file(filename, content)
+                slacker.upload_binary_file(filename, content, initial_comment=comment)
             except Exception as e:
                 logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
@@ -156,7 +172,8 @@ def main(args):
         with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
 
-    return logger.info("All tests have completed!")
+    logger.info("All tests have completed!")
+    return EXIT_OK
 
 
 def cli():
@@ -183,12 +200,39 @@ def cli():
         help="URL to download in order to find the test files",
     )
 
+    load_parser = subparsers.add_parser(
+        "load",
+        help="Run a test suite from a local JSON file instead of downloading one",
+    )
+
+    load_parser.add_argument(
+        "suite",
+        type=str,
+        help=(
+            "The name of the local suite to run: the JSON file's name without "
+            "the extension, e.g. 'local_acceptance' for "
+            "test_suites/local_acceptance.json."
+        ),
+    )
+
+    load_parser.add_argument(
+        "--tests_dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory to read the suite from. Defaults to 'test_suites' in "
+            "the working directory when it exists, and otherwise to the copy "
+            "shipped with the repo, so a checkout's edited suites are found "
+            "without this flag."
+        ),
+    )
+
     run_parser = subparsers.add_parser("run", help="Run a given set of tests")
 
     run_parser.add_argument(
         "tests",
         type=json.loads,
-        help="Path to a file of tests to be run. This would be the same output from downloading the tests via `download_tests()`",
+        help="The tests to be run, as a JSON string. This is the same structure `download_tests()` returns; to run tests from a file, use the `load` subcommand instead.",
     )
 
     parser.add_argument(
@@ -244,6 +288,21 @@ def cli():
     )
 
     parser.add_argument(
+        "--performance_profile",
+        type=str.lower,
+        choices=list(PROFILES),
+        help=(
+            "Which HelmsDeep query profile performance tests run: 'default' "
+            "for the layer's own single-class corpus (lookup for KPs, "
+            "inferred for ARAs/the ARS), 'mixed' for the 2:1 "
+            "inferred/Pathfinder acceptance profile that carries pass/fail "
+            "checkpoints, or 'pathfinder' for the two-pinned-endpoint path "
+            "queries. Overrides a 'mixed'/'pathfinder' entry in a test case's "
+            "test_runner_settings; without either, 'default' is used."
+        ),
+    )
+
+    parser.add_argument(
         "--trapi_version",
         type=str,
         default="1.6.0",
@@ -284,7 +343,7 @@ def cli():
     )
 
     args = parser.parse_args()
-    main(vars(args))
+    sys.exit(main(vars(args)))
 
 
 if __name__ == "__main__":
