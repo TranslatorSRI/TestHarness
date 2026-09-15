@@ -186,3 +186,39 @@ def test_passthrough_splits_at_the_separator():
         ["--suite", "s", "ars=http://a"],
         [],
     )
+
+
+def test_a_subcommand_flag_after_the_separator_is_rejected_with_guidance(capsys):
+    """`--tests_url` belongs to the harness's `download` subcommand, so the
+    sweep's passthrough (which goes in front of the subcommand) can't carry it.
+    Argparse's own "unrecognized arguments" doesn't say the position is the
+    problem, and this is edited by hand in a YAML manifest."""
+    for arg in ("--tests_url=https://x/y.zip", "--tests_url", "--tests_dir=/suites"):
+        with pytest.raises(SystemExit):
+            cli(["--suite", "s", "ars=http://a", "--", arg])
+        err = capsys.readouterr().err
+        assert "cannot be passed through after `--`" in err
+        assert "before the `--`" in err
+
+
+def test_tests_url_goes_after_the_download_subcommand():
+    """The flag is only valid there; in front of it argparse rejects the run."""
+    cmd = build_command(
+        "ars",
+        "http://a",
+        "perf",
+        "out",
+        [],
+        download=False,
+        tests_url="https://x/y.zip",
+    )
+    assert cmd.index("--tests_url") > cmd.index("download")
+    assert cmd[cmd.index("--tests_url") + 1] == "https://x/y.zip"
+
+
+def test_tests_dir_goes_after_the_load_subcommand():
+    cmd = build_command(
+        "ars", "http://a", "perf", "out", [], download=False, tests_dir="/suites"
+    )
+    assert cmd.index("--tests_dir") > cmd.index("load")
+    assert cmd[cmd.index("--tests_dir") + 1] == "/suites"
