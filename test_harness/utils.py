@@ -16,7 +16,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
     "ci": "https://nodenorm-es.ci.transltr.io",
-    "test": "https://nodenorm.test.transltr.io/1.4",
+    "test": "https://nodenorm-es.test.transltr.io",
     "prod": "https://nodenorm.transltr.io/1.4",
 }
 
