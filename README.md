@@ -192,6 +192,12 @@ test-harness-sweep --suite performance_tests --download \
 Each `NAME=URL` pair becomes one `test-harness --target_url URL --target NAME`
 invocation, in the order given, and the sweep waits for each to finish before
 starting the next. Anything after `--` is passed through to every invocation.
+
+Pass `--tests_url` (and `--tests_dir`) to the **sweep**, not through the `--`.
+They belong to the harness's `download`/`load` subcommands, and passthrough
+arguments go in front of the subcommand, where argparse rejects them; the sweep
+catches that and says so rather than letting the run die on "unrecognized
+arguments".
 Targets can come from the `PERFORMANCE_TARGETS` environment variable instead, as
 a comma-separated list of the same pairs — usually the easier knob in a CronJob,
 since changing the sweep is then a manifest edit rather than an image rebuild.

@@ -62,9 +62,22 @@ spec:
               args:
                 - "--suite"
                 - "performance_tests"
+                # --download takes the upstream Tests repo's main branch. To
+                # pin a branch or a fork, replace it with --tests_url (which
+                # implies --download). Both belong to the sweep, NOT after the
+                # `--`: they are arguments of the harness's `download`
+                # subcommand, and passthrough args go in front of it.
                 - "--download"
+                # - "--tests_url=https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip"
+
                 # Everything after `--` is passed to each harness invocation.
                 - "--"
+                # This is the ONLY thing that selects which queries HelmsDeep
+                # sends -- the suite's own test assets don't. `default` is the
+                # layer's single-class inferred corpus; `pathfinder` is the
+                # path-finding corpus; `mixed` is the 2:1 blend and the only
+                # profile carrying pass/fail checkpoints. A "pathfinder" job
+                # running `default` measures inferred queries.
                 - "--performance_profile"
                 - "mixed"
                 - "--log_level"

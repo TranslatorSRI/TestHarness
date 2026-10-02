@@ -49,6 +49,17 @@ DEFAULT_OUTPUT_DIR = "test_results"
 
 HARNESS = "test-harness"
 
+# Flags that belong to a harness *subcommand* rather than to the harness
+# itself. The sweep passes everything after `--` in front of the subcommand,
+# where argparse rejects these outright -- an easy mistake to make in a YAML
+# manifest, and one whose native error ("unrecognized arguments") doesn't say
+# where the flag should have gone. The sweep owns each of these itself, so
+# point at that instead.
+SUBCOMMAND_FLAGS = {
+    "--tests_url": "--tests_url",
+    "--tests_dir": "--tests_dir",
+}
+
 
 def parse_targets(
     specs: Sequence[str],
@@ -88,6 +99,7 @@ def build_command(
     harness_args: Sequence[str],
     download: bool,
     tests_url: str = None,
+    tests_dir: str = None,
 ) -> List[str]:
     """Build one ``test-harness`` invocation for a single target.
 
@@ -106,12 +118,13 @@ def build_command(
         *harness_args,
     ]
     if download or tests_url:
-        cmd.append("download")
-        cmd.append(suite)
+        cmd += ["download", suite]
         if tests_url:
             cmd += ["--tests_url", tests_url]
     else:
         cmd += ["load", suite]
+        if tests_dir:
+            cmd += ["--tests_dir", tests_dir]
     return cmd
 
 
@@ -127,6 +140,7 @@ def run_sweep(
     harness_args: Sequence[str] = (),
     download: bool = False,
     tests_url: str = None,
+    tests_dir: str = None,
 ) -> int:
     """Run the suite against each target in turn. Returns a process exit code.
 
@@ -140,7 +154,14 @@ def run_sweep(
     results = []
     for position, (target, url) in enumerate(targets, start=1):
         cmd = build_command(
-            target, url, suite, output_dir, harness_args, download, tests_url
+            target,
+            url,
+            suite,
+            output_dir,
+            harness_args,
+            download,
+            tests_url,
+            tests_dir,
         )
         _banner(f"[{position}/{len(targets)}] {target} -> {url}")
         print(f"$ {' '.join(cmd)}", flush=True)
@@ -243,7 +264,19 @@ def cli(argv: Sequence[str] = None) -> int:
     parser.add_argument(
         "--tests_url",
         default=None,
-        help="URL to download the suite from. Implies --download.",
+        help=(
+            "URL to download the suite from. Implies --download. Pass it here "
+            "rather than after `--`: it belongs to the harness's `download` "
+            "subcommand, and the passthrough args go in front of that."
+        ),
+    )
+    parser.add_argument(
+        "--tests_dir",
+        default=None,
+        help=(
+            "Directory to read a local suite from, for `load` runs. Pass it "
+            "here rather than after `--`, for the same reason as --tests_url."
+        ),
     )
     parser.add_argument(
         "--output_dir",
@@ -255,6 +288,24 @@ def cli(argv: Sequence[str] = None) -> int:
         ),
     )
     args = parser.parse_args(sweep_argv)
+
+    misplaced = [
+        arg
+        for arg in harness_args
+        for flag in SUBCOMMAND_FLAGS
+        if arg == flag or arg.startswith(f"{flag}=")
+    ]
+    if misplaced:
+        # Caught here rather than left to argparse: the harness's own error is
+        # just "unrecognized arguments", which doesn't say that the flag is
+        # fine but the position isn't.
+        parser.error(
+            f"{', '.join(misplaced)} cannot be passed through after `--`: "
+            "it belongs to a harness subcommand, and passthrough arguments go "
+            "in front of the subcommand. Pass it to the sweep directly "
+            f"instead, e.g. `{SUBCOMMAND_FLAGS[misplaced[0].split('=')[0]]} "
+            "URL` before the `--`."
+        )
 
     try:
         targets = parse_targets(args.targets)
@@ -273,6 +324,7 @@ def cli(argv: Sequence[str] = None) -> int:
         harness_args=harness_args,
         download=args.download,
         tests_url=args.tests_url,
+        tests_dir=args.tests_dir,
     )
 
 
