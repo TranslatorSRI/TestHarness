@@ -523,7 +523,7 @@ def test_performance_test_is_finished_in_radiator(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "1.6.0"},
+        args={"suite": "perf", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished, "performance test was never finished in the radiator"
@@ -552,7 +552,7 @@ def test_performance_checkpoint_failure_fails_the_radiator_test(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "1.6.0"},
+        args={"suite": "perf", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished[0][1] == AgentStatus.FAILED.value
@@ -577,7 +577,7 @@ def test_performance_run_without_a_summary_fails_the_radiator_test(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "1.6.0"},
+        args={"suite": "perf", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished[0][1] == AgentStatus.FAILED.value
@@ -601,7 +601,7 @@ def test_performance_test_finished_failed_on_error(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "1.6.0"},
+        args={"suite": "perf", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished
@@ -633,7 +633,7 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
         reporter=reporter,
         collector=collector,
         logger=logger,
-        args={"suite": "acceptance", "trapi_version": "1.6.0"},
+        args={"suite": "acceptance", "trapi_version": "2.0.0"},
     )
 
     # 3 assets total across the two acceptance cases in the fixture.

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List
 
+from test_harness.trapi import binding_ids
 from test_harness.utils import AgentReport, AgentStatus
 
 
@@ -17,9 +18,8 @@ def run_acceptance_pass_fail_analysis(
     try:
         all_ids = []
         for res in results:
-            for res_node, res_value in res["node_bindings"].items():
-                for val in res_value:
-                    ids = str(val["id"])
+            for res_value in res["node_bindings"].values():
+                for ids in binding_ids(res_value):
                     if ids not in all_ids:
                         all_ids.append(ids)
         if expect_output == "TopAnswer":
@@ -38,8 +38,7 @@ def run_acceptance_pass_fail_analysis(
         n_perc_ids = []
         for res in n_perc_res:
             for res_value in res["node_bindings"].values():
-                for val in res_value:
-                    ids = str(val["id"])
+                for ids in binding_ids(res_value):
                     if ids not in n_perc_ids:
                         n_perc_ids.append(ids)
         # Record up front whether the expected answer came back at all. The
@@ -57,11 +56,7 @@ def run_acceptance_pass_fail_analysis(
         for idx, res in enumerate(results):
             node_bindings = res.get("node_bindings", {})
             for k in node_bindings.keys():
-                nb = node_bindings[k]
-                the_id = None
-                for c in nb:
-                    the_id = c.get("id")
-                if the_id == out_curie:
+                if out_curie in binding_ids(node_bindings[k]):
                     ars_score = None
                     ars_rank = None
                     ara_score = None

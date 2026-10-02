@@ -1,8 +1,9 @@
 httpx==0.27.0
-pydantic==2.7.1
-# reasoner_pydantic==4.1.6
+# translator_tom needs pydantic>=2.12.
+pydantic>=2.12.0
 setproctitle==1.3.3
 slack_sdk==3.27.2
 tqdm==4.66.4
 translator-testing-model==0.5.0
-reasoner-validator==4.2.5
+# TRAPI object model: builds the TRAPI 2.0 queries the harness sends.
+translator_tom>=2.1.0

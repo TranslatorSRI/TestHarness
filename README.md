@@ -88,6 +88,24 @@ whenever `--query_type` is given. Saved result filenames are prefixed with the
 query type (eg `MVP1_test_report.json`) so runs of different slices stay
 distinguishable.
 
+### TRAPI version
+The harness speaks **TRAPI 2.0** by default. Queries are built with
+[`translator_tom`](https://github.com/NCATSTranslator/TRAPIObjectModeling)
+(TOM), the Translator-wide TRAPI object model, so each query is validated
+against the spec before it is sent. `--trapi_version` picks the version the
+queries are written in and which services are taken from the SmartAPI
+registry (only those registered with the same `x-trapi` major.minor):
+- `test-harness --trapi_version 1.6.0 download <suite>` to test services still
+  on TRAPI 1.6.
+
+What 2.0 changed in the queries the harness sends: an MVP2 query's qualifiers
+go in the query edge's `constraints.qualifiers` as one
+`{qualifier_type_id: qualifier_value}` mapping (1.6's `qualifier_constraints`
+is rejected by 2.0 services), and a Pathfinder query is an ordinary query graph
+with `paths` and no `edges`. Responses are read in either shape — a 2.0
+binding is one object with an `ids` list, a 1.x binding a list of objects each
+with an `id` — since the ARS can return either.
+
 ### Result files
 The acceptance results CSV has a row per test asset, with the asset's name, its
 Information Radiator URL, the ARS pk, and the test case/asset ids. Every agent

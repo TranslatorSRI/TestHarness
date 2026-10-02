@@ -28,6 +28,7 @@ from test_harness.performance_test_runner import (
 from test_harness.reporter import Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.query_runner import QueryRunner, env_map
+from test_harness.trapi import DEFAULT_TRAPI_VERSION
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
@@ -47,9 +48,12 @@ def run_tests(
     logger.info(f"Running {len(tests)} queries...")
     target_url = args.get("target_url")
     target = args.get("target")
-    query_runner = QueryRunner(logger, target_url=target_url, target=target)
+    trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
+    query_runner = QueryRunner(
+        logger, target_url=target_url, target=target, trapi_version=trapi_version
+    )
     logger.info("Runner is getting service registry")
-    query_runner.retrieve_registry(trapi_version=args["trapi_version"])
+    query_runner.retrieve_registry(trapi_version=trapi_version)
     # The overall test status is normally driven by the ARS. When the target
     # service specified in the tests is overridden (eg to run against a
     # locally running ARA), it is driven by the override target instead.

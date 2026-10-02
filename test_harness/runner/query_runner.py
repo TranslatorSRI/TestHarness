@@ -12,6 +12,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 
 from test_harness.runner.generate_query import generate_query
 from test_harness.runner.smart_api_registry import retrieve_registry_from_smartapi
+from test_harness.trapi import DEFAULT_TRAPI_VERSION, trapi_minor_version
 from test_harness.utils import hash_test_asset, normalize_curies
 
 MAX_QUERY_TIME = 600
@@ -33,8 +34,12 @@ class QueryRunner:
         logger: logging.Logger,
         target_url: Optional[str] = None,
         target: Optional[str] = None,
+        trapi_version: str = DEFAULT_TRAPI_VERSION,
     ):
         """Initialize the Query Runner.
+
+        ``trapi_version`` is the TRAPI version queries are written in, and the
+        version of the services picked from the SmartAPI registry.
 
         ``target_url`` and ``target`` override the target service specified in
         the tests themselves: when given, every query is sent to ``target_url``
@@ -49,6 +54,9 @@ class QueryRunner:
         if target is not None and not target.startswith("infores:"):
             target = f"infores:{target}"
         self.target_infores = target
+        # fail on an unsupported version now, not once per generated query
+        trapi_minor_version(trapi_version)
+        self.trapi_version = trapi_version
 
     def retrieve_registry(self, trapi_version: str):
         if self.target_url is not None:
@@ -306,7 +314,7 @@ class QueryRunner:
             if asset_hash not in queries:
                 # generate query
                 try:
-                    query = generate_query(test_asset)
+                    query = generate_query(test_asset, self.trapi_version)
                     queries[asset_hash] = {
                         "query": query,
                         "responses": {},
