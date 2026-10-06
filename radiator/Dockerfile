@@ -10,12 +10,15 @@ WORKDIR /app
 COPY radiator/requirements.txt radiator/requirements.txt
 RUN pip install --no-cache-dir -r radiator/requirements.txt
 
+RUN MPLCONFIGDIR=/tmp/matplotlib python -c "import matplotlib.pyplot" && chmod -R a+rwX /tmp/matplotlib
+
 COPY radiator_schema radiator_schema
 COPY radiator radiator
 RUN rm -rf radiator/tests
 
 ENV PYTHONPATH=/app \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 # the non-root user defined in the base image
 USER nru

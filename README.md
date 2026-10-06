@@ -56,6 +56,10 @@ configured, or an upload failed) it's saved to `--output_dir` as
 `radiator_<run id>.json` instead, which can be uploaded later:
 - `test-harness-radiator push test_results/radiator_<run id>.json`
 
+When the radiator has the run, the Slack report also gets a headline against
+the previous run (pass rate, regressions, fixes) and a chart of each agent's
+pass rate over the last 30 runs.
+
 Uploads are idempotent, so pushing a run that partly made it is safe. The
 radiator never depends on Zebrunner or Slack: if either fails, the run still
 reaches the radiator (or is saved for it).

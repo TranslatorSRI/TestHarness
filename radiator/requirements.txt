@@ -10,5 +10,7 @@ jinja2==3.1.6
 itsdangerous==2.2.0
 python-multipart==0.0.32
 pydantic==2.13.5
+# the pass-rate chart the harness posts to Slack
+matplotlib==3.11.2
 # for the Zebrunner import
 httpx==0.28.1

@@ -157,6 +157,11 @@ def test_harness_client_round_trip(app):
     assert sorted(a.asset_id for a in stored.assets) == [f"Asset_{i}" for i in range(5)]
     assert stored.counts == {"PASSED": 5}
 
+    # and it can read back what the Slack report uses
+    client._client = TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"})
+    assert client.summary()["pass_rate"] == 1.0
+    assert client.history_png().startswith(b"\x89PNG")
+
 
 def test_replaying_a_partly_uploaded_run(app):
     """A run that half made it, replayed from the saved payload, ends up whole

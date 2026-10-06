@@ -65,6 +65,17 @@ deploy/
 - **Performance**: HelmsDeep's max sustainable concurrency per host over time,
   with checkpoint verdicts.
 
+## In the Slack report
+
+When the radiator has the run, the harness's Slack report gains a headline
+against the previous run of the same series (pass rate and its change,
+regressions, fixes, and a link to what changed), and the chart below is posted
+under it: each agent's pass rate over the series' last 30 runs, ending at this
+one. The radiator draws it (`GET /api/runs/{id}/history.png`); the harness
+fetches it with its token and uploads it, since Slack can't reach pages behind
+the login. Without the radiator, or if it can't be reached, the report is what
+it always was.
+
 ## API
 
 Uploads go under `/api/ingest`, with `Authorization: Bearer <token>`:
@@ -81,8 +92,14 @@ the newest upload. Retries and replays never duplicate. The asset ids come from
 the Tests repo and are stable across runs, which is what history and trends key
 on.
 
-Reading, with the token or a session: `GET /api/runs?suite=&env=&limit=` and
-`GET /api/runs/{run_id}` (with every result).
+Reading, with the token or a session:
+
+| Path | |
+|---|---|
+| `GET /api/runs?suite=&env=&limit=` | runs, newest first |
+| `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
+| `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
+| `GET /api/runs/{run_id}/history.png?runs=30` | the pass-rate chart posted to Slack |
 
 ## Deploying
 

@@ -2,11 +2,11 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 import radiator_schema as schema
-from radiator import ingest, queries
+from radiator import history_png, ingest, queries
 from radiator.auth import require_token, require_token_or_login
 from radiator.models import Run
 
@@ -85,3 +85,32 @@ def get_run(
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
     return queries.run_json(run, with_results=results)
+
+
+def _run_or_404(session: Session, run_id: uuid.UUID) -> Run:
+    run = session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
+    return run
+
+
+@read_router.get("/runs/{run_id}/summary")
+def get_run_summary(run_id: uuid.UUID, session: Session = Depends(get_session)):
+    """The run against the previous one in its series: pass rates,
+    regressions, fixes. For notifications such as the Slack report."""
+    return queries.run_summary(session, _run_or_404(session, run_id))
+
+
+@read_router.get("/runs/{run_id}/history.png")
+def get_run_history_png(
+    run_id: uuid.UUID, runs: int = 30, session: Session = Depends(get_session)
+):
+    """Pass rate by agent over the series' last ``runs`` runs, ending at this
+    one, as a PNG (for Slack, which can't show the dashboard's charts)."""
+    run = _run_or_404(session, run_id)
+    history = queries.series_history(session, run, limit=min(max(runs, 1), 120))
+    return Response(
+        history_png.render(run, history),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )

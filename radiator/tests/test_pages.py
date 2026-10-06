@@ -231,3 +231,54 @@ def test_asset_page_environments(app, browser):
     assert "last 2 runs in test" in browser.get("/assets/TestCase_1/Asset_1").text
     no_env = browser.get("/assets/TestCase_1/Asset_1?env=-").text
     assert "last 1 runs with no recorded environment" in no_env
+
+
+def test_run_summary_and_history_png(app, api, client):
+    first = _payload(
+        T0,
+        [
+            f.asset("A1"),
+            f.asset("A2", status="FAILED", agents=[f.agent("ars", "FAILED")]),
+        ],
+    )
+    second = _payload(
+        T0 + timedelta(days=1),
+        [
+            f.asset("A1", status="FAILED", agents=[f.agent("ars", "FAILED")]),
+            f.asset("A2"),
+        ],
+    )
+    other_series = _payload(T0 + timedelta(hours=12), [f.asset("A1")], env="test")
+    later = _payload(T0 + timedelta(days=2), [f.asset("A1")])
+    _load(app, first, second, other_series, later)
+    run_id = second.run.run_id
+
+    summary = api.get(f"/api/runs/{run_id}/summary").json()
+    assert summary["pass_rate"] == 0.5
+    assert summary["previous_run_id"] == str(first.run.run_id)
+    assert summary["previous_pass_rate"] == 0.5
+    assert (summary["regressions"], summary["fixed"]) == (1, 1)
+
+    res = api.get(f"/api/runs/{run_id}/history.png")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+    assert res.content.startswith(b"\x89PNG")
+    assert client.get(f"/api/runs/{run_id}/history.png").status_code == 401
+
+    with app.state.sessionmaker() as session:
+        run = queries.get_run(session, run_id)
+        history = queries.series_history(session, run)
+        # same series only, and nothing after this run
+        assert [r.id for r, _ in history] == [first.run.run_id, run_id]
+        assert history[-1][1]["ars"] == {"FAILED": 1, "PASSED": 1}
+
+
+def test_summary_of_a_first_run(app, api):
+    only = _payload(T0, [f.asset()])
+    _load(app, only)
+    summary = api.get(f"/api/runs/{only.run.run_id}/summary").json()
+    assert summary["pass_rate"] == 1.0
+    assert summary["previous_run_id"] is None and summary["regressions"] is None
+    assert api.get(f"/api/runs/{only.run.run_id}/history.png").content.startswith(
+        b"\x89PNG"
+    )

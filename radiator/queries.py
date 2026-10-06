@@ -142,10 +142,7 @@ def previous_run(session: Session, run: Run) -> Optional[Run]:
     return session.scalar(
         select(Run)
         .where(
-            Run.suite == run.suite,
-            Run.env.is_not_distinct_from(run.env),
-            Run.target.is_not_distinct_from(run.target),
-            Run.query_type.is_not_distinct_from(run.query_type),
+            *_same_series(run),
             Run.started_at < run.started_at,
             # a crashed or still-uploading run isn't a fair baseline
             Run.ended_at.is_not(None),
@@ -153,6 +150,72 @@ def previous_run(session: Session, run: Run) -> Optional[Run]:
         .order_by(Run.started_at.desc())
         .limit(1)
     )
+
+
+def _same_series(run: Run) -> list:
+    return [
+        Run.suite == run.suite,
+        Run.env.is_not_distinct_from(run.env),
+        Run.target.is_not_distinct_from(run.target),
+        Run.query_type.is_not_distinct_from(run.query_type),
+    ]
+
+
+def series_history(
+    session: Session, run: Run, limit: int = 30
+) -> list[tuple[Run, dict[str, dict[str, int]]]]:
+    """The finished runs of this run's series up to and including it, oldest
+    first, each with its per-agent status counts."""
+    earlier = list(
+        session.scalars(
+            select(Run)
+            .where(
+                *_same_series(run),
+                Run.started_at < run.started_at,
+                Run.ended_at.is_not(None),
+            )
+            .order_by(Run.started_at.desc())
+            .limit(max(limit - 1, 0))
+        )
+    )
+    runs = list(reversed(earlier)) + [run]
+    rows = session.execute(
+        select(AssetResult.run_id, AgentResult.agent, AgentResult.status, func.count())
+        .join(AgentResult, AgentResult.asset_result_id == AssetResult.id)
+        .where(AssetResult.run_id.in_([r.id for r in runs]))
+        .group_by(AssetResult.run_id, AgentResult.agent, AgentResult.status)
+    )
+    counts: dict = {r.id: defaultdict(dict) for r in runs}
+    for run_id, agent, status, n in rows:
+        counts[run_id][agent][status] = n
+    return [(r, dict(counts[r.id])) for r in runs]
+
+
+def run_summary(session: Session, run: Run) -> dict:
+    """The headline of a run against the previous one in its series, for
+    notifications (eg the harness's Slack report)."""
+    overall = status_counts(session, [run.id])[run.id]
+    previous = previous_run(session, run)
+    summary = {
+        "run_id": str(run.id),
+        "pass_rate": pass_rate(overall),
+        "counts": overall,
+        "previous_run_id": None,
+        "previous_pass_rate": None,
+        "regressions": None,
+        "fixed": None,
+    }
+    if previous is not None:
+        diff = diff_runs(get_run(session, previous.id), get_run(session, run.id))
+        summary.update(
+            previous_run_id=str(previous.id),
+            previous_pass_rate=pass_rate(
+                status_counts(session, [previous.id])[previous.id]
+            ),
+            regressions=diff.count("regression"),
+            fixed=diff.count("fixed"),
+        )
+    return summary
 
 
 def run_agents(run: Run) -> list[str]:

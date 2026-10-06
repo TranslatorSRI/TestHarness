@@ -22,7 +22,7 @@ from test_harness.utils import AgentReport, AgentStatus, TestReport
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
 from .helpers.mock_responses import kp_response
-from .helpers.mocks import MockReporter, MockResultCollector
+from .helpers.mocks import MockReporter, MockResultCollector, MockSlacker
 
 logger = setup_logger()
 
@@ -442,3 +442,74 @@ def test_main_keeps_a_crashed_run_open(mocker, tmp_path):
     with pytest.raises(RuntimeError):
         main(_main_args(tmp_path))
     assert _saved_payload(tmp_path).finish is None
+
+
+class _RecordingSlacker(MockSlacker):
+    def __init__(self):
+        self.messages = []
+        self.files = []
+
+    def post_notification(self, messages=[]):
+        self.messages.extend(messages)
+
+    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
+        self.files.append((filename, content, initial_comment))
+
+
+def _main_with_slack(mocker, monkeypatch, tmp_path, *, radiator=True, summary=None):
+    def fake_run_tests(tests, reporter, collector, logger, args):
+        collector.has_acceptance_results = True
+
+    mocker.patch("test_harness.main.run_tests", side_effect=fake_run_tests)
+    slacker = _RecordingSlacker()
+    mocker.patch("test_harness.main.Slacker", return_value=slacker)
+    mocker.patch("test_harness.main.Slacker.is_configured", return_value=True)
+    if radiator:
+        monkeypatch.setenv("RADIATOR_URL", "http://radiator")
+        monkeypatch.setenv("RADIATOR_TOKEN", "tok")
+        mocker.patch("test_harness.main.RadiatorClient._send")
+        mocker.patch("test_harness.main.RadiatorClient.summary", return_value=summary)
+        mocker.patch(
+            "test_harness.main.RadiatorClient.history_png", return_value=b"\x89PNG"
+        )
+    assert main(_main_args(tmp_path)) == 0
+    return slacker
+
+
+def test_slack_report_carries_the_radiator_history(mocker, monkeypatch, tmp_path):
+    slacker = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={
+            "pass_rate": 0.86,
+            "previous_pass_rate": 0.9,
+            "regressions": 3,
+            "fixed": 1,
+        },
+    )
+    report = slacker.messages[-1]
+    assert "Pass rate 86% (-4.0 pts vs the previous run)" in report
+    assert "3 regressions · 1 fixed" in report
+    assert "/diff|What changed>" in report
+    [(filename, content, comment)] = slacker.files
+    assert filename == "pass_rate_history.png" and content == b"\x89PNG"
+    assert "Open in the Information Radiator" in comment
+
+
+def test_slack_report_first_run_of_a_series(mocker, monkeypatch, tmp_path):
+    slacker = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={"pass_rate": 0.5, "previous_pass_rate": None},
+    )
+    assert "Pass rate 50%\n" in slacker.messages[-1]
+    assert "What changed" not in slacker.messages[-1]
+
+
+def test_slack_report_without_the_radiator(mocker, monkeypatch, tmp_path):
+    """No radiator: the report is what it always was."""
+    slacker = _main_with_slack(mocker, monkeypatch, tmp_path, radiator=False)
+    assert "Pass rate" not in slacker.messages[-1]
+    assert slacker.files == []

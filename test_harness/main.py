@@ -66,6 +66,45 @@ def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
         )
 
 
+def radiator_headline(radiator, collector) -> str:
+    """One line for Slack: this run against the previous one in its series,
+    linking to what changed. Empty when the radiator doesn't have the run."""
+    if not collector.has_acceptance_results:
+        return ""
+    summary = radiator.summary()
+    if not summary or summary.get("pass_rate") is None:
+        return ""
+    line = f"Pass rate {summary['pass_rate']:.0%}"
+    if summary.get("previous_pass_rate") is not None:
+        delta = (summary["pass_rate"] - summary["previous_pass_rate"]) * 100
+        line += f" ({delta:+.1f} pts vs the previous run)"
+        line += (
+            f" · {summary['regressions']} regressions · {summary['fixed']} fixed"
+            f" · <{radiator.diff_url}|What changed>"
+        )
+    return f"\n> {line}\n"
+
+
+def post_history_chart(radiator, slacker, suite, prefix, logger):
+    """Post the series' pass-rate history, from the radiator, under the
+    report. Best effort: the report stands without it."""
+    png = radiator.history_png()
+    if not png:
+        return
+    try:
+        slacker.upload_binary_file(
+            f"{prefix}pass_rate_history.png",
+            png,
+            initial_comment=(
+                f"Pass-rate history for {suite} up to this run · "
+                f"<{radiator.run_url}|Open in the Information Radiator>"
+            ),
+            title="Pass-rate history",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to post the pass-rate history chart: {e}")
+
+
 def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
@@ -208,10 +247,13 @@ def main(args):
                 envs=(",").join(list(queried_envs)),
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
                 radiator_link=radiator_link,
-                result_summary=collector.dump_result_summary(),
+                result_summary=radiator_headline(radiator, collector)
+                + collector.dump_result_summary(),
             )
         ]
     )
+    if collector.has_acceptance_results:
+        post_history_chart(radiator, slacker, args["suite"], target_prefix, logger)
     if collector.has_acceptance_results:
         slacker.upload_test_results_file(
             f"{target_prefix}{reporter.test_name}",

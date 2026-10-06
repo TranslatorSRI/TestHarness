@@ -138,9 +138,41 @@ class RadiatorClient:
             f.write(self.payload.model_dump_json(indent=2))
         return path
 
-    def _send(self, method: str, path: str, body: dict):
-        if not self.enabled or self.upload_failed:
-            return
+    @property
+    def diff_url(self) -> Optional[str]:
+        """Link to what changed since the previous run, once a run is open."""
+        return f"{self.run_url}/diff" if self.run_url else None
+
+    def summary(self) -> Optional[dict]:
+        """The run against the previous one in its series (pass rates,
+        regressions, fixes), or None if it isn't available."""
+        res = self._read("summary")
+        return res.json() if res is not None else None
+
+    def history_png(self, runs: int = 30) -> Optional[bytes]:
+        """The series' pass-rate history up to this run, as a PNG, or None."""
+        res = self._read("history.png", params={"runs": runs})
+        return res.content if res is not None else None
+
+    def _read(self, what: str, params: Optional[dict] = None):
+        """GET something about this run from the read API. Best effort: only
+        once the whole run has been uploaded, and never raises."""
+        if not self.enabled or self.upload_failed or self.payload is None:
+            return None
+        if self.payload.finish is None:
+            return None
+        url = f"{self.base_url}/api/runs/{self.payload.run.run_id}/{what}"
+        try:
+            res = self._http().get(url, params=params)
+            res.raise_for_status()
+            return res
+        except Exception as e:
+            self.logger.warning(
+                f"Couldn't get the run's {what} from the Information Radiator: {e}"
+            )
+            return None
+
+    def _http(self) -> httpx.Client:
         if self._client is None:
             self._client = httpx.Client(
                 base_url=f"{self.base_url}{INGEST_PREFIX}",
@@ -149,8 +181,13 @@ class RadiatorClient:
                 # retries connection failures only; an HTTP error is an answer
                 transport=httpx.HTTPTransport(retries=2),
             )
+        return self._client
+
+    def _send(self, method: str, path: str, body: dict):
+        if not self.enabled or self.upload_failed:
+            return
         try:
-            res = self._client.request(method, path, json=body)
+            res = self._http().request(method, path, json=body)
             res.raise_for_status()
         except Exception as e:
             self.upload_failed = True
