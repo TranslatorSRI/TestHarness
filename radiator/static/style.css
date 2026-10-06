@@ -241,7 +241,7 @@ th.agent-head { text-align: center; }
 .strip { display: grid; gap: 2px; align-items: center; }
 .strip .row-label { font-size: 12px; color: var(--ink-2); padding-right: 10px; white-space: nowrap; }
 .strip .cell { min-width: 0; height: 22px; font-size: 10px; border-radius: 3px; }
-.strip .axis-label { font-size: 11px; color: var(--ink-muted); }
+.strip .axis-label { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
 
 /* diff */
 .diff-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
