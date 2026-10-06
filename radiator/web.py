@@ -34,14 +34,9 @@ STATUS_LABELS = {
     "SKIPPED": ("–", "Skipped"),
 }
 
-# Where a pk can be looked at. The ARAX UI shows any ARS message for the
-# environment it is deployed in.
-PK_VIEWERS = {
-    "dev": "https://arax.ci.transltr.io/?r={pk}",
-    "ci": "https://arax.ci.transltr.io/?r={pk}",
-    "test": "https://arax.test.transltr.io/?r={pk}",
-    "prod": "https://arax.transltr.io/?r={pk}",
-}
+# Where a pk is opened: the ARAX UI on ci, for every environment, as the
+# harness has always linked them.
+PK_VIEWER = "https://arax.ci.transltr.io/?r={pk}"
 
 TREND_WINDOWS = [30, 90, 180, 365]
 
@@ -111,10 +106,8 @@ def duration(run) -> str:
     return f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
 
 
-def pk_url(pk: Optional[str], env: Optional[str]) -> Optional[str]:
-    if not pk:
-        return None
-    return PK_VIEWERS.get(env or "ci", PK_VIEWERS["ci"]).format(pk=pk)
+def pk_url(pk: Optional[str], env: Optional[str] = None) -> Optional[str]:
+    return PK_VIEWER.format(pk=pk) if pk else None
 
 
 def cell_tip(asset, agent) -> str:
