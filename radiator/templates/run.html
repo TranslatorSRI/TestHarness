@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ run.suite }} · {{ when(run.started_at) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumbs"><a href="/">Runs</a> / {{ run.suite }}</div>
+  <h1>{{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
+  <div class="meta">
+    <span>{{ when(run.started_at) }}</span>
+    <span>Duration {{ duration(run) }}{% if not run.ended_at %} <span class="badge">running</span>{% endif %}</span>
+    {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
+    {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+    {% if run.harness_version %}<span>harness {{ run.harness_version }}</span>{% endif %}
+    {% if run.origin == 'zebrunner_import' %}<span class="badge">imported from Zebrunner</span>{% endif %}
+  </div>
+</div>
+
+<div class="tiles">
+  <div class="tile hero">
+    <div class="label">Pass rate</div>
+    <div class="value">{{ pct(rate) }}</div>
+    {% if previous_rate is not none and rate is not none %}
+      {% set d = (rate - previous_rate) * 100 %}
+      <div class="delta {{ 'up' if d > 0.05 else ('down' if d < -0.05 else '') }}">
+        {{ '%+.1f'|format(d) }} pts vs previous run
+      </div>
+    {% endif %}
+  </div>
+  <div class="tile">
+    <div class="label">Assets tested</div>
+    <div class="value">{{ overall.values()|sum }}</div>
+    <div class="delta">{{ overall.get('PASSED', 0) }} passed · {{ overall.get('SKIPPED', 0) }} skipped</div>
+  </div>
+  <div class="tile">
+    <div class="label">Regressions</div>
+    <div class="value">{% if previous %}<a href="/runs/{{ run.id }}/diff#regression">{{ diff.count('regression') }}</a>{% else %}–{% endif %}</div>
+    <div class="delta">agent results that stopped passing</div>
+  </div>
+  <div class="tile">
+    <div class="label">Fixed</div>
+    <div class="value">{% if previous %}<a href="/runs/{{ run.id }}/diff#fixed">{{ diff.count('fixed') }}</a>{% else %}–{% endif %}</div>
+    <div class="delta">{% if previous %}vs <a href="/runs/{{ previous.id }}">{{ when(previous.started_at) }}</a>{% else %}no earlier run to compare{% endif %}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div><h2>By agent</h2><p class="sub">Each agent's results across every asset in this run</p></div>
+    {% if previous %}<a href="/runs/{{ run.id }}/diff">What changed since the last run →</a>{% endif %}
+  </div>
+  <table class="data">
+    <thead><tr><th>Agent</th><th>Results</th><th class="num">Pass rate</th>
+      {% for s in STATUSES %}<th class="num">{{ STATUS_LABELS[s][1] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for agent in agents %}{% set c = agent_counts[agent] %}
+      <tr>
+        <td class="nowrap">{{ m.agent_head(agent) }}</td>
+        <td style="width:35%">{{ status_bar(c) }}</td>
+        <td class="num">{{ pct(pass_rate(c)) }}</td>
+        {% for s in STATUSES %}<td class="num">{% if c.get(s) %}<a href="{{ query_string(request, agent=agent, status=s) }}#matrix">{{ c.get(s) }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {{ m.status_legend() }}
+</div>
+
+{% if run.performance %}
+<div class="card">
+  <h2>Performance</h2>
+  <p class="sub">HelmsDeep runs in this test run</p>
+  <table class="data">
+    <thead><tr><th>Host</th><th>Run type</th><th>Profile</th><th>Result</th><th class="num">Max sustainable concurrency</th><th>Checkpoints</th></tr></thead>
+    <tbody>
+    {% for perf in run.performance %}
+      <tr>
+        <td>{{ perf.host }}</td><td>{{ perf.helmsdeep_target or '–' }}</td><td>{{ perf.profile or 'default' }}</td>
+        <td>{{ status_badge(perf.status) }}{% if perf.error %} <span class="muted">{{ perf.error }}</span>{% endif %}</td>
+        <td class="num">{{ '%.1f'|format(perf.max_sustainable_concurrency) if perf.max_sustainable_concurrency is not none else '–' }}{% if perf.knee_unsupported %} <span class="badge" title="HelmsDeep flagged the measurement">unsupported</span>{% endif %}</td>
+        <td>{% if perf.checkpoints_passed is none %}<span class="muted">none configured</span>{% else %}{{ status_badge('PASSED' if perf.checkpoints_passed else 'FAILED') }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card" id="matrix">
+  <div class="card-head">
+    <div><h2>Results</h2><p class="sub">Every asset against every agent. The number is the rank the expected answer came back at.</p></div>
+  </div>
+  <form class="filters" method="get" action="#matrix">
+    <label>Status
+      <select name="status">
+        <option value="">Any</option>
+        {% for s in STATUSES %}<option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ STATUS_LABELS[s][1] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>For agent
+      <select name="agent">
+        <option value="">Overall</option>
+        {% for a in agents %}<option {{ 'selected' if filters.agent == a }}>{{ a }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Expected output
+      <select name="expected">
+        <option value="">Any</option>
+        {% for e in expected_outputs %}<option {{ 'selected' if filters.expected == e }}>{{ e }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Search <input name="q" value="{{ filters.q or '' }}" placeholder="name, id or CURIE"></label>
+    <button type="submit">Filter</button>
+    {% if filtered %}<a class="clear" href="/runs/{{ run.id }}#matrix">Clear</a>{% endif %}
+  </form>
+  {% if assets %}
+  <div class="scroll">
+  <table class="data matrix">
+    <thead><tr>
+      <th>Asset</th><th>Expected</th><th>Overall</th>
+      {% for a in agents %}<th class="agent-head">{{ m.agent_head(a) }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for asset in assets %}
+      {% set by_agent = {} %}{% for r in asset.agents %}{% set _ = by_agent.update({r.agent: r}) %}{% endfor %}
+      <tr>
+        <td><a href="/assets/{{ asset.test_case_id }}/{{ asset.asset_id }}?env={{ run.env or '' }}">{{ asset.name or asset.asset_id }}</a>
+          <div class="muted mono">{{ asset.input_curie or '' }}{% if asset.output_curie %} → {{ asset.output_curie }}{% endif %}</div></td>
+        <td class="nowrap">{{ asset.expected_output or '–' }}</td>
+        <td>{{ status_badge(asset.status) }}</td>
+        {% for a in agents %}{% set r = by_agent.get(a) %}
+          <td class="agent-cell">{{ m.cell(asset, r, run.env, pk_url(r.pk, run.env) if r else None) }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="sub" style="margin-top:8px">{{ assets|length }} of {{ run.assets|length }} assets. Hover a cell for details; click it to open the response.</p>
+  {% else %}
+  <p class="empty">No assets match these filters.</p>
+  {% endif %}
+</div>
+{% endblock %}

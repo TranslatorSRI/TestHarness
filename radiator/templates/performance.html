@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Performance{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Performance</h1>
+  <div class="meta">HelmsDeep load tests: the highest concurrency each service sustained within its SLO, and checkpoint verdicts.</div>
+</div>
+
+<form class="filters" method="get">
+  <label>Last
+    <select name="days" onchange="this.form.submit()">
+      {% for d in windows %}<option value="{{ d }}" {{ 'selected' if d == days }}>{{ d }} days</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
+
+{% if not panels %}
+<div class="card"><p class="empty">No performance runs in the last {{ days }} days.</p></div>
+{% endif %}
+<div class="multiples">
+{% for key, rows, chart in panels %}
+  <div class="card">
+    <h2>{{ key }}</h2>
+    {% set last = rows[-1][1] %}
+    <p class="sub">Latest: {{ '%.1f'|format(last.max_sustainable_concurrency) if last.max_sustainable_concurrency is not none else 'no stage met the SLO' }}
+      {% if last.checkpoints_passed is not none %} · checkpoints {{ status_badge('PASSED' if last.checkpoints_passed else 'FAILED') }}{% endif %}</p>
+    {{ chart }}
+    <details class="table-view">
+      <summary>Table view</summary>
+      <table class="data">
+        <thead><tr><th>Run</th><th>Profile</th><th class="num">Max concurrency</th><th>Checkpoints</th></tr></thead>
+        <tbody>
+        {% for run, perf in rows|reverse %}
+          <tr>
+            <td class="nowrap"><a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a></td>
+            <td>{{ perf.profile or 'default' }}</td>
+            <td class="num">{{ '%.1f'|format(perf.max_sustainable_concurrency) if perf.max_sustainable_concurrency is not none else '–' }}</td>
+            <td>{% if perf.error %}{{ status_badge('ERROR') }}{% elif perf.checkpoints_passed is none %}<span class="muted">none</span>{% else %}{{ status_badge('PASSED' if perf.checkpoints_passed else 'FAILED') }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,313 @@
+/* Information Radiator. Colors are tokens: light by default, dark from the OS
+   setting. Status colors are fixed and always paired with an icon and label;
+   agent colors are fixed per agent so an agent looks the same everywhere. */
+
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ef;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --link: #1c5cab;
+  --accent: #2a78d6;
+  --up: #006300;
+  --down: #b12f2f;
+
+  --status-passed: #0ca30c;
+  --status-no-results: #fab219;
+  --status-error: #ec835a;
+  --status-failed: #d03b3b;
+  --status-skipped: #d6d5ce;
+
+  --agent-1: #2a78d6;
+  --agent-2: #eb6834;
+  --agent-3: #1baf7a;
+  --agent-4: #eda100;
+  --agent-5: #e87ba4;
+  --agent-6: #008300;
+  --agent-7: #4a3aa7;
+  --agent-8: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-muted: #9a9890;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --link: #86b6ef;
+    --accent: #3987e5;
+    --up: #0ca30c;
+    --down: #e66767;
+    --status-skipped: #4a4a46;
+
+    --agent-1: #3987e5;
+    --agent-2: #d95926;
+    --agent-3: #199e70;
+    --agent-4: #c98500;
+    --agent-5: #d55181;
+    --agent-6: #008300;
+    --agent-7: #9085e9;
+    --agent-8: #e66767;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, .mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* --- frame ------------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 24px;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  font-weight: 650;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand:hover { text-decoration: none; }
+.brand-mark {
+  width: 18px; height: 18px; border-radius: 5px;
+  background: conic-gradient(var(--status-passed) 0 60%, var(--status-failed) 0 80%, var(--status-no-results) 0);
+}
+.nav { display: flex; gap: 4px; flex: 1; }
+.nav a {
+  color: var(--ink-2);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.nav a:hover { background: var(--surface-2); text-decoration: none; }
+.nav a.active { color: var(--ink); background: var(--surface-2); font-weight: 550; }
+.logout button {
+  background: none; border: 0; color: var(--ink-2); cursor: pointer; font: inherit;
+}
+
+main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+.page-head { margin-bottom: 20px; }
+.page-head h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+.crumbs { color: var(--ink-muted); font-size: 13px; margin-bottom: 6px; }
+.meta { color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 6px 16px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+.card h2 { font-size: 15px; font-weight: 650; margin: 0 0 2px; }
+.card .sub { color: var(--ink-muted); font-size: 13px; margin: 0 0 12px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+
+.empty { color: var(--ink-muted); padding: 24px 0; text-align: center; }
+
+/* --- filters: one row above what they scope ------------------------------ */
+
+.filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 16px;
+}
+.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--ink-muted); gap: 2px; }
+.filters select, .filters input {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 5px 8px; min-width: 120px;
+}
+.filters button, .button {
+  font: inherit; border: 1px solid var(--axis); background: var(--surface);
+  color: var(--ink); border-radius: 6px; padding: 5px 12px; cursor: pointer;
+}
+.filters .clear { align-self: center; font-size: 13px; }
+
+/* --- stat tiles ---------------------------------------------------------- */
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+}
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile.hero .value { font-size: 48px; line-height: 1.1; }
+.tile .delta { font-size: 13px; color: var(--ink-muted); }
+.delta.up { color: var(--up); }
+.delta.down { color: var(--down); }
+
+/* --- tables -------------------------------------------------------------- */
+
+table.data { width: 100%; border-collapse: collapse; }
+table.data th {
+  text-align: left; font-weight: 550; color: var(--ink-2); font-size: 12px;
+  padding: 6px 8px; border-bottom: 1px solid var(--axis); white-space: nowrap;
+  position: sticky; top: 0; background: var(--surface);
+}
+table.data td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data tr:hover td { background: var(--surface-2); }
+.scroll { overflow-x: auto; }
+.muted { color: var(--ink-muted); }
+.nowrap { white-space: nowrap; }
+
+.badge {
+  display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--axis); color: var(--ink-2); white-space: nowrap;
+}
+
+/* --- status: color + icon + label, never color alone -------------------- */
+
+.status {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 13px;
+}
+.status .icon {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; color: #0b0b0b;
+}
+.st-PASSED .icon, .cell.st-PASSED { background: var(--status-passed); }
+/* In the matrix and history most cells pass: a tint keeps the page calm, so
+   what isn't passing is what stands out. */
+.matrix .cell.st-PASSED, .strip .cell.st-PASSED {
+  background: color-mix(in srgb, var(--status-passed) 16%, var(--surface));
+  color: var(--up);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-passed) 35%, transparent);
+}
+.st-NO_RESULTS .icon, .cell.st-NO_RESULTS { background: var(--status-no-results); }
+.st-ERROR .icon, .cell.st-ERROR { background: var(--status-error); }
+.st-FAILED .icon, .cell.st-FAILED { background: var(--status-failed); color: #fff; }
+.st-SKIPPED .icon, .cell.st-SKIPPED { background: var(--status-skipped); color: var(--ink-2); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); margin: 8px 0 0; }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 12px; height: 12px; border-radius: 3px; }
+.legend .line { width: 16px; height: 2px; border-radius: 1px; }
+
+/* stacked status bar: part-to-whole, 2px surface gaps between segments */
+.stackbar { display: flex; gap: 2px; height: 10px; min-width: 120px; }
+.stackbar span { display: block; height: 100%; min-width: 2px; }
+.stackbar span:first-child { border-radius: 4px 0 0 4px; }
+.stackbar span:last-child { border-radius: 0 4px 4px 0; }
+.stackbar span:only-child { border-radius: 4px; }
+.seg-PASSED { background: var(--status-passed); }
+.seg-NO_RESULTS { background: var(--status-no-results); }
+.seg-ERROR { background: var(--status-error); }
+.seg-FAILED { background: var(--status-failed); }
+.seg-SKIPPED { background: var(--status-skipped); }
+
+/* run matrix: one cell per asset x agent */
+.matrix td.agent-cell { padding: 3px 4px; }
+.cell {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 64px; height: 26px; border-radius: 5px; font-size: 12px;
+  font-weight: 600; color: #0b0b0b; font-variant-numeric: tabular-nums;
+}
+.cell:hover { text-decoration: none; outline: 2px solid var(--ink); outline-offset: 1px; }
+.cell .rank { font-weight: 500; opacity: 0.85; }
+th.agent-head { text-align: center; }
+.agent-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+
+/* history strip: rows are agents, columns are runs, oldest -> newest */
+.strip { display: grid; gap: 2px; align-items: center; }
+.strip .row-label { font-size: 12px; color: var(--ink-2); padding-right: 10px; white-space: nowrap; }
+.strip .cell { min-width: 0; height: 22px; font-size: 10px; border-radius: 3px; }
+.strip .axis-label { font-size: 11px; color: var(--ink-muted); }
+
+/* diff */
+.diff-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.diff-summary a {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 8px;
+  padding: 8px 12px; color: var(--ink); min-width: 120px;
+}
+.diff-summary a:hover { text-decoration: none; border-color: var(--axis); }
+.diff-summary .n { font-size: 20px; font-weight: 600; display: block; }
+.diff-summary .k { font-size: 12px; color: var(--ink-2); }
+.arrow { color: var(--ink-muted); margin: 0 4px; }
+
+/* charts */
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chart text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .baseline { stroke: var(--axis); stroke-width: 1; }
+.chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot { stroke: var(--surface); stroke-width: 2; }
+.chart .crosshair { stroke: var(--ink-muted); stroke-width: 1; }
+.chart-wrap { position: relative; }
+.multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px 24px; }
+.multiples.two { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
+.multiples h3 { font-size: 13px; font-weight: 600; margin: 4px 0; }
+
+details.table-view { margin-top: 8px; }
+details.table-view summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+details.table-view[open] summary { margin-bottom: 8px; }
+
+/* tooltip (one for the page; filled with textContent by charts.js) */
+.tooltip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 8px 10px;
+  font-size: 12px; max-width: 320px;
+}
+.tooltip .tt-title { color: var(--ink-2); margin-bottom: 4px; }
+.tooltip .tt-row { display: flex; align-items: center; gap: 8px; }
+.tooltip .tt-key { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+.tooltip .tt-value { font-weight: 650; font-variant-numeric: tabular-nums; }
+.tooltip .tt-name { color: var(--ink-2); }
+
+/* login */
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login {
+  width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 28px;
+}
+.login h1 { font-size: 20px; margin: 0 0 4px; }
+.login p { color: var(--ink-2); margin: 0 0 20px; }
+.login label { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 12px; }
+.login input {
+  display: block; width: 100%; margin-top: 4px; font: inherit; color: var(--ink);
+  background: var(--page); border: 1px solid var(--axis); border-radius: 6px; padding: 8px 10px;
+}
+.login button {
+  width: 100%; margin-top: 8px; font: inherit; font-weight: 600; color: #fff;
+  background: var(--accent); border: 0; border-radius: 6px; padding: 9px; cursor: pointer;
+}
+.error {
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-failed) 40%, transparent);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 13px;
+}
+.pager { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
+
+@media (max-width: 640px) {
+  main { padding: 16px; }
+  .topbar { padding: 0 16px; gap: 12px; }
+  .tile.hero .value { font-size: 40px; }
+}

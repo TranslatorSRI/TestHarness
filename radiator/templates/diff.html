@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Changes · {{ run.suite }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumbs"><a href="/">Runs</a> / <a href="/runs/{{ run.id }}">{{ run.suite }} · {{ when(run.started_at) }}</a> / changes</div>
+  <h1>What changed</h1>
+  <div class="meta">
+    {% if base %}
+      <span><a href="/runs/{{ base.id }}">{{ when(base.started_at) }}</a> <span class="arrow">→</span> <a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a></span>
+      <span>{{ run.suite }} · {{ run.env }}</span>
+    {% else %}
+      <span>There's no earlier run of this suite in this environment to compare with.</span>
+    {% endif %}
+  </div>
+</div>
+{% if base %}
+<div class="diff-summary">
+  {% for kind, title, _ in kinds %}
+    <a href="#{{ kind }}"><span class="n">{{ diff.count(kind) }}</span><span class="k">{{ title }}</span></a>
+  {% endfor %}
+</div>
+
+{% for kind, title, description in kinds %}{% set changes = diff.changes[kind] %}
+<div class="card" id="{{ kind }}">
+  <h2>{{ title }} <span class="muted">({{ changes|length }})</span></h2>
+  <p class="sub">{{ description }}</p>
+  {% if changes %}
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Asset</th><th>Expected</th>
+      {% if kind not in ('added', 'removed') %}<th>Agent</th><th>Before</th><th></th><th>After</th><th class="num">Rank</th>{% else %}<th>Status</th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for c in changes[:300] %}
+      <tr>
+        <td><a href="/assets/{{ c.asset.test_case_id }}/{{ c.asset.asset_id }}?env={{ run.env or '' }}">{{ c.asset.name or c.asset.asset_id }}</a></td>
+        <td class="nowrap">{{ c.asset.expected_output or '–' }}</td>
+        {% if kind not in ('added', 'removed') %}
+          <td class="nowrap">{{ m.agent_head(c.agent) }}</td>
+          <td>{{ status_badge(c.before.status) }}</td>
+          <td class="arrow">→</td>
+          <td>{{ status_badge(c.after.status) }}</td>
+          <td class="num nowrap">
+            {% if c.before.rank is not none or c.after.rank is not none %}
+              {{ c.before.rank if c.before.rank is not none else '–' }} → {{ c.after.rank if c.after.rank is not none else '–' }}
+              {% if c.rank_delta %}<span class="delta {{ 'up' if c.rank_delta > 0 else 'down' }}">({{ '%+d'|format(c.rank_delta) }})</span>{% endif %}
+            {% endif %}
+          </td>
+        {% else %}
+          <td>{{ status_badge(c.asset.status) }}</td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if changes|length > 300 %}<p class="sub">Showing the first 300 of {{ changes|length }}.</p>{% endif %}
+  {% else %}
+  <p class="muted">None.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

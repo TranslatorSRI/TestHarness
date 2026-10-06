@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Trends{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Trends</h1>
+  <div class="meta">Pass rate per agent over full runs of a suite: skips are left out, and runs with a target override or a single query type aren't included.</div>
+</div>
+
+<form class="filters" method="get">
+  <label>Last
+    <select name="days" onchange="this.form.submit()">
+      {% for d in windows %}<option value="{{ d }}" {{ 'selected' if d == days }}>{{ d }} days</option>{% endfor %}
+    </select>
+  </label>
+  <label>Suite
+    <select name="suite" onchange="this.form.submit()">
+      {% for s in options.suites %}<option {{ 'selected' if s == suite }}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Environment
+    <select name="env" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for e in options.envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
+
+{% if not points %}
+<div class="card"><p class="empty">No full runs of {{ suite or 'this suite' }} in the last {{ days }} days.</p></div>
+{% else %}
+<div class="card">
+  <h2>Pass rate by agent</h2>
+  <p class="sub">{{ points|length }} runs · all expected outputs</p>
+  {{ overall_chart }}
+  <details class="table-view">
+    <summary>Table view</summary>
+    <div class="scroll">
+    <table class="data">
+      <thead><tr><th>Run</th>{% for a in agents %}<th class="num">{{ m.agent_head(a) }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for p in points|reverse %}
+        <tr><td class="nowrap"><a href="/runs/{{ p.run.id }}">{{ when(p.run.started_at) }}</a></td>
+        {% for a in agents %}<td class="num">{{ pct(rate(p, a), 1) }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <h2>By expected output</h2>
+  <p class="sub">The same pass rate, split by what the test expects of the answer</p>
+  <div class="multiples two">
+    {% for expected, chart in multiples %}
+      <div><h3>{{ expected }}</h3>{{ chart }}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% set a = history.latest %}
+{% block title %}{{ a.name or a.asset_id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumbs"><a href="/">Runs</a> / {{ history.test_case_id }} / {{ history.asset_id }}</div>
+  <h1>{{ a.name or a.asset_id }}</h1>
+  <div class="meta">
+    <span class="mono">{{ a.input_curie or '' }}{% if a.output_curie %} → {{ a.output_curie }}{% endif %}</span>
+    {% if a.predicate %}<span class="mono">{{ a.predicate }}</span>{% endif %}
+    {% if a.expected_output %}<span>expected: <strong>{{ a.expected_output }}</strong></span>{% endif %}
+    <span>{{ a.kind }}</span>
+  </div>
+</div>
+
+{% if envs|length > 1 %}
+<form class="filters" method="get">
+  <label>Environment
+    <select name="env" onchange="this.form.submit()">
+      {% for e in envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
+{% endif %}
+
+<div class="card">
+  <h2>Status history</h2>
+  <p class="sub">The last {{ history.points|length }} runs in {{ env or 'every environment' }}, oldest to newest. Click a cell to open that run.</p>
+  {% set n = history.points|length %}
+  <div class="scroll">
+  <div class="strip" style="grid-template-columns: max-content repeat({{ n }}, minmax(14px, 1fr)); min-width: {{ 120 + n * 16 }}px">
+    {% for agent in history.agents %}
+      <div class="row-label">{{ m.agent_head(agent) }}</div>
+      {% for run, asset in history.points %}{% set r = history.agent_result(asset, agent) %}
+        {% if r %}
+          <a class="cell st-{{ r.status }}" href="/runs/{{ run.id }}" data-tip="{{ when(run.started_at) }}&#10;{{ cell_tip(asset, r) }}" aria-label="{{ when(run.started_at) }}: {{ STATUS_LABELS[r.status][1] }}">{{ STATUS_LABELS[r.status][0] }}</a>
+        {% else %}
+          <span class="cell st-SKIPPED" title="not in this run">·</span>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+    <div></div>
+    {% for run, asset in history.points %}
+      <div class="axis-label">{% if loop.first or loop.last %}{{ run.started_at.strftime('%b %-d') }}{% endif %}</div>
+    {% endfor %}
+  </div>
+  </div>
+  {{ m.status_legend() }}
+</div>
+
+<div class="multiples">
+  <div class="card">
+    <h2>Rank of the expected answer</h2>
+    <p class="sub">Lower is better; runs where it wasn't found are gaps</p>
+    {{ rank_chart if rank_chart else '<p class="empty">The expected answer has no recorded rank in this history.</p>'|safe }}
+  </div>
+  <div class="card">
+    <h2>Number of results</h2>
+    <p class="sub">How many results each agent returned</p>
+    {{ count_chart if count_chart else '<p class="empty">Result counts weren\'t recorded for these runs.</p>'|safe }}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>{{ 'Every run' if show_all or history.points|length <= 10 else 'Latest 10 runs' }}</h2>
+    {% if history.points|length > 10 %}
+      {% if show_all %}<a href="{{ query_string(request, all=None) }}">Show the latest 10</a>
+      {% else %}<a href="{{ query_string(request, all='true') }}">Show all {{ history.points|length }}</a>{% endif %}
+    {% endif %}
+  </div>
+  <div class="scroll">
+    <table class="data">
+      <thead><tr><th>Run</th><th>Agent</th><th>Status</th><th>Found</th><th class="num">Rank</th><th class="num">Score</th><th class="num">Results</th><th class="num">Time</th><th>Response</th></tr></thead>
+      <tbody>
+      {% for run, asset in table_runs %}
+        {% for r in asset.agents %}
+        <tr>
+          <td class="nowrap">{% if loop.first %}<a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a>{% endif %}</td>
+          <td class="nowrap">{{ m.agent_head(r.agent) }}</td>
+          <td>{{ status_badge(r.status) }}{% if r.message %} <span class="muted">{{ r.message }}</span>{% endif %}</td>
+          <td>{{ '–' if r.found is none else ('yes' if r.found else 'no') }}</td>
+          <td class="num">{{ r.rank if r.rank is not none else '–' }}</td>
+          <td class="num">{{ '%.3g'|format(r.score) if r.score is not none else '–' }}</td>
+          <td class="num">{{ '{:,}'.format(r.n_results) if r.n_results is not none else '–' }}</td>
+          <td class="num">{{ '%.1fs'|format(r.response_time_s) if r.response_time_s is not none else '–' }}</td>
+          <td>{% if r.pk %}<a href="{{ pk_url(r.pk, run.env) }}" target="_blank" rel="noopener">{{ r.pk[:8] }}…</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+# The Information Radiator's own dependencies. Kept apart from the harness's
+# requirements: the two ship as separate images and pin independently. The
+# shared contract, radiator_schema, needs only pydantic 2 and works with both.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.3
+psycopg[binary]==3.3.6
+alembic==1.20.0
+jinja2==3.1.6
+itsdangerous==2.2.0
+python-multipart==0.0.32
+pydantic==2.13.5

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Runs{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Test runs</h1>
+  <div class="meta">{{ total }} run{{ '' if total == 1 else 's' }}{% if suite or env %} matching{% endif %}</div>
+</div>
+
+<form class="filters" method="get">
+  <label>Suite
+    <select name="suite" onchange="this.form.submit()">
+      <option value="">All suites</option>
+      {% for s in options.suites %}<option {{ 'selected' if s == suite }}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Environment
+    <select name="env" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for e in options.envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Filter</button></noscript>
+  {% if suite or env %}<a class="clear" href="/">Clear</a>{% endif %}
+</form>
+
+<div class="card">
+  {% if runs %}
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Started</th><th>Suite</th><th>Env</th><th>Results</th>
+      <th class="num">Pass rate</th><th class="num">Assets</th><th class="num">Duration</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for run in runs %}
+      {% set c = counts[run.id] %}{% set pc = perf_counts.get(run.id) %}
+      <tr>
+        <td class="nowrap"><a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a><br><span class="muted">{{ ago(run.started_at) }}</span></td>
+        <td>{{ run.suite }}
+          {% if run.target %}<span class="badge" title="queries sent to {{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
+          {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+        </td>
+        <td>{{ run.env or '–' }}</td>
+        {% if pc and not c %}
+        <td style="width:28%">{{ status_bar(pc) }}<span class="muted" style="font-size:12px">performance · {{ pc.values()|sum }} host{{ '' if pc.values()|sum == 1 else 's' }}</span></td>
+        <td class="num">{{ pct(pass_rate(pc)) }}</td>
+        <td class="num muted">–</td>
+        {% else %}
+        <td style="width:28%">{{ status_bar(c) }}</td>
+        <td class="num">{{ pct(pass_rate(c)) }}</td>
+        <td class="num">{{ c.values()|sum }}</td>
+        {% endif %}
+        <td class="num">{% if run.ended_at %}{{ duration(run) }}{% else %}<span class="badge">running</span>{% endif %}</td>
+        <td>{% if run.origin == 'zebrunner_import' %}<span class="badge" title="Imported from Zebrunner: result counts, response times and some ranks weren't recorded">imported</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="pager">
+    {% if page > 1 %}<a href="{{ query_string(request, page=page - 1) }}">← Newer</a>{% endif %}
+    {% if has_next %}<a href="{{ query_string(request, page=page + 1) }}">Older →</a>{% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No runs yet. They appear here as soon as the harness starts one.</p>
+  {% endif %}
+</div>
+{% endblock %}

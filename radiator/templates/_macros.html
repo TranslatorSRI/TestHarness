@@ -1,0 +1,21 @@
+{% macro agent_head(agent) -%}
+<span class="agent-dot" style="background:{{ agent_color(agent) }}"></span>{{ agent }}
+{%- endmacro %}
+
+{% macro cell(asset, result, env, href=None) -%}
+{% if result is none -%}
+<span class="cell st-SKIPPED" title="no result">–</span>
+{%- else -%}
+<a class="cell st-{{ result.status }}" href="{{ href or '#' }}" data-tip="{{ cell_tip(asset, result) }}"
+   aria-label="{{ result.agent }}: {{ STATUS_LABELS[result.status][1] }}{% if result.rank is not none %}, rank {{ result.rank }}{% endif %}">
+  <span aria-hidden="true">{{ STATUS_LABELS[result.status][0] }}</span>
+  {%- if result.rank is not none %}<span class="rank">#{{ result.rank }}</span>{% endif -%}
+</a>
+{%- endif %}
+{%- endmacro %}
+
+{% macro status_legend() -%}
+<div class="legend">
+  {% for s in STATUSES %}<span class="key">{{ status_badge(s) }}</span>{% endfor %}
+</div>
+{%- endmacro %}
