@@ -32,7 +32,8 @@ def _safe_next(next_url: Optional[str]) -> str:
     parsed = urlparse(next_url)
     if parsed.scheme or parsed.netloc or not next_url.startswith("/"):
         return "/"
-    if next_url.startswith("//"):
+    # browsers read "/\\host" like "//host", another site
+    if next_url[1:2] in ("/", "\\"):
         return "/"
     return next_url
 

@@ -64,6 +64,8 @@ def test_pages_render(app, browser):
 
     asset = browser.get("/assets/TestCase_1/Asset_1?env=ci")
     assert asset.status_code == 200
+    # a run without an env links with env= empty: still one env's history
+    assert "last 2 runs in ci" in browser.get("/assets/TestCase_1/Asset_1?env=").text
     assert "Rank of the expected answer" in asset.text
 
     assert browser.get("/trends").status_code == 200

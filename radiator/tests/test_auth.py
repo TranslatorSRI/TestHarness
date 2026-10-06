@@ -76,6 +76,7 @@ def test_login_is_throttled(client):
         ("/runs/abc?x=1", "/runs/abc?x=1"),
         ("https://evil.example", "/"),
         ("//evil.example", "/"),
+        ("/\\evil.example", "/"),
         ("javascript:alert(1)", "/"),
     ],
 )

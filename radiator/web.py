@@ -311,7 +311,7 @@ def asset_page(
     session: Session = Depends(get_session),
 ):
     envs = queries.asset_envs(session, test_case_id, asset_id)
-    if env is None and envs:
+    if not env and envs:
         # default to the env with the most history rather than mixing them
         env = "ci" if "ci" in envs else envs[0]
     history = queries.asset_history(session, test_case_id, asset_id, env=env)
