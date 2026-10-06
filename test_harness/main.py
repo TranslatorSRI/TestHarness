@@ -9,14 +9,18 @@ import os
 import sys
 import time
 from argparse import ArgumentParser
+from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlparse
 from uuid import uuid4
 
 from setproctitle import setproctitle
 
+from radiator_schema import RunCreate
 from test_harness.download import download_tests, load_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.performance_test_runner import PROFILES
+from test_harness.radiator_client import RadiatorClient
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
@@ -43,6 +47,13 @@ def url_type(arg):
     if all((url.scheme, url.netloc)):
         return arg
     raise TypeError("Invalid URL")
+
+
+def harness_version():
+    try:
+        return version("sri-test-harness")
+    except PackageNotFoundError:
+        return None
 
 
 def main(args):
@@ -116,13 +127,43 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    collector = ResultCollector(test_env, logger, target=args.get("target"))
+    # The new Information Radiator runs alongside Zebrunner until it takes
+    # over. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
+    # --local, it only records, and the run is saved to --output_dir instead.
+    radiator = RadiatorClient(
+        base_url=args.get("radiator_url"),
+        token=args.get("radiator_token"),
+        enabled=not local,
+        logger=logger,
+    )
+    radiator.start_run(
+        RunCreate(
+            run_id=uuid4(),
+            suite=args["suite"],
+            env=test_env,
+            target=args.get("target"),
+            target_url=args.get("target_url"),
+            query_type=query_type,
+            harness_version=harness_version(),
+            tests_source=args.get("tests_url") or args.get("tests_dir"),
+            started_at=datetime.now().astimezone(),
+        )
+    )
+    radiator_link = (
+        f"\n<{radiator.run_url}|View in the new Information Radiator>"
+        if radiator.run_url
+        else ""
+    )
+
+    collector = ResultCollector(
+        test_env, logger, target=args.get("target"), radiator=radiator
+    )
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
     slacker.post_notification(
         messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>{radiator_link}"
         ]
     )
     start_time = time.time()
@@ -130,11 +171,12 @@ def main(args):
 
     slacker.post_notification(
         messages=[
-            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}\n<{ir_url}|View in the Information Radiator>\n{result_summary}""".format(
+            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}\n<{ir_url}|View in the Information Radiator>{radiator_link}\n{result_summary}""".format(
                 test_suite=args["suite"],
                 duration=round(time.time() - start_time, 2),
                 envs=(",").join(list(queried_envs)),
                 ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
+                radiator_link=radiator_link,
                 result_summary=collector.dump_result_summary(),
             )
         ]
@@ -164,6 +206,13 @@ def main(args):
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()
+    radiator.finish_run(counts=collector.acceptance_report)
+    if not radiator.enabled or radiator.upload_failed:
+        path = radiator.save(output_dir, prefix=target_prefix)
+        logger.info(
+            f"Saved the run for the Information Radiator to {path}; upload it "
+            "with `test-harness-radiator push`."
+        )
 
     if args["json_output"]:
         os.makedirs(output_dir, exist_ok=True)
@@ -245,6 +294,18 @@ def cli():
         "--reporter_access_token",
         type=str,
         help="Access token for authentication with the Testing Dashboard",
+    )
+
+    parser.add_argument(
+        "--radiator_url",
+        type=url_type,
+        help="URL of the new Information Radiator (defaults to $RADIATOR_URL)",
+    )
+
+    parser.add_argument(
+        "--radiator_token",
+        type=str,
+        help="Ingest token for the new Information Radiator (defaults to $RADIATOR_TOKEN)",
     )
 
     parser.add_argument(

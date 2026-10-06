@@ -14,7 +14,9 @@ setup(
     description="Translator SRI Test Harness",
     long_description_content_type="text/markdown",
     long_description=readme,
-    packages=["test_harness"],
+    # radiator_schema is the API contract shared with the Information
+    # Radiator; it ships with the harness so the two can't drift apart.
+    packages=["test_harness", "radiator_schema"],
     include_package_data=True,
     # The editable local test suites ship with the package so `test-harness
     # load <suite>` works from a plain (non-editable) install too, not just
@@ -29,6 +31,9 @@ setup(
             # Runs one suite against several services in turn, so a single
             # scheduled Job can sweep the ARS and each ARA sequentially.
             "test-harness-sweep = test_harness.sweep:cli",
+            # Uploads a run the harness saved instead of sending to the
+            # Information Radiator (--local, or the radiator was unreachable).
+            "test-harness-radiator = test_harness.radiator_client:cli",
         ],
     },
 )

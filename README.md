@@ -41,6 +41,23 @@ saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
+### The new Information Radiator
+A replacement for the Zebrunner-based Information Radiator is being built in
+this repo (see [`docs/information-radiator.md`](docs/information-radiator.md)).
+Until it takes over, the harness reports to both. The new one gets structured
+results instead of labels and log lines: for each test asset, every agent's
+status, whether the expected answer was found and its rank/score, the number
+of results, the HTTP status, and (for direct queries) the response time.
+
+It's configured with `RADIATOR_URL` and `RADIATOR_TOKEN` (or `--radiator_url` /
+`--radiator_token`). Results are posted in batches; an unreachable radiator
+never fails a run. Whenever a run isn't uploaded (`--local`, the radiator isn't
+configured, or an upload failed) it's saved to `--output_dir` as
+`radiator_<run id>.json` instead, which can be uploaded later:
+- `test-harness-radiator push test_results/radiator_<run id>.json`
+
+Uploads are idempotent, so pushing a run that partly made it is safe.
+
 ### Running local test files
 `test-harness download <suite>` fetches the suites from
 [NCATSTranslator/Tests](https://github.com/NCATSTranslator/Tests) every run,

@@ -82,9 +82,12 @@ class QueryRunner:
         # send message
         response = {}
         status_code = 418
+        elapsed_s = None
         with httpx.Client(timeout=600) as client:
             try:
+                start_time = time.monotonic()
                 res = client.post(url, json=message)
+                elapsed_s = time.monotonic() - start_time
                 status_code = res.status_code
                 res.raise_for_status()
                 response = res.json()
@@ -102,6 +105,9 @@ class QueryRunner:
             responses[single_infores] = {
                 "response": response,
                 "status_code": status_code,
+                # Only a direct query is timed: the ARS's own submit returns
+                # straight away, and its ARAs are only seen through polling.
+                "elapsed_s": elapsed_s,
             }
 
         return query_hash, responses, pks

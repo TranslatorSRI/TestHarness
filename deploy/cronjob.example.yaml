@@ -115,6 +115,16 @@ spec:
                 - name: ZE_REFRESH_TOKEN
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}
+                # The new Information Radiator, reported to alongside
+                # Zebrunner until it takes over. Optional: without it each run
+                # is saved to --output_dir in the pod, which is lost with the
+                # pod unless that directory is a mounted volume.
+                - name: RADIATOR_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-url, optional: true}
+                - name: RADIATOR_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-token, optional: true}
 
               resources:
                 # The load generator is the workload here: locust drives up to

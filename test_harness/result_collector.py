@@ -14,7 +14,9 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestEnvEnum,
 )
 
+from radiator_schema import AgentResult, AssetResult, PerformanceResult
 from test_harness.performance_test_runner import checkpoint_verdicts
+from test_harness.radiator_client import RadiatorClient
 from test_harness.utils import AgentReport, AgentStatus, TestReport
 
 
@@ -39,6 +41,7 @@ class ResultCollector:
         test_env: Optional[TestEnvEnum],
         logger: logging.Logger,
         target: Optional[str] = None,
+        radiator: Optional[RadiatorClient] = None,
     ):
         """Initialize the Collector.
 
@@ -47,8 +50,12 @@ class ResultCollector:
         service directly, so results are collected for that one agent instead
         of the ARS + ARA roster; an ARS override still fans out to ARAs and
         keeps the usual roster.
+
+        ``radiator``, when given, is handed a structured record of every result
+        as it is collected.
         """
         self.logger = logger
+        self.radiator = radiator
         self.has_acceptance_results = False
         self.has_performance_results = False
         agents = [
@@ -114,6 +121,7 @@ class ResultCollector:
         parent_pk: Union[str, None],
         url: str,
         force_skipped: bool = False,
+        status: Optional[AgentStatus] = None,
     ):
         """Add a single report to the total output.
 
@@ -121,6 +129,10 @@ class ResultCollector:
         in ``report``. It is used when the test as a whole was skipped (eg the
         query never ran) so the per-agent stats/CSV agree with the skipped
         test-level status instead of reporting incidental per-ARA errors.
+
+        ``status`` is the test's overall status, for the radiator. Without it,
+        it is worked out the way ``run_tests`` does: from the ARS, or from the
+        single agent when an override target narrowed the roster to one.
         """
         self.has_acceptance_results = True
         # add result to stats
@@ -155,23 +167,131 @@ class ResultCollector:
             f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
 
-    @staticmethod
-    def _expected_answer_cells(agent_report: AgentReport) -> List[str]:
+        if self.radiator is not None:
+            if status is None:
+                status_agent = "ars" if "ars" in self.agents else self.agents[0]
+                agent_report = report.result.get(status_agent)
+                status = (
+                    agent_report.status
+                    if agent_report is not None and not force_skipped
+                    else AgentStatus.SKIPPED
+                )
+            # A record the schema rejects costs the radiator one asset, never
+            # the run its results.
+            try:
+                record = self._asset_result(
+                    test, asset, report, parent_pk, status, force_skipped
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"[{test.id}] couldn't record asset {asset.id} for the "
+                    f"Information Radiator: {e}"
+                )
+            else:
+                self.radiator.add_result(record)
+
+    def _asset_result(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+        report: TestReport,
+        parent_pk: Optional[str],
+        status: AgentStatus,
+        force_skipped: bool,
+    ) -> AssetResult:
+        """The radiator's record of one asset, with a row for every agent.
+
+        Agents are the same roster as the CSV's columns, and an agent with no
+        response is SKIPPED here too, so the two always agree.
+        """
+        agents = []
+        for agent in self.agents:
+            pk = report.pks.get(agent)
+            # the query runner writes the string "None" when the ARS never
+            # produced a merged message
+            pk = None if pk in (None, "", "None") else pk
+            agent_report = None if force_skipped else report.result.get(agent)
+            if agent_report is None:
+                agents.append(
+                    AgentResult(agent=agent, status=AgentStatus.SKIPPED.value, pk=pk)
+                )
+                continue
+            found, rank, score = self._expected_answer(agent_report)
+            agents.append(
+                AgentResult(
+                    agent=agent,
+                    status=agent_report.status.value,
+                    message=agent_report.message,
+                    http_status=agent_report.http_status,
+                    found=found,
+                    rank=rank,
+                    score=score,
+                    n_results=agent_report.n_results,
+                    response_time_s=agent_report.response_time_s,
+                    pk=pk,
+                    expected_nodes_found=getattr(
+                        agent_report, "expected_nodes_found", None
+                    ),
+                )
+            )
+
+        if isinstance(asset, PathfinderTestAsset):
+            kind = "pathfinder"
+            input_curie = asset.source_input_id
+            output_curie = asset.target_input_id
+        else:
+            kind = "acceptance"
+            input_curie = asset.input_id
+            output_curie = asset.output_id
+        return AssetResult(
+            test_case_id=test.id,
+            asset_id=asset.id,
+            kind=kind,
+            name=asset.name or asset.description,
+            expected_output=asset.expected_output,
+            predicate=asset.predicate_id,
+            input_curie=input_curie,
+            output_curie=output_curie,
+            status=status.value,
+            parent_pk=parent_pk or None,
+            agents=agents,
+            details=report.test_details or {},
+        )
+
+    @classmethod
+    def _expected_answer_cells(cls, agent_report: AgentReport) -> List[str]:
         """CSV cells for where the expected answer landed for a single agent.
+
+        Returns (found, rank, score) as strings; see ``_expected_answer``.
+        Cells are left blank when the agent never got far enough for the
+        question to have an answer (eg it errored out).
+        """
+        found, rank, score = cls._expected_answer(agent_report)
+        return [
+            "" if found is None else ("true" if found else "false"),
+            "" if rank is None else str(rank),
+            "" if score is None else str(score),
+        ]
+
+    @staticmethod
+    def _expected_answer(
+        agent_report: AgentReport,
+    ) -> Tuple[Optional[bool], Optional[int], Optional[float]]:
+        """Where the expected answer landed for a single agent.
 
         Returns (found, rank, score), pulled from the same ``actual_output``
         that goes into the report JSON uploaded to the radiator. ARS results
         are scored/ranked by the ARS itself (sugeno), ARA results by their own
         analyses, so whichever of the two the analysis filled in is used.
-        Cells are left blank when the agent never got far enough for the
-        question to have an answer (eg it errored out).
+        Each is None when the agent never got far enough for the question to
+        have an answer (eg it errored out).
         """
         actual_output = agent_report.actual_output or {}
         if not actual_output:
             # No results at all means the expected answer definitely wasn't in
             # the response; anything else (an error, a timeout) is unknown.
-            found = "false" if agent_report.status == AgentStatus.NO_RESULTS else ""
-            return [found, "", ""]
+            found = False if agent_report.status == AgentStatus.NO_RESULTS else None
+            return found, None, None
 
         rank = actual_output.get("ars_rank")
         if rank is None:
@@ -185,11 +305,7 @@ class ResultCollector:
             # answer that was in the response.
             found = rank is not None or score is not None
 
-        return [
-            "true" if found else "false",
-            "" if rank is None else str(rank),
-            "" if score is None else str(score),
-        ]
+        return bool(found), rank, score
 
     def collect_performance_result(
         self,
@@ -259,6 +375,39 @@ class ResultCollector:
             "error": results.get("error"),
             "summary": summary,
         }
+
+        if self.radiator is not None:
+            # same verdict run_tests gives the test: a run with no summary, or
+            # one that missed a checkpoint, failed
+            failed = bool(results.get("error")) or (
+                summary.get("checkpoints_passed") is False
+            )
+            try:
+                record = PerformanceResult(
+                    test_case_id=test.id,
+                    asset_id=asset.id,
+                    host=host_url,
+                    helmsdeep_target=results.get("helmsdeep_target"),
+                    profile=results.get("profile"),
+                    status=(
+                        AgentStatus.FAILED.value if failed else AgentStatus.PASSED.value
+                    ),
+                    error=results.get("error"),
+                    exit_code=results.get("exit_code"),
+                    max_sustainable_concurrency=summary.get(
+                        "max_sustainable_concurrency"
+                    ),
+                    knee_unsupported=summary.get("knee_unsupported"),
+                    checkpoints_passed=summary.get("checkpoints_passed"),
+                    summary=summary,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"[{test.id}] couldn't record the performance run against "
+                    f"{host_url} for the Information Radiator: {e}"
+                )
+            else:
+                self.radiator.add_performance(record)
 
     @property
     def performance_checkpoints_passed(self) -> Optional[bool]:

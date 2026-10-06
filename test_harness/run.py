@@ -36,6 +36,25 @@ from test_harness.utils import (
 )
 
 
+def record_response_meta(agent_report: AgentReport, response: Any) -> None:
+    """Record what the response itself says, before any analysis of it.
+
+    ``n_results`` is only recorded for a successful response: the query runner
+    stands in an empty result list when an agent errors or times out, and that
+    is not an agent answering with zero results.
+    """
+    if not isinstance(response, dict):
+        return
+    agent_report.http_status = response.get("status_code")
+    agent_report.response_time_s = response.get("elapsed_s")
+    body = response.get("response")
+    message = body.get("message") if isinstance(body, dict) else None
+    results = message.get("results") if isinstance(message, dict) else None
+    status_code = agent_report.http_status
+    if isinstance(results, list) and isinstance(status_code, int) and status_code < 300:
+        agent_report.n_results = len(results)
+
+
 def run_tests(
     tests: Dict[str, Union[TestCase, PathfinderTestCase]],
     reporter: Reporter,
@@ -125,6 +144,7 @@ def run_tests(
                             actual_output=None,
                         )
                         agent_report = report.result[agent]
+                        record_response_meta(agent_report, response)
                         try:
                             if response["status_code"] > 299:
                                 agent_report.status = AgentStatus.FAILED
@@ -214,6 +234,7 @@ def run_tests(
                         test_query["pks"].get("parent_pk"),
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                         force_skipped=force_skipped,
+                        status=status,
                     )
 
                     try:
@@ -252,6 +273,7 @@ def run_tests(
                         None,
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                         force_skipped=True,
+                        status=status,
                     )
                     try:
                         reporter.upload_labels(
