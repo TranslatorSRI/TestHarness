@@ -191,6 +191,30 @@ def series_history(
     return [(r, dict(counts[r.id])) for r in runs]
 
 
+def _performance_summary(session: Session, run: Run) -> list[dict]:
+    """Each service's top concurrency in this run against its previous run."""
+    run = get_run(session, run.id)
+    out = []
+    for perf, history in performance_series(session, run, limit=2):
+        previous = history[-2][1] if len(history) > 1 else None
+        out.append(
+            {
+                "host": perf.host,
+                "helmsdeep_target": perf.helmsdeep_target,
+                "profile": perf.profile,
+                "status": perf.status,
+                "error": perf.error,
+                "max_sustainable_concurrency": perf.max_sustainable_concurrency,
+                "knee_unsupported": perf.knee_unsupported,
+                "checkpoints_passed": perf.checkpoints_passed,
+                "previous_max_sustainable_concurrency": (
+                    previous.max_sustainable_concurrency if previous else None
+                ),
+            }
+        )
+    return out
+
+
 def run_summary(session: Session, run: Run) -> dict:
     """The headline of a run against the previous one in its series, for
     notifications (eg the harness's Slack report)."""
@@ -198,6 +222,7 @@ def run_summary(session: Session, run: Run) -> dict:
     previous = previous_run(session, run)
     summary = {
         "run_id": str(run.id),
+        "performance": _performance_summary(session, run),
         "pass_rate": pass_rate(overall),
         "counts": overall,
         "previous_run_id": None,
@@ -481,11 +506,48 @@ def performance_history(
     )
     series: dict = defaultdict(list)
     for run, perf in rows:
-        key = perf.host
-        if perf.helmsdeep_target:
-            key = f"{perf.host} ({perf.helmsdeep_target})"
-        series[key].append((run, perf))
+        series[perf_series_name(perf, run.env)].append((run, perf))
     return dict(sorted(series.items()))
+
+
+def perf_series_name(perf: PerformanceResult, env: Optional[str] = None) -> str:
+    """A service's performance series, by name.
+
+    A series is one host under one HelmsDeep run type and profile, in one
+    environment: a mixed-profile run and a default one load the service
+    differently, so their numbers aren't comparable.
+    """
+    detail = ", ".join(
+        part for part in (perf.helmsdeep_target, perf.profile or "default", env) if part
+    )
+    return f"{perf.host} ({detail})"
+
+
+def performance_series(
+    session: Session, run: Run, limit: int = 30
+) -> list[tuple[PerformanceResult, list[tuple[Run, PerformanceResult]]]]:
+    """For each performance result in this run, its series' history up to and
+    including it, oldest first, from finished runs."""
+    out = []
+    for perf in sorted(run.performance, key=lambda p: p.host):
+        earlier = session.execute(
+            select(Run, PerformanceResult)
+            .join(PerformanceResult, PerformanceResult.run_id == Run.id)
+            .where(
+                PerformanceResult.host == perf.host,
+                PerformanceResult.helmsdeep_target.is_not_distinct_from(
+                    perf.helmsdeep_target
+                ),
+                PerformanceResult.profile.is_not_distinct_from(perf.profile),
+                Run.env.is_not_distinct_from(run.env),
+                Run.started_at < run.started_at,
+                Run.ended_at.is_not(None),
+            )
+            .order_by(Run.started_at.desc())
+            .limit(max(limit - 1, 0))
+        ).all()
+        out.append((perf, [tuple(row) for row in reversed(earlier)] + [(run, perf)]))
+    return out
 
 
 # --- JSON for the read API ---------------------------------------------------

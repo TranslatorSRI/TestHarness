@@ -154,6 +154,12 @@ class RadiatorClient:
         res = self._read("history.png", params={"runs": runs})
         return res.content if res is not None else None
 
+    def performance_png(self, runs: int = 30) -> Optional[bytes]:
+        """Each of the run's services' max sustainable concurrency up to this
+        run, as a PNG, or None."""
+        res = self._read("performance.png", params={"runs": runs})
+        return res.content if res is not None else None
+
     def _read(self, what: str, params: Optional[dict] = None):
         """GET something about this run from the read API. Best effort: only
         once the whole run has been uploaded, and never raises."""

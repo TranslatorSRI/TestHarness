@@ -456,9 +456,19 @@ class _RecordingSlacker(MockSlacker):
         self.files.append((filename, content, initial_comment))
 
 
-def _main_with_slack(mocker, monkeypatch, tmp_path, *, radiator=True, summary=None):
+def _main_with_slack(
+    mocker,
+    monkeypatch,
+    tmp_path,
+    *,
+    radiator=True,
+    summary=None,
+    acceptance=True,
+    performance=False,
+):
     def fake_run_tests(tests, reporter, collector, logger, args):
-        collector.has_acceptance_results = True
+        collector.has_acceptance_results = acceptance
+        collector.has_performance_results = performance
 
     mocker.patch("test_harness.main.run_tests", side_effect=fake_run_tests)
     slacker = _RecordingSlacker()
@@ -471,6 +481,10 @@ def _main_with_slack(mocker, monkeypatch, tmp_path, *, radiator=True, summary=No
         mocker.patch("test_harness.main.RadiatorClient.summary", return_value=summary)
         mocker.patch(
             "test_harness.main.RadiatorClient.history_png", return_value=b"\x89PNG"
+        )
+        mocker.patch(
+            "test_harness.main.RadiatorClient.performance_png",
+            return_value=b"\x89PNG perf",
         )
     assert main(_main_args(tmp_path)) == 0
     return slacker
@@ -513,3 +527,52 @@ def test_slack_report_without_the_radiator(mocker, monkeypatch, tmp_path):
     slacker = _main_with_slack(mocker, monkeypatch, tmp_path, radiator=False)
     assert "Pass rate" not in slacker.messages[-1]
     assert slacker.files == []
+
+
+def test_slack_report_carries_each_services_concurrency(mocker, monkeypatch, tmp_path):
+    slacker = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        acceptance=False,
+        performance=True,
+        summary={
+            "pass_rate": None,
+            "performance": [
+                {
+                    "host": "https://arax.ci.transltr.io",
+                    "helmsdeep_target": "arax",
+                    "profile": "mixed",
+                    "max_sustainable_concurrency": 7.5,
+                    "previous_max_sustainable_concurrency": 7.2,
+                    "checkpoints_passed": False,
+                }
+            ],
+        },
+    )
+    report = slacker.messages[-1]
+    assert (
+        "arax (mixed): max sustainable concurrency 7.5 (+0.3 vs the previous run)"
+        " · checkpoints missed" in report
+    )
+    assert "Pass rate" not in report
+    [(filename, content, comment)] = slacker.files
+    assert filename == "concurrency_history.png" and content == b"\x89PNG perf"
+
+
+def test_performance_line_variants():
+    from test_harness.main import _performance_line
+
+    base = {"host": "https://ars", "helmsdeep_target": "ars", "profile": None}
+    assert _performance_line({**base, "error": "boom"}) == "ars: run failed: boom"
+    assert (
+        _performance_line({**base, "max_sustainable_concurrency": None})
+        == "ars: no stage met the SLO"
+    )
+    first = _performance_line(
+        {**base, "max_sustainable_concurrency": 12.0, "knee_unsupported": True}
+    )
+    assert (
+        first
+        == "ars: max sustainable concurrency 12.0 (unsupported, see stage warnings)"
+    )

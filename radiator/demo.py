@@ -233,52 +233,55 @@ def demo_runs(days=30, env="ci", suite="sprint_4_tests", seed=7):
             )
         )
 
-    # weekly performance sweeps
+    # performance sweeps every few days: like test-harness-sweep, one run per
+    # service, in turn, each with that service as its target
     hosts = [
         ("https://ars.ci.transltr.io", "ars", 14.0),
         ("https://aragorn.ci.transltr.io", "aragorn", 9.0),
         ("https://arax.ci.transltr.io", "arax", 6.5),
         ("https://bte.ci.transltr.io", "bte", 11.0),
     ]
-    for week in range(max(days // 7, 1) + 1):
-        started = now - timedelta(days=7 * week, hours=30)
-        run = schema.RunCreate(
-            run_id=uuid.uuid5(uuid.NAMESPACE_URL, f"demo:perf:{week}"),
-            suite="performance_tests",
-            env=env,
-            harness_version="0.8.0",
-            started_at=started,
-        )
-        perf = []
-        for host, target, base in hosts:
-            msc = round(max(1.0, rng.gauss(base - week * 0.4, 1.2)), 1)
+    for sweep in range(days // 3 + 1):
+        sweep_start = now - timedelta(days=3 * sweep, hours=30)
+        for position, (host, target, base) in enumerate(hosts):
+            started = sweep_start + timedelta(minutes=70 * position)
+            # a slow decline for arax, a step up for bte a week and a half ago
+            trend = -0.15 * (days // 3 - sweep) if target == "arax" else 0
+            if target == "bte" and sweep < 4:
+                trend = 2.5
+            msc = round(max(1.0, rng.gauss(base - trend, 0.9)), 1)
             passed = msc >= base * 0.8
-            perf.append(
-                schema.PerformanceResult(
-                    test_case_id="Perf_1",
-                    asset_id=f"Perf_{target}",
-                    host=host,
-                    helmsdeep_target=target,
-                    profile="mixed",
-                    status="PASSED" if passed else "FAILED",
-                    exit_code=0,
-                    max_sustainable_concurrency=msc,
-                    checkpoints_passed=passed,
-                    summary={
-                        "max_sustainable_concurrency": msc,
-                        "checkpoints_passed": passed,
-                    },
+            run = schema.RunCreate(
+                run_id=uuid.uuid5(uuid.NAMESPACE_URL, f"demo:perf:{sweep}:{target}"),
+                suite="performance_tests",
+                env=env,
+                target=target,
+                target_url=host,
+                harness_version="0.8.0",
+                started_at=started,
+            )
+            perf = schema.PerformanceResult(
+                test_case_id="Perf_1",
+                asset_id="Perf_mixed",
+                host=host,
+                helmsdeep_target=target,
+                profile="mixed",
+                status="PASSED" if passed else "FAILED",
+                exit_code=0,
+                max_sustainable_concurrency=msc,
+                checkpoints_passed=passed,
+                summary={
+                    "max_sustainable_concurrency": msc,
+                    "checkpoints_passed": passed,
+                },
+            )
+            payloads.append(
+                schema.RunPayload(
+                    run=run,
+                    performance=[perf],
+                    finish=schema.RunFinish(ended_at=started + timedelta(minutes=65)),
                 )
             )
-        payloads.append(
-            schema.RunPayload(
-                run=run,
-                performance=perf,
-                finish=schema.RunFinish(
-                    ended_at=started + timedelta(hours=4, minutes=12)
-                ),
-            )
-        )
     return payloads
 
 

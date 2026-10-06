@@ -114,3 +114,22 @@ def get_run_history_png(
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+@read_router.get("/runs/{run_id}/performance.png")
+def get_run_performance_png(
+    run_id: uuid.UUID, runs: int = 30, session: Session = Depends(get_session)
+):
+    """Each of the run's services' max sustainable concurrency over its last
+    ``runs`` runs, ending at this one, as a PNG (for Slack)."""
+    run = queries.get_run(session, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
+    if not run.performance:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No performance results")
+    series = queries.performance_series(session, run, limit=min(max(runs, 1), 120))
+    return Response(
+        history_png.render_performance(run, series),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )

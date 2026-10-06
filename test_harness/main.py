@@ -67,42 +67,94 @@ def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
 
 
 def radiator_headline(radiator, collector) -> str:
-    """One line for Slack: this run against the previous one in its series,
-    linking to what changed. Empty when the radiator doesn't have the run."""
-    if not collector.has_acceptance_results:
+    """Lines for Slack: this run against the previous one in its series (the
+    acceptance pass rate, each service's top concurrency), linking to what
+    changed. Empty when the radiator doesn't have the run."""
+    if not (collector.has_acceptance_results or collector.has_performance_results):
         return ""
     summary = radiator.summary()
-    if not summary or summary.get("pass_rate") is None:
+    if not summary:
         return ""
-    line = f"Pass rate {summary['pass_rate']:.0%}"
-    if summary.get("previous_pass_rate") is not None:
-        delta = (summary["pass_rate"] - summary["previous_pass_rate"]) * 100
-        line += f" ({delta:+.1f} pts vs the previous run)"
+    lines = []
+    if collector.has_acceptance_results and summary.get("pass_rate") is not None:
+        line = f"Pass rate {summary['pass_rate']:.0%}"
+        if summary.get("previous_pass_rate") is not None:
+            delta = (summary["pass_rate"] - summary["previous_pass_rate"]) * 100
+            line += f" ({delta:+.1f} pts vs the previous run)"
+            line += (
+                f" · {summary['regressions']} regressions · {summary['fixed']} fixed"
+                f" · <{radiator.diff_url}|What changed>"
+            )
+        lines.append(line)
+    if collector.has_performance_results:
+        lines.extend(_performance_line(p) for p in summary.get("performance") or [])
+    return "".join(f"\n> {line}" for line in lines) + ("\n" if lines else "")
+
+
+def _performance_line(perf: dict) -> str:
+    """One service's top concurrency against its previous run."""
+    name = perf.get("helmsdeep_target") or perf["host"]
+    if perf.get("profile"):
+        name += f" ({perf['profile']})"
+    if perf.get("error"):
+        return f"{name}: run failed: {perf['error']}"
+    current = perf.get("max_sustainable_concurrency")
+    if current is None:
+        line = f"{name}: no stage met the SLO"
+    else:
+        line = f"{name}: max sustainable concurrency {current:.1f}"
+        previous = perf.get("previous_max_sustainable_concurrency")
+        if previous is not None:
+            line += f" ({current - previous:+.1f} vs the previous run)"
+        if perf.get("knee_unsupported"):
+            line += " (unsupported, see stage warnings)"
+    if perf.get("checkpoints_passed") is not None:
         line += (
-            f" · {summary['regressions']} regressions · {summary['fixed']} fixed"
-            f" · <{radiator.diff_url}|What changed>"
+            " · checkpoints passed"
+            if perf["checkpoints_passed"]
+            else " · checkpoints missed"
         )
-    return f"\n> {line}\n"
+    return line
 
 
-def post_history_chart(radiator, slacker, suite, prefix, logger):
-    """Post the series' pass-rate history, from the radiator, under the
-    report. Best effort: the report stands without it."""
-    png = radiator.history_png()
-    if not png:
-        return
-    try:
-        slacker.upload_binary_file(
-            f"{prefix}pass_rate_history.png",
-            png,
-            initial_comment=(
-                f"Pass-rate history for {suite} up to this run · "
-                f"<{radiator.run_url}|Open in the Information Radiator>"
-            ),
-            title="Pass-rate history",
+def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
+    """Post the run's history charts, from the radiator, under the report:
+    the acceptance pass rate and each service's top concurrency. Best effort:
+    the report stands without them."""
+    charts = []
+    if collector.has_acceptance_results:
+        charts.append(
+            (
+                radiator.history_png,
+                "pass_rate_history.png",
+                "Pass-rate history",
+                f"Pass-rate history for {suite} up to this run",
+            )
         )
-    except Exception as e:
-        logger.warning(f"Failed to post the pass-rate history chart: {e}")
+    if collector.has_performance_results:
+        charts.append(
+            (
+                radiator.performance_png,
+                "concurrency_history.png",
+                "Max sustainable concurrency history",
+                "Max sustainable concurrency history up to this run",
+            )
+        )
+    for fetch, filename, title, comment in charts:
+        png = fetch()
+        if not png:
+            continue
+        try:
+            slacker.upload_binary_file(
+                f"{prefix}{filename}",
+                png,
+                initial_comment=(
+                    f"{comment} · <{radiator.run_url}|Open in the Information Radiator>"
+                ),
+                title=title,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to post the {title.lower()} chart: {e}")
 
 
 def main(args):
@@ -252,8 +304,9 @@ def main(args):
             )
         ]
     )
-    if collector.has_acceptance_results:
-        post_history_chart(radiator, slacker, args["suite"], target_prefix, logger)
+    post_history_charts(
+        radiator, slacker, collector, args["suite"], target_prefix, logger
+    )
     if collector.has_acceptance_results:
         slacker.upload_test_results_file(
             f"{target_prefix}{reporter.test_name}",

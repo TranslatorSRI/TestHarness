@@ -5,9 +5,10 @@ frontend build and render the same for everyone. ``static/charts.js`` adds the
 hover layer (a crosshair that snaps to the nearest run and a tooltip listing
 every series there) from the data embedded in each chart.
 
-Specs follow the house rules: 2px lines, >=8px end dots with a 2px surface
-ring, hairline solid gridlines, one y-axis, a legend for 2+ series, and every
-chart paired with a table view in its template.
+Specs follow the house rules: 2px step lines (each run's value holds until
+the next run), >=8px end dots with a 2px surface ring, hairline solid
+gridlines, one y-axis, a legend for 2+ series, and every chart paired with a
+table view in its template.
 """
 
 import json
@@ -26,6 +27,7 @@ AGENT_COLOR_SLOTS = {
     "shepherd-arax": 3,
     "biothings-explorer": 4,
     "shepherd-bte": 4,
+    "bte": 4,
     "improving-agent": 5,
     "unsecret-agent": 6,
     "cqs": 7,
@@ -156,7 +158,12 @@ def line_chart(
                 runs[-1].append((sx(x), sy(y)))
         for run in runs:
             if len(run) > 1:
-                d = " ".join(f"{px:.1f},{py:.1f}" for px, py in run)
+                # steps: a run's value holds until the next run, so every
+                # change shows as a clean rise or drop
+                stepped = [run[0]]
+                for px, py in run[1:]:
+                    stepped += [(px, stepped[-1][1]), (px, py)]
+                d = " ".join(f"{px:.1f},{py:.1f}" for px, py in stepped)
                 parts.append(
                     f'<polyline class="series" points="{d}" style="stroke:{s.color}"/>'
                 )

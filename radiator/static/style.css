@@ -259,7 +259,7 @@ th.agent-head { text-align: center; }
 .chart text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .grid { stroke: var(--grid); stroke-width: 1; }
 .chart .baseline { stroke: var(--axis); stroke-width: 1; }
-.chart .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .series { fill: none; stroke-width: 2; stroke-linejoin: miter; stroke-linecap: square; }
 .chart .dot { stroke: var(--surface); stroke-width: 2; }
 .chart .crosshair { stroke: var(--ink-muted); stroke-width: 1; }
 .chart-wrap { position: relative; }

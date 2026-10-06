@@ -71,7 +71,7 @@ def test_pages_render(app, browser):
     assert browser.get("/trends").status_code == 200
     performance = browser.get("/performance")
     assert performance.status_code == 200
-    assert "https://ars.ci.transltr.io (ars)" in performance.text
+    assert "https://ars.ci.transltr.io (ars, default, ci)" in performance.text
 
 
 def test_empty_database(browser):
@@ -282,3 +282,89 @@ def test_summary_of_a_first_run(app, api):
     assert api.get(f"/api/runs/{only.run.run_id}/history.png").content.startswith(
         b"\x89PNG"
     )
+
+
+def _perf_run(started, target="arax", msc=7.0, profile="mixed", env="ci", passed=True):
+    return schema.RunPayload(
+        run=f.run_create(
+            started_at=started,
+            suite="performance_tests",
+            env=env,
+            target=target,
+            target_url=f"https://{target}",
+        ),
+        performance=[
+            schema.PerformanceResult(
+                test_case_id="Perf_1",
+                asset_id="Perf_mixed",
+                host=f"https://{target}",
+                helmsdeep_target=target,
+                profile=profile,
+                status="PASSED" if passed else "FAILED",
+                max_sustainable_concurrency=msc,
+                checkpoints_passed=passed,
+            )
+        ],
+        finish=f.finish(started),
+    )
+
+
+def test_performance_history_for_a_run(app, api):
+    """A service's series: same host, run type, profile and env; other
+    services, profiles and envs, and later runs, stay out of it."""
+    earlier = _perf_run(T0, msc=6.0, passed=False)
+    other_service = _perf_run(T0 + timedelta(hours=1), target="ars", msc=14.0)
+    other_profile = _perf_run(T0 + timedelta(hours=2), msc=3.0, profile=None)
+    other_env = _perf_run(T0 + timedelta(hours=3), msc=2.0, env="test")
+    this = _perf_run(T0 + timedelta(days=1), msc=7.5)
+    later = _perf_run(T0 + timedelta(days=2), msc=9.0)
+    _load(app, earlier, other_service, other_profile, other_env, this, later)
+
+    with app.state.sessionmaker() as session:
+        run = queries.get_run(session, this.run.run_id)
+        [(perf, history)] = queries.performance_series(session, run)
+        assert [p.max_sustainable_concurrency for _, p in history] == [6.0, 7.5]
+
+    summary = api.get(f"/api/runs/{this.run.run_id}/summary").json()
+    [entry] = summary["performance"]
+    assert entry["max_sustainable_concurrency"] == 7.5
+    assert entry["previous_max_sustainable_concurrency"] == 6.0
+    assert summary["pass_rate"] is None
+
+    res = api.get(f"/api/runs/{this.run.run_id}/performance.png")
+    assert res.status_code == 200 and res.content.startswith(b"\x89PNG")
+
+
+def test_performance_png_needs_performance_results(app, api):
+    acceptance = _payload(T0, [f.asset()])
+    _load(app, acceptance)
+    assert (
+        api.get(f"/api/runs/{acceptance.run.run_id}/performance.png").status_code == 404
+    )
+
+
+def test_dashboard_lines_are_steps():
+    """Each run's value holds until the next: every segment of the line is
+    horizontal or vertical."""
+    import re
+    from datetime import datetime, timezone
+
+    from radiator import charts
+
+    svg = charts.line_chart(
+        [
+            charts.Series(
+                "ars",
+                "red",
+                [
+                    (datetime(2026, 9, d, tzinfo=timezone.utc), v)
+                    for d, v in [(1, 0.5), (2, 0.9), (3, 0.7)]
+                ],
+            )
+        ]
+    )
+    [points] = re.findall(r'<polyline class="series" points="([^"]+)"', str(svg))
+    coords = [tuple(map(float, p.split(","))) for p in points.split()]
+    assert len(coords) == 5
+    for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
+        assert x1 == x2 or y1 == y2

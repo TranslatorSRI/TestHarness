@@ -62,19 +62,30 @@ deploy/
 - **Trends**: each agent's pass rate over full runs of a suite, overall and by
   expected output. Skips are left out; runs with a target override or a single
   query type aren't included.
-- **Performance**: HelmsDeep's max sustainable concurrency per host over time,
-  with checkpoint verdicts.
+- **Performance**: HelmsDeep's max sustainable concurrency per service over
+  time (per host, run type, profile, and environment), with checkpoint
+  verdicts.
 
 ## In the Slack report
 
 When the radiator has the run, the harness's Slack report gains a headline
-against the previous run of the same series (pass rate and its change,
-regressions, fixes, and a link to what changed), and the chart below is posted
-under it: each agent's pass rate over the series' last 30 runs, ending at this
-one. The radiator draws it (`GET /api/runs/{id}/history.png`); the harness
-fetches it with its token and uploads it, since Slack can't reach pages behind
-the login. Without the radiator, or if it can't be reached, the report is what
-it always was.
+against the previous run of the same series, and a chart of the series up to
+this run is posted under it:
+
+- **Acceptance runs:** pass rate and its change, regressions, fixes, and a link
+  to what changed; the chart is each agent's pass rate over the last 30 runs.
+- **Performance runs:** for each service, its max sustainable concurrency and
+  its change since the service's previous run, and the checkpoint verdict; the
+  chart is that concurrency over the service's last 30 runs, with missed
+  checkpoints marked. A service's series is one host under one HelmsDeep run
+  type and profile, in one environment, since a `mixed` and a `default` run load
+  it differently.
+
+The charts use step lines: a run's value holds until the next run, so every rise
+and drop shows plainly (the dashboard's trend charts do the same). The radiator
+draws them (`history.png`, `performance.png`); the harness fetches them with its
+token and uploads them, since Slack can't reach pages behind the login. Without
+the radiator, or if it can't be reached, the report is what it always was.
 
 ## API
 
@@ -100,6 +111,7 @@ Reading, with the token or a session:
 | `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
 | `GET /api/runs/{run_id}/history.png?runs=30` | the pass-rate chart posted to Slack |
+| `GET /api/runs/{run_id}/performance.png?runs=30` | the concurrency chart posted to Slack |
 
 ## Deploying
 
