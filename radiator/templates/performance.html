@@ -28,7 +28,7 @@
     {{ chart }}
     <details class="table-view">
       <summary>Table view</summary>
-      <table class="data">
+      <div class="scroll"><table class="data">
         <thead><tr><th>Run</th><th>Profile</th><th class="num">Max concurrency</th><th>Checkpoints</th></tr></thead>
         <tbody>
         {% for run, perf in rows|reverse %}
@@ -40,7 +40,7 @@
           </tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </details>
   </div>
 {% endfor %}

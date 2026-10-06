@@ -1,0 +1,108 @@
+# Example manifests for the Information Radiator, in the same namespace as the
+# harness CronJob. Adapt before applying: the image tag, hostname, TLS secret,
+# ingress class, and every value in the Secret are placeholders.
+#
+# The radiator needs a Postgres database. Point RADIATOR_DATABASE_URL at an
+# existing one, or apply deploy/radiator-postgres.example.yaml for a small
+# in-namespace instance.
+#
+# Generate the secrets with eg `openssl rand -base64 32`:
+#   kubectl create secret generic radiator-secrets \
+#     --from-literal=database-url='postgresql+psycopg://radiator:PASSWORD@radiator-postgres:5432/radiator' \
+#     --from-literal=api-token="$(openssl rand -base64 32)" \
+#     --from-literal=username=translator \
+#     --from-literal=password="$(openssl rand -base64 18)" \
+#     --from-literal=session-secret="$(openssl rand -base64 32)"
+#
+# Then give the harness the same api-token as RADIATOR_TOKEN (see
+# deploy/cronjob.example.yaml), and share the username/password with the
+# consortium.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radiator
+  labels: {app: radiator}
+spec:
+  # One replica: the login throttle is in memory, and the load is a handful
+  # of people looking at a dashboard. Recreate so a migration never runs
+  # against a database an old pod is still using.
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: radiator}
+  template:
+    metadata:
+      labels: {app: radiator}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        # Bring the schema up to date before the app starts. Alembic is a
+        # no-op when it already is.
+        - name: migrate
+          image: ghcr.io/translatorsri/testharness-radiator:latest
+          command: ["alembic", "-c", "radiator/alembic.ini", "upgrade", "head"]
+          env:
+            - name: RADIATOR_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: database-url}}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+      containers:
+        - name: radiator
+          image: ghcr.io/translatorsri/testharness-radiator:latest
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            - name: RADIATOR_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: database-url}}
+            - name: RADIATOR_API_TOKEN
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: api-token}}
+            - name: RADIATOR_USERNAME
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: username}}
+            - name: RADIATOR_PASSWORD
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: password}}
+            - name: RADIATOR_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: session-secret}}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            # generous: a database blip shouldn't restart the app
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radiator
+  labels: {app: radiator}
+spec:
+  selector: {app: radiator}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: radiator
+  annotations:
+    # uploads from the harness come in batches; leave room for big ones
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [radiator.example.org]
+      secretName: radiator-tls
+  rules:
+    - host: radiator.example.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: radiator, port: {name: http}}

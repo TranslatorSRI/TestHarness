@@ -103,15 +103,17 @@ code, .mono {
   width: 18px; height: 18px; border-radius: 5px;
   background: conic-gradient(var(--status-passed) 0 60%, var(--status-failed) 0 80%, var(--status-no-results) 0);
 }
-.nav { display: flex; gap: 4px; flex: 1; }
+.nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; }
 .nav a {
+  white-space: nowrap;
   color: var(--ink-2);
   padding: 6px 10px;
   border-radius: 6px;
 }
 .nav a:hover { background: var(--surface-2); text-decoration: none; }
 .nav a.active { color: var(--ink); background: var(--surface-2); font-weight: 550; }
-.logout button {
+.brand { white-space: nowrap; }
+.logout button { white-space: nowrap;
   background: none; border: 0; color: var(--ink-2); cursor: pointer; font: inherit;
 }
 
@@ -261,8 +263,8 @@ th.agent-head { text-align: center; }
 .chart .dot { stroke: var(--surface); stroke-width: 2; }
 .chart .crosshair { stroke: var(--ink-muted); stroke-width: 1; }
 .chart-wrap { position: relative; }
-.multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px 24px; }
-.multiples.two { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
+.multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 12px 24px; }
+.multiples.two { grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); }
 .multiples h3 { font-size: 13px; font-weight: 600; margin: 4px 0; }
 
 details.table-view { margin-top: 8px; }
@@ -306,8 +308,14 @@ details.table-view[open] summary { margin-bottom: 8px; }
 }
 .pager { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
 
+.narrow-only { display: none; }
 @media (max-width: 640px) {
+  .wide-only { display: none; }
+  .narrow-only { display: block; }
   main { padding: 16px; }
-  .topbar { padding: 0 16px; gap: 12px; }
+  .topbar { padding: 0 16px; gap: 8px; }
+  .brand-text { display: none; }
+  .card { padding: 14px; }
+  .card-head { flex-direction: column; gap: 4px; }
   .tile.hero .value { font-size: 40px; }
 }

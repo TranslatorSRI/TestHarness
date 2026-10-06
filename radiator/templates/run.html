@@ -48,6 +48,7 @@
     <div><h2>By agent</h2><p class="sub">Each agent's results across every asset in this run</p></div>
     {% if previous %}<a href="/runs/{{ run.id }}/diff">What changed since the last run →</a>{% endif %}
   </div>
+  <div class="scroll">
   <table class="data">
     <thead><tr><th>Agent</th><th>Results</th><th class="num">Pass rate</th>
       {% for s in STATUSES %}<th class="num">{{ STATUS_LABELS[s][1] }}</th>{% endfor %}</tr></thead>
@@ -62,6 +63,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {{ m.status_legend() }}
 </div>
 
@@ -69,6 +71,7 @@
 <div class="card">
   <h2>Performance</h2>
   <p class="sub">HelmsDeep runs in this test run</p>
+  <div class="scroll">
   <table class="data">
     <thead><tr><th>Host</th><th>Run type</th><th>Profile</th><th>Result</th><th class="num">Max sustainable concurrency</th><th>Checkpoints</th></tr></thead>
     <tbody>
@@ -82,6 +85,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 

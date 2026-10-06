@@ -1,0 +1,59 @@
+# A small Postgres for the Information Radiator, for when the namespace has no
+# database to use. Skip this if you have a managed one.
+#
+#   kubectl create secret generic radiator-postgres \
+#     --from-literal=password="$(openssl rand -base64 24)"
+#
+# and use that password in radiator-secrets' database-url:
+#   postgresql+psycopg://radiator:<password>@radiator-postgres:5432/radiator
+#
+# Back the volume up: it is the only copy of the results history.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: radiator-postgres
+  labels: {app: radiator-postgres}
+spec:
+  serviceName: radiator-postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: radiator-postgres}
+  template:
+    metadata:
+      labels: {app: radiator-postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - {name: postgres, containerPort: 5432}
+          env:
+            - {name: POSTGRES_USER, value: radiator}
+            - {name: POSTGRES_DB, value: radiator}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: radiator-postgres, key: password}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "radiator"]}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 10Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radiator-postgres
+  labels: {app: radiator-postgres}
+spec:
+  selector: {app: radiator-postgres}
+  ports:
+    - {name: postgres, port: 5432, targetPort: postgres}

@@ -33,7 +33,8 @@
 <div class="card">
   <h2>Pass rate by agent</h2>
   <p class="sub">{{ points|length }} runs · all expected outputs</p>
-  {{ overall_chart }}
+  <div class="wide-only">{{ overall_chart }}</div>
+  <div class="narrow-only">{{ overall_chart_narrow }}</div>
   <details class="table-view">
     <summary>Table view</summary>
     <div class="scroll">

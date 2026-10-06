@@ -443,6 +443,11 @@ def trends_page(
         points=points,
         agents=agents,
         overall_chart=chart() if points else None,
+        # the same chart drawn for a phone, where the wide one's text would
+        # shrink to nothing; CSS shows one or the other
+        overall_chart_narrow=(
+            chart(height=220, width=charts.WIDTH_THIRD) if points else None
+        ),
         multiples=(
             [
                 (e, chart(e, height=200, width=charts.WIDTH_HALF))
