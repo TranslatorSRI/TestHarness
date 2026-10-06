@@ -12,7 +12,7 @@ The JSON read API accepts either, so the UI's own pages could use it too.
 
 import hmac
 import time
-from collections import defaultdict, deque
+from collections import deque
 from typing import Optional
 
 from fastapi import HTTPException, Request, status
@@ -62,6 +62,21 @@ def check_credentials(request: Request, username: str, password: str) -> bool:
     return user_ok and password_ok
 
 
+def client_address(request: Request) -> str:
+    """Who is logging in, for the throttle.
+
+    Behind the ingress the peer is always the ingress, so the client comes
+    from X-Forwarded-For. Only its last entry is trusted: that's the one the
+    ingress itself adds, while anything before it is whatever the client sent.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        last = forwarded.split(",")[-1].strip()
+        if last:
+            return last
+    return request.client.host if request.client else "unknown"
+
+
 class LoginThrottle:
     """Slow down password guessing against the one shared password.
 
@@ -69,23 +84,36 @@ class LoginThrottle:
     That is enough for the single replica this runs as; it resets on restart.
     """
 
-    def __init__(self, max_failures: int = 10, window_s: float = 15 * 60):
+    def __init__(
+        self,
+        max_failures: int = 10,
+        window_s: float = 15 * 60,
+        max_clients: int = 10_000,
+    ):
         self.max_failures = max_failures
         self.window_s = window_s
-        self._failures: dict[str, deque] = defaultdict(deque)
+        self.max_clients = max_clients
+        self._failures: dict[str, deque] = {}
 
-    def _prune(self, key: str, now: float) -> deque:
-        failures = self._failures[key]
+    def _recent(self, key: str, now: float) -> deque:
+        failures = self._failures.get(key, deque())
         while failures and now - failures[0] > self.window_s:
             failures.popleft()
         return failures
 
     def blocked(self, key: str) -> bool:
-        return len(self._prune(key, time.monotonic())) >= self.max_failures
+        return len(self._recent(key, time.monotonic())) >= self.max_failures
 
     def failed(self, key: str) -> None:
         now = time.monotonic()
-        self._prune(key, now).append(now)
+        failures = self._recent(key, now)
+        failures.append(now)
+        self._failures[key] = failures
+        if len(self._failures) > self.max_clients:
+            # keep memory bounded: forget whoever has nothing recent
+            for other in list(self._failures):
+                if not self._recent(other, now):
+                    del self._failures[other]
 
     def succeeded(self, key: str) -> None:
         self._failures.pop(key, None)

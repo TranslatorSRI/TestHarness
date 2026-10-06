@@ -6,11 +6,14 @@ client's batching, auth, failure handling, and save/replay.
 """
 
 import json
+import os
 from uuid import uuid4
 
+import pytest
 from pytest_httpx import HTTPXMock
 
 from radiator_schema import AssetResult, RunCreate, RunPayload
+from test_harness.main import main
 from test_harness.radiator_client import RadiatorClient, push
 from test_harness.result_collector import ResultCollector
 from test_harness.run import record_response_meta, run_tests
@@ -326,3 +329,116 @@ def test_client_failure_stops_uploads_and_replays(httpx_mock: HTTPXMock, tmp_pat
     finish = json.loads(requests[2].content)
     assert finish["ended_at"] == payload.finish.model_dump(mode="json")["ended_at"]
     assert finish["counts"] == {"PASSED": 2}
+
+
+def test_record_response_meta_ignores_a_non_numeric_status():
+    """After a failed ARS poll the status is the ARS's own string; that must
+    not invalidate the asset's whole radiator record."""
+    report = _report(AgentStatus.SKIPPED)
+    record_response_meta(
+        report, {"response": {"message": {"results": []}}, "status_code": "Running"}
+    )
+    assert report.http_status is None
+    assert report.n_results is None
+
+
+def test_collector_records_a_performance_run_that_raised():
+    client = _recording_client()
+    collector = ResultCollector("ci", logger, radiator=client)
+    collector.record_performance_error(_Case(), _Asset(), "https://ars", "boom")
+    [perf] = client.payload.performance
+    assert (perf.status, perf.error, perf.host) == ("FAILED", "boom", "https://ars")
+
+
+class _BrokenZebrunner(MockReporter):
+    def create_test(self, test, asset):
+        raise RuntimeError("Zebrunner is down")
+
+
+def test_run_tests_still_collects_when_zebrunner_fails(httpx_mock: HTTPXMock):
+    """A Zebrunner failure for an asset must not drop it from the radiator."""
+    httpx_mock.add_response(url="http://localhost:8080/query", json=kp_response)
+    httpx_mock.add_response(
+        url="https://nodenorm-es.ci.transltr.io/get_normalized_nodes",
+        json={
+            curie: None
+            for curie in [
+                "MONDO:0010794",
+                "DRUGBANK:DB00313",
+                "MESH:D001463",
+                "CHEBI:18295",
+                "CHEBI:31690",
+                "CL:0000097",
+                "MONDO:0004979",
+                "NCBIGene:3815",
+                "NCBIGene:4254",
+                "PR:000049994",
+            ]
+        },
+    )
+    client = _recording_client()
+    collector = MockResultCollector("ci", logger, target="aragorn", radiator=client)
+    run_tests(
+        tests=example_test_cases,
+        reporter=_BrokenZebrunner(base_url="http://test"),
+        collector=collector,
+        logger=logger,
+        args={
+            "suite": "testing",
+            "trapi_version": "1.6.0",
+            "target_url": "http://localhost:8080",
+            "target": "aragorn",
+        },
+    )
+    assert client.payload.results
+
+
+def _main_args(tmp_path):
+    return {
+        "tests": example_test_cases,
+        "suite": "testing",
+        "save_to_dashboard": False,
+        "json_output": False,
+        "log_level": "ERROR",
+        "output_dir": str(tmp_path),
+    }
+
+
+def _saved_payload(tmp_path):
+    [path] = [p for p in os.listdir(tmp_path) if p.startswith("radiator_")]
+    with open(os.path.join(tmp_path, path)) as f:
+        return RunPayload.model_validate(json.load(f))
+
+
+def test_main_survives_zebrunner_being_down(mocker, monkeypatch, tmp_path):
+    """Zebrunner refusing to open a run no longer stops the run."""
+    monkeypatch.setenv("ZE_BASE_URL", "http://zebrunner")
+    monkeypatch.setenv("ZE_REFRESH_TOKEN", "tok")
+    mocker.patch(
+        "test_harness.main.Reporter.get_auth", side_effect=RuntimeError("down")
+    )
+    run = mocker.patch("test_harness.main.run_tests")
+    assert main(_main_args(tmp_path)) == 0
+    run.assert_called_once()
+    assert _saved_payload(tmp_path).finish is not None
+
+
+def test_main_saves_the_radiator_run_before_slack_can_fail(mocker, tmp_path):
+    """The radiator run is closed and saved before Zebrunner and Slack are
+    finished with, so their failures can't cost it the run."""
+    mocker.patch("test_harness.main.run_tests")
+    mocker.patch(
+        "test_harness.main.LocalReporter.finish_test_run",
+        side_effect=RuntimeError("Zebrunner said no"),
+    )
+    with pytest.raises(RuntimeError):
+        main(_main_args(tmp_path))
+    assert _saved_payload(tmp_path).finish is not None
+
+
+def test_main_keeps_a_crashed_run_open(mocker, tmp_path):
+    """A run that died partway is saved, but not marked finished."""
+    mocker.patch("test_harness.main.run_tests", side_effect=RuntimeError("crash"))
+    with pytest.raises(RuntimeError):
+        main(_main_args(tmp_path))
+    assert _saved_payload(tmp_path).finish is None

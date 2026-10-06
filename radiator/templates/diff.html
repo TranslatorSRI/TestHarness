@@ -35,7 +35,7 @@
     <tbody>
     {% for c in changes[:300] %}
       <tr>
-        <td><a href="/assets/{{ c.asset.test_case_id }}/{{ c.asset.asset_id }}?env={{ run.env or '' }}">{{ c.asset.name or c.asset.asset_id }}</a></td>
+        <td><a href="/assets/{{ c.asset.test_case_id }}/{{ c.asset.asset_id }}?env={{ run.env or NO_ENV }}">{{ c.asset.name or c.asset.asset_id }}</a></td>
         <td class="nowrap">{{ c.asset.expected_output or '–' }}</td>
         {% if kind not in ('added', 'removed') %}
           <td class="nowrap">{{ m.agent_head(c.agent) }}</td>

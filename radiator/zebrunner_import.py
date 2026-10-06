@@ -26,7 +26,8 @@ What comes across, and from where:
 
 Imported runs are marked ``origin=zebrunner_import`` and get a run id derived
 from the Zebrunner launch id, so re-running the import updates them instead of
-duplicating them. Already-imported launches are skipped unless ``--force``.
+duplicating them. Launches already imported in full are skipped unless
+``--force``; one whose import stopped partway is imported again.
 Performance tests are skipped: they predate HelmsDeep and carry no summary.
 """
 
@@ -370,11 +371,16 @@ class Radiator:
         )
 
     def has_run(self, run_id: uuid.UUID) -> bool:
-        res = self.client.get(f"/api/runs/{run_id}")
+        """Whether the run was imported in full.
+
+        One that exists but never got its end time stopped partway (eg an
+        upload failed), so it's imported again; the upserts make that safe.
+        """
+        res = self.client.get(f"/api/runs/{run_id}", params={"results": "false"})
         if res.status_code == 404:
             return False
         res.raise_for_status()
-        return True
+        return res.json().get("ended_at") is not None
 
     def push(self, payload: schema.RunPayload, batch_size: int = 200) -> None:
         prefix = schema.INGEST_PREFIX

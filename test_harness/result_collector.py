@@ -409,6 +409,31 @@ class ResultCollector:
             else:
                 self.radiator.add_performance(record)
 
+    def record_performance_error(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+        host_url: str,
+        error: str,
+    ):
+        """Record, for the radiator, a performance run that raised outright.
+
+        A run that returned an error goes through ``collect_performance_result``;
+        this is for one that never returned at all, which would otherwise leave
+        no trace of the attempt in the radiator.
+        """
+        if self.radiator is None:
+            return
+        self.radiator.add_performance(
+            PerformanceResult(
+                test_case_id=test.id,
+                asset_id=asset.id,
+                host=host_url,
+                status=AgentStatus.FAILED.value,
+                error=error,
+            )
+        )
+
     @property
     def performance_checkpoints_passed(self) -> Optional[bool]:
         """Overall checkpoint verdict across every performance run.

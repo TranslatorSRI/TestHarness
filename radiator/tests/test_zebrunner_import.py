@@ -275,3 +275,23 @@ def test_env_inference():
     assert infer_env([prod]) == "prod"
     # dev, ci and test all use the shepherd agents: can't tell which
     assert infer_env([shepherd]) is None
+
+
+def test_a_partly_imported_run_is_imported_again(app, api):
+    """A run that exists but never got its end time stopped partway, and a
+    re-run finishes it instead of skipping it."""
+    run_id = run_id_for(ZE, 101)
+    api.post(
+        "/api/ingest/runs",
+        json={
+            "run_id": str(run_id),
+            "suite": "sprint_4_tests",
+            "started_at": "2025-03-02T06:00:00Z",
+            "origin": "zebrunner_import",
+        },
+    )
+    stats = import_runs(_zebrunner([]), _radiator(app), env="ci")
+    assert stats.imported == 2 and stats.skipped_existing == 0
+    with app.state.sessionmaker() as session:
+        run = queries.get_run(session, run_id)
+        assert run.ended_at is not None and len(run.assets) == 2

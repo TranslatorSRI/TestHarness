@@ -147,6 +147,8 @@ def previous_run(session: Session, run: Run) -> Optional[Run]:
             Run.target.is_not_distinct_from(run.target),
             Run.query_type.is_not_distinct_from(run.query_type),
             Run.started_at < run.started_at,
+            # a crashed or still-uploading run isn't a fair baseline
+            Run.ended_at.is_not(None),
         )
         .order_by(Run.started_at.desc())
         .limit(1)
@@ -267,6 +269,9 @@ def diff_runs(base: Optional[Run], run: Run) -> Diff:
 
 # --- asset history -----------------------------------------------------------
 
+# How the asset page names "runs with no environment" (eg imported ones).
+NO_ENV = "-"
+
 
 @dataclass
 class AssetHistory:
@@ -302,7 +307,9 @@ def asset_history(
         .order_by(Run.started_at.desc())
         .limit(limit)
     )
-    if env:
+    if env == NO_ENV:
+        stmt = stmt.where(Run.env.is_(None))
+    elif env:
         stmt = stmt.where(Run.env == env)
     points = list(reversed(session.execute(stmt).all()))
     agents = sorted(
@@ -319,19 +326,21 @@ def asset_history(
 
 
 def asset_envs(session: Session, test_case_id: str, asset_id: str) -> list[str]:
-    return [
-        env
-        for env in session.scalars(
-            select(Run.env)
-            .join(AssetResult, AssetResult.run_id == Run.id)
-            .where(
-                AssetResult.test_case_id == test_case_id,
-                AssetResult.asset_id == asset_id,
-            )
-            .distinct()
+    """The environments an asset has history in, most history first.
+
+    Runs with no environment are listed as ``NO_ENV``.
+    """
+    rows = session.execute(
+        select(Run.env, func.count())
+        .join(AssetResult, AssetResult.run_id == Run.id)
+        .where(
+            AssetResult.test_case_id == test_case_id,
+            AssetResult.asset_id == asset_id,
         )
-        if env
-    ]
+        .group_by(Run.env)
+        .order_by(func.count().desc(), Run.env)
+    )
+    return [env or NO_ENV for env, _ in rows]
 
 
 # --- trends ----------------------------------------------------------------
@@ -358,6 +367,7 @@ def agent_trends(
         Run.started_at >= since,
         Run.target.is_(None),
         Run.query_type.is_(None),
+        Run.ended_at.is_not(None),
     ]
     if env:
         run_filter.append(Run.env == env)

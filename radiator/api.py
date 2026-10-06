@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import radiator_schema as schema
 from radiator import ingest, queries
 from radiator.auth import require_token, require_token_or_login
+from radiator.models import Run
 
 ingest_router = APIRouter(
     prefix=schema.INGEST_PREFIX, dependencies=[Depends(require_token)]
@@ -73,8 +74,14 @@ def list_runs(
 
 
 @read_router.get("/runs/{run_id}")
-def get_run(run_id: uuid.UUID, session: Session = Depends(get_session)):
-    run = queries.get_run(session, run_id)
+def get_run(
+    run_id: uuid.UUID, results: bool = True, session: Session = Depends(get_session)
+):
+    """A run, with every result unless ``results=false``."""
+    if results:
+        run = queries.get_run(session, run_id)
+    else:
+        run = session.get(Run, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
-    return queries.run_json(run, with_results=True)
+    return queries.run_json(run, with_results=results)

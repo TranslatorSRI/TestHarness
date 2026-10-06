@@ -82,3 +82,44 @@ def test_login_is_throttled(client):
 )
 def test_login_only_redirects_on_site(next_url, expected):
     assert _safe_next(next_url) == expected
+
+
+def test_throttle_trusts_only_the_ingress_entry(client):
+    """Forging X-Forwarded-For can't dodge the throttle: only the last entry,
+    the one the ingress adds, counts."""
+    for i in range(10):
+        client.post(
+            "/login",
+            data={"username": USERNAME, "password": "nope"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"},
+        )
+    res = client.post(
+        "/login",
+        data={"username": USERNAME, "password": PASSWORD},
+        headers={"X-Forwarded-For": "198.51.100.1, 203.0.113.7"},
+    )
+    assert res.status_code == 401 and "Too many" in res.text
+    # someone else, behind the same ingress, is unaffected
+    other = client.post(
+        "/login",
+        data={"username": USERNAME, "password": PASSWORD},
+        headers={"X-Forwarded-For": "203.0.113.8"},
+        follow_redirects=False,
+    )
+    assert other.status_code == 303
+
+
+def test_throttle_memory_is_bounded():
+    from radiator.auth import LoginThrottle
+
+    throttle = LoginThrottle(max_clients=100, window_s=0)
+    for i in range(1000):
+        throttle.failed(f"client-{i}")
+    assert len(throttle._failures) <= 101
+
+
+def test_login_returns_to_the_full_url(client):
+    res = client.get("/runs/abc?status=FAILED&agent=arax", follow_redirects=False)
+    target = res.headers["location"]
+    page = client.get(target)
+    assert 'value="/runs/abc?status=FAILED&amp;agent=arax"' in page.text

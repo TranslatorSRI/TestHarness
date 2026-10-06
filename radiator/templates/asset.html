@@ -18,7 +18,7 @@
 <form class="filters" method="get">
   <label>Environment
     <select name="env" onchange="this.form.submit()">
-      {% for e in envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
+      {% for e in envs %}<option value="{{ e }}" {{ 'selected' if e == env }}>{{ 'not recorded' if e == NO_ENV else e }}</option>{% endfor %}
     </select>
   </label>
   <noscript><button type="submit">Show</button></noscript>
@@ -27,7 +27,7 @@
 
 <div class="card">
   <h2>Status history</h2>
-  <p class="sub">The last {{ history.points|length }} runs in {{ env or 'every environment' }}, oldest to newest. Click a cell to open that run.</p>
+  <p class="sub">The last {{ history.points|length }} runs {{ 'with no recorded environment' if env == NO_ENV else 'in ' ~ env }}, oldest to newest. Click a cell to open that run.</p>
   {% set n = history.points|length %}
   <div class="scroll">
   <div class="strip" style="grid-template-columns: max-content repeat({{ n }}, minmax(14px, 1fr)); min-width: {{ 120 + n * 16 }}px">

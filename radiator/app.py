@@ -1,13 +1,13 @@
 """The Information Radiator web app.
 
 Run with ``uvicorn radiator.app:create_app --factory``. Behind the cluster
-ingress, pass ``--proxy-headers --forwarded-allow-ips='*'`` so the login
-throttle sees each client's address rather than the ingress's.
+ingress, the login throttle reads each client's address from the
+X-Forwarded-For entry the ingress adds (see ``auth.client_address``).
 """
 
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -17,7 +17,12 @@ from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from radiator import api, web
-from radiator.auth import LoginThrottle, check_credentials, is_logged_in
+from radiator.auth import (
+    LoginThrottle,
+    check_credentials,
+    client_address,
+    is_logged_in,
+)
 from radiator.config import Settings
 from radiator.db import make_sessionmaker
 
@@ -66,7 +71,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         target = request.url.path
         if request.url.query:
             target += f"?{request.url.query}"
-        return RedirectResponse(f"/login?next={target}", status_code=303)
+        return RedirectResponse(
+            f"/login?next={quote(target, safe='/')}", status_code=303
+        )
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():
@@ -94,7 +101,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         next: Optional[str] = Form(None),
     ):
         throttle: LoginThrottle = app.state.login_throttle
-        client = request.client.host if request.client else "unknown"
+        client = client_address(request)
         error = None
         if throttle.blocked(client):
             error = "Too many failed attempts. Try again in a few minutes."

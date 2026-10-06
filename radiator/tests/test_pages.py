@@ -199,3 +199,35 @@ def test_previous_run_stays_in_its_series(app):
 def test_pass_rate_leaves_out_skips():
     assert queries.pass_rate({"PASSED": 3, "FAILED": 1, "SKIPPED": 10}) == 0.75
     assert queries.pass_rate({"SKIPPED": 4}) is None
+
+
+def test_an_unfinished_run_is_not_a_baseline(app):
+    finished = _payload(T0, [f.asset()])
+    crashed = schema.RunPayload(
+        run=f.run_create(started_at=T0 + timedelta(hours=1)), results=[f.asset()]
+    )
+    latest = _payload(T0 + timedelta(hours=2), [f.asset()])
+    _load(app, finished, crashed, latest)
+    with app.state.sessionmaker() as session:
+        run = queries.get_run(session, latest.run.run_id)
+        assert queries.previous_run(session, run).id == finished.run.run_id
+        trend_runs = [
+            p.run.id
+            for p in queries.agent_trends(session, "sprint_4_tests", "ci", 100000)
+        ]
+        assert crashed.run.run_id not in trend_runs
+
+
+def test_asset_page_environments(app, browser):
+    """The default is the env with the most history; runs with no env have
+    their own history (eg imported ones)."""
+    _load(
+        app,
+        _payload(T0, [f.asset()], env="test"),
+        _payload(T0 + timedelta(hours=1), [f.asset()], env="test"),
+        _payload(T0 + timedelta(hours=2), [f.asset()], env="prod"),
+        _payload(T0 + timedelta(hours=3), [f.asset()], env=None),
+    )
+    assert "last 2 runs in test" in browser.get("/assets/TestCase_1/Asset_1").text
+    no_env = browser.get("/assets/TestCase_1/Asset_1?env=-").text
+    assert "last 1 runs with no recorded environment" in no_env

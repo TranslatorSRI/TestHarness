@@ -155,6 +155,7 @@ def register_template_helpers(templates) -> None:
         agent_color=charts.agent_color,
         STATUS_LABELS=STATUS_LABELS,
         STATUSES=queries.STATUSES,
+        NO_ENV=queries.NO_ENV,
         query_string=query_string,
     )
 
@@ -312,8 +313,8 @@ def asset_page(
 ):
     envs = queries.asset_envs(session, test_case_id, asset_id)
     if not env and envs:
-        # default to the env with the most history rather than mixing them
-        env = "ci" if "ci" in envs else envs[0]
+        # one env's history, not a mix: the one with the most of it
+        env = envs[0]
     history = queries.asset_history(session, test_case_id, asset_id, env=env)
     if history.latest is None:
         raise HTTPException(404, "No results for this asset")

@@ -165,7 +165,5 @@ RADIATOR_TOKEN=dev-token test-harness load local_acceptance`.
 - ARA response times under the ARS aren't recorded: the harness only sees
   ARS fan-out through 10s polling. The ARS's own message timestamps could
   give them.
-- A performance test whose HelmsDeep run raises (rather than returning an
-  error) isn't recorded in either radiator. This is existing behavior.
 - HelmsDeep's `report.html` isn't uploaded yet (it still goes to Slack); the
   radiator stores the `summary.json` it is drawn from.

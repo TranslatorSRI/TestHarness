@@ -56,7 +56,9 @@ configured, or an upload failed) it's saved to `--output_dir` as
 `radiator_<run id>.json` instead, which can be uploaded later:
 - `test-harness-radiator push test_results/radiator_<run id>.json`
 
-Uploads are idempotent, so pushing a run that partly made it is safe.
+Uploads are idempotent, so pushing a run that partly made it is safe. The
+radiator never depends on Zebrunner or Slack: if either fails, the run still
+reaches the radiator (or is saved for it).
 
 ### Running local test files
 `test-harness download <suite>` fetches the suites from

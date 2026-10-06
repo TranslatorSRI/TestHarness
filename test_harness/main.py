@@ -56,6 +56,16 @@ def harness_version():
         return None
 
 
+def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
+    """Save the run for `test-harness-radiator push` if it wasn't uploaded."""
+    if force or not radiator.enabled or radiator.upload_failed:
+        path = radiator.save(output_dir, prefix=prefix)
+        logger.info(
+            f"Saved the run for the Information Radiator to {path}; upload it "
+            "with `test-harness-radiator push`."
+        )
+
+
 def main(args):
     """Main Test Harness entrypoint."""
     qid = str(uuid4())[:8]
@@ -117,9 +127,19 @@ def main(args):
             refresh_token=args.get("reporter_access_token"),
             logger=logger,
         )
-    reporter.get_auth()
     test_env = next(iter(tests.values())).test_env
-    reporter.create_test_run(test_env, args["suite"])
+    try:
+        reporter.get_auth()
+        reporter.create_test_run(test_env, args["suite"])
+    except Exception as e:
+        # Zebrunner being down mustn't stop the run: the tests still run and
+        # still reach Slack and the new Information Radiator.
+        logger.error(
+            f"Couldn't open a run in the Zebrunner Information Radiator ({e}); "
+            "continuing without it."
+        )
+        reporter = LocalReporter(logger=logger)
+        reporter.create_test_run(test_env, args["suite"])
 
     use_local_slacker = local or not Slacker.is_configured()
     if use_local_slacker:
@@ -167,7 +187,18 @@ def main(args):
         ]
     )
     start_time = time.time()
-    run_tests(tests, reporter, collector, logger, args)
+    try:
+        run_tests(tests, reporter, collector, logger, args)
+    except BaseException:
+        # Keep what was collected, but leave the run open: a run that died
+        # halfway must not read as finished.
+        radiator.flush()
+        save_radiator_run(radiator, output_dir, target_prefix, logger, force=True)
+        raise
+    # Close out the radiator before Zebrunner and Slack, whose failures below
+    # would otherwise cost it the run.
+    radiator.finish_run(counts=collector.acceptance_report)
+    save_radiator_run(radiator, output_dir, target_prefix, logger)
 
     slacker.post_notification(
         messages=[
@@ -206,13 +237,6 @@ def main(args):
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()
-    radiator.finish_run(counts=collector.acceptance_report)
-    if not radiator.enabled or radiator.upload_failed:
-        path = radiator.save(output_dir, prefix=target_prefix)
-        logger.info(
-            f"Saved the run for the Information Radiator to {path}; upload it "
-            "with `test-harness-radiator push`."
-        )
 
     if args["json_output"]:
         os.makedirs(output_dir, exist_ok=True)
