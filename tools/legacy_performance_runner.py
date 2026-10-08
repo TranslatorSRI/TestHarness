@@ -11,8 +11,9 @@ The load shape is the old one: a linear ramp where the user count at time ``t``
 is ``round(t, -1) * spawn_rate``, running for ``run_time`` seconds. With the
 defaults (1200s, 0.1 users/s) that is 20 minutes, climbing by one user every
 10 seconds to ~120 concurrent users at the end. Every user sends the same TRAPI
-query in a loop -- by default the one the scheduled run used (see
-``DEFAULT_QUERY``).
+query in a loop: ``--query_type inferred`` (the default) is the one the
+scheduled run used, ``--query_type lookup`` is a lookup on nicotianamine, and
+``--query`` sends any TRAPI file instead.
 
 Examples::
 
@@ -22,6 +23,10 @@ Examples::
     # Any ARA (blocking POST /query), with your own query
     python tools/legacy_performance_runner.py --host http://localhost:8080 \\
         --target ara --query my_query.json
+
+    # The nicotianamine lookup instead of the inferred query
+    python tools/legacy_performance_runner.py --host https://ars.ci.transltr.io \\
+        --query_type lookup
 
 Results land in ``--output_dir``: ``<prefix>_results.json`` (locust stats,
 failures, per-outcome response sizes and stats history) and
@@ -66,12 +71,12 @@ ARA_QUERY_FAILED = "ara_query_failed"
 
 POLL_INTERVAL_SECONDS = 5
 
-# The query the scheduled run actually sent: NCATSTranslator/Tests
+# The query the scheduled run actually sent ("--query_type inferred"): NCATSTranslator/Tests
 # test_suites/performance_tests.json, TestCase_87 / Asset_668 -- an inferred
 # MVP1 "what treats Ehlers-Danlos Syndrome?" (MONDO:0017314) against the CI ARS.
 # That suite only ever had this one asset, so it is the whole curie list. This
 # is generate_query()'s output for that asset.
-DEFAULT_QUERY = {
+INFERRED_QUERY = {
     "message": {
         "query_graph": {
             "nodes": {
@@ -92,6 +97,34 @@ DEFAULT_QUERY = {
         }
     }
 }
+
+# A lookup counterpart ("--query_type lookup"): the same MVP1 treats edge with
+# no knowledge_type, pinned on the chemical side to CHEBI:17721 (nicotianamine)
+# -- ie "what does nicotianamine treat?". This was never in the performance
+# suite, and generate_query() can't build it (MVP1 only pins a disease), so it
+# is written out by hand.
+LOOKUP_QUERY = {
+    "message": {
+        "query_graph": {
+            "nodes": {
+                "ON": {"categories": ["biolink:Disease"]},
+                "SN": {
+                    "categories": ["biolink:ChemicalEntity"],
+                    "ids": ["CHEBI:17721"],
+                },
+            },
+            "edges": {
+                "t_edge": {
+                    "object": "ON",
+                    "subject": "SN",
+                    "predicates": ["biolink:treats"],
+                }
+            },
+        }
+    }
+}
+
+QUERIES = {"inferred": INFERRED_QUERY, "lookup": LOOKUP_QUERY}
 
 
 def run_locust_tests(
@@ -366,11 +399,18 @@ def main():
         ),
     )
     parser.add_argument(
-        "--query",
+        "--query_type",
+        choices=sorted(QUERIES),
+        default="inferred",
         help=(
-            "Path to a TRAPI query JSON file. Defaults to the old performance "
-            "suite's query (inferred treats MONDO:0017314)."
+            "inferred: the old performance suite's query (inferred treats "
+            "MONDO:0017314). lookup: treats lookup on CHEBI:17721 "
+            "(nicotianamine). (default: inferred)"
         ),
+    )
+    parser.add_argument(
+        "--query",
+        help=("Path to a TRAPI query JSON file. Overrides --query_type."),
     )
     parser.add_argument(
         "--run_time",
@@ -395,11 +435,13 @@ def main():
         with open(args.query, encoding="utf-8") as f:
             test_query = json.load(f)
     else:
-        test_query = DEFAULT_QUERY
+        test_query = QUERIES[args.query_type]
+    query_label = "custom" if args.query else args.query_type
 
     peak_users = round(round(args.run_time, -1) * args.spawn_rate)
     print(
-        f"Ramping {args.target} at {args.host} for {args.run_time}s, "
+        f"Ramping {args.target} ({query_label} query) at {args.host} for "
+        f"{args.run_time}s, "
         f"{args.spawn_rate} users/s, up to ~{peak_users} users."
     )
 
@@ -414,7 +456,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     prefix = os.path.join(
         args.output_dir,
-        f"legacy_perf_{args.target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        f"legacy_perf_{args.target}_{query_label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
     )
     summary_html = results.pop("summary_html")
     with open(f"{prefix}_results.json", "w", encoding="utf-8") as f:
