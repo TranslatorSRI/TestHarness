@@ -12,7 +12,7 @@ is ``round(t, -1) * spawn_rate``, running for ``run_time`` seconds. With the
 defaults (1200s, 0.1 users/s) that is 20 minutes, climbing by one user every
 10 seconds to ~120 concurrent users at the end. Every user sends the same TRAPI
 query in a loop: ``--query_type inferred`` (the default) is the one the
-scheduled run used, ``--query_type lookup`` is a lookup on nicotianamine, and
+scheduled run used, ``--query_type lookup`` is an MVP2 lookup on nicotianamine, and
 ``--query`` sends any TRAPI file instead.
 
 Examples::
@@ -98,33 +98,50 @@ INFERRED_QUERY = {
     }
 }
 
-# A lookup counterpart ("--query_type lookup"): the same MVP1 treats edge with
-# no knowledge_type, pinned on the chemical side to CHEBI:17721 (nicotianamine)
-# -- ie "what does nicotianamine treat?". This was never in the performance
-# suite, and generate_query() can't build it (MVP1 only pins a disease), so it
-# is written out by hand.
-LOOKUP_QUERY = {
-    "message": {
-        "query_graph": {
-            "nodes": {
-                "ON": {"categories": ["biolink:Disease"]},
-                "SN": {
-                    "categories": ["biolink:ChemicalEntity"],
-                    "ids": ["CHEBI:17721"],
+
+# A lookup counterpart ("--query_type lookup"): an MVP2 "how does nicotianamine
+# (CHEBI:17721) affect genes?" query with no knowledge_type. This is what
+# generate_query() builds for an MVP2 asset with that chemical as input and no
+# "inferred" setting. The object direction qualifier comes from --direction;
+# the aspect is activity_or_abundance, as in nearly every MVP2 test asset.
+def lookup_query(direction: str) -> Dict:
+    return {
+        "message": {
+            "query_graph": {
+                "nodes": {
+                    "ON": {"categories": ["biolink:Gene"]},
+                    "SN": {
+                        "categories": ["biolink:ChemicalEntity"],
+                        "ids": ["CHEBI:17721"],
+                    },
                 },
-            },
-            "edges": {
-                "t_edge": {
-                    "object": "ON",
-                    "subject": "SN",
-                    "predicates": ["biolink:treats"],
-                }
-            },
+                "edges": {
+                    "t_edge": {
+                        "object": "ON",
+                        "subject": "SN",
+                        "predicates": ["biolink:affects"],
+                        "qualifier_constraints": [
+                            {
+                                "qualifier_set": [
+                                    {
+                                        "qualifier_type_id": "biolink:object_aspect_qualifier",
+                                        "qualifier_value": "activity_or_abundance",
+                                    },
+                                    {
+                                        "qualifier_type_id": "biolink:object_direction_qualifier",
+                                        "qualifier_value": direction,
+                                    },
+                                ]
+                            }
+                        ],
+                    }
+                },
+            }
         }
     }
-}
 
-QUERIES = {"inferred": INFERRED_QUERY, "lookup": LOOKUP_QUERY}
+
+QUERY_TYPES = ("inferred", "lookup")
 
 
 def run_locust_tests(
@@ -400,12 +417,21 @@ def main():
     )
     parser.add_argument(
         "--query_type",
-        choices=sorted(QUERIES),
+        choices=QUERY_TYPES,
         default="inferred",
         help=(
             "inferred: the old performance suite's query (inferred treats "
-            "MONDO:0017314). lookup: treats lookup on CHEBI:17721 "
+            "MONDO:0017314). lookup: MVP2 affects lookup on CHEBI:17721 "
             "(nicotianamine). (default: inferred)"
+        ),
+    )
+    parser.add_argument(
+        "--direction",
+        choices=("increased", "decreased"),
+        default="increased",
+        help=(
+            "Object direction qualifier for the lookup query: how nicotianamine "
+            "affects gene activity or abundance. (default: increased)"
         ),
     )
     parser.add_argument(
@@ -435,8 +461,14 @@ def main():
         with open(args.query, encoding="utf-8") as f:
             test_query = json.load(f)
     else:
-        test_query = QUERIES[args.query_type]
+        test_query = (
+            INFERRED_QUERY
+            if args.query_type == "inferred"
+            else lookup_query(args.direction)
+        )
     query_label = "custom" if args.query else args.query_type
+    if query_label == "lookup":
+        query_label = f"lookup_{args.direction}"
 
     peak_users = round(round(args.run_time, -1) * args.spawn_rate)
     print(
