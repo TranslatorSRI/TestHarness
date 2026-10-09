@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from test_harness.trapi import binding_ids
 from test_harness.utils import AgentStatus, PathfinderReport
 
 
@@ -13,9 +14,8 @@ def pathfinder_pass_fail_analysis(
     found_path_nodes = set()
     unmatched_paths = set()
     for analysis in message["results"][0]["analyses"]:
-        for path_bindings in analysis["path_bindings"].values():
-            for path_binding in path_bindings:
-                path_id = path_binding["id"]
+        for path_binding in analysis["path_bindings"].values():
+            for path_id in binding_ids(path_binding):
                 matching_path_nodes = set()
                 for edge_id in message["auxiliary_graphs"][path_id]["edges"]:
                     edge = message["knowledge_graph"]["edges"][edge_id]

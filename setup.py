@@ -24,7 +24,7 @@ setup(
     package_data={"test_harness": ["test_suites/*.json", "test_suites/README.md"]},
     zip_safe=False,
     license="MIT",
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     entry_points={
         "console_scripts": [
             "test-harness = test_harness.main:cli",

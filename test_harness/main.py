@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import time
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlparse
@@ -25,6 +25,7 @@ from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.slacker import LocalSlacker, Slacker
+from test_harness.trapi import DEFAULT_TRAPI_VERSION, trapi_minor_version
 from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 
 setproctitle("TestHarness")
@@ -351,6 +352,15 @@ def main(args):
     return EXIT_OK
 
 
+def _trapi_version(value: str) -> str:
+    """Accept a TRAPI version only if the harness can write queries in it."""
+    try:
+        trapi_minor_version(value)
+    except ValueError as e:
+        raise ArgumentTypeError(str(e))
+    return value
+
+
 def cli():
     """Parse args and run tests."""
     parser = ArgumentParser(description="Translator SRI Automated Test Harness")
@@ -491,9 +501,13 @@ def cli():
 
     parser.add_argument(
         "--trapi_version",
-        type=str,
-        default="1.6.0",
-        help="TRAPI (SemVer) version assumed for testing (1.5.0, if not given)",
+        type=_trapi_version,
+        default=DEFAULT_TRAPI_VERSION,
+        help=(
+            "TRAPI (SemVer) version to test: queries are written in it and "
+            "only services registered for it are queried. 2.0.x or 1.6.x "
+            f"(default {DEFAULT_TRAPI_VERSION})."
+        ),
     )
 
     parser.add_argument(

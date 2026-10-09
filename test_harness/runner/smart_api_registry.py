@@ -7,11 +7,13 @@ from collections import defaultdict
 
 import httpx
 
+from test_harness.trapi import DEFAULT_TRAPI_VERSION
+
 LOGGER = logging.getLogger(__name__)
 
 
 def retrieve_registry_from_smartapi(
-    target_trapi_version="1.6.0",
+    target_trapi_version=DEFAULT_TRAPI_VERSION,
 ):
     """Returns a dict of smart api service endpoints defined with a dict like
     {
