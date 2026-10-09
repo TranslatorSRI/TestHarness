@@ -68,6 +68,37 @@
   {{ m.status_legend() }}
 </div>
 
+{% if agents %}
+<div class="card">
+  <h2>By agent and expected output</h2>
+  <p class="sub">Each agent's results split by what the test expects of the answer. For NeverShow, passing means the answer stayed out of the results.</p>
+  <div class="scroll">
+  <table class="data grouped">
+    <thead><tr><th>Agent</th><th>Expected output</th><th>Results</th><th class="num">Pass rate</th>
+      {% for s in STATUSES %}<th class="num">{{ STATUS_LABELS[s][1] }}</th>{% endfor %}</tr></thead>
+    {% for agent in agents %}{% set rows = agent_expected_counts.get(agent, []) %}
+    <tbody>
+      {% for expected, c in rows %}
+      <tr>
+        {% if loop.first %}<th scope="rowgroup" rowspan="{{ rows|length }}" class="nowrap group-head">{{ m.agent_head(agent) }}</th>{% endif %}
+        <td class="nowrap">{{ expected or 'Not specified' }}</td>
+        <td style="width:30%">{{ status_bar(c) }}</td>
+        <td class="num">{{ pct(pass_rate(c)) }}</td>
+        {% for s in STATUSES %}<td class="num">
+          {%- if c.get(s) and expected -%}
+            <a href="{{ query_string(request, agent=agent, status=s, expected=expected, page=None) }}#matrix">{{ c.get(s) }}</a>
+          {%- elif c.get(s) -%}{{ c.get(s) }}
+          {%- else -%}<span class="muted">0</span>{%- endif -%}
+        </td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+{% endif %}
+
 {% if run.performance %}
 <div class="card">
   <h2>Performance</h2>

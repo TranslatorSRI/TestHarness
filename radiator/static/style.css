@@ -177,6 +177,13 @@ table.data th {
 table.data td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.data tr:hover td { background: var(--surface-2); }
+/* rows grouped under a heading cell (eg an agent), groups set apart */
+table.grouped tbody + tbody tr:first-child > * { border-top: 1px solid var(--axis); }
+table.grouped .group-head {
+  text-align: left; font-weight: 550; vertical-align: top; padding-top: 8px;
+  border-bottom: 1px solid var(--grid); background: var(--surface);
+  font-size: 14px; color: var(--ink); position: static;
+}
 .scroll { overflow-x: auto; }
 .muted { color: var(--ink-muted); }
 .nowrap { white-space: nowrap; }

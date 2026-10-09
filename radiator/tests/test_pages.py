@@ -483,3 +483,53 @@ def test_runs_list_is_paginated(app, browser):
 
     paged = browser.get("/", params={"env": "ci"}).text
     assert "env=ci&amp;page=2" in paged
+
+
+def test_breakdown_by_agent_and_expected_output(app, browser):
+    payload = _payload(
+        T0,
+        [
+            f.asset(
+                "A1",
+                expected_output="TopAnswer",
+                agents=[f.agent("ars"), f.agent("arax", "FAILED")],
+            ),
+            f.asset(
+                "A2",
+                expected_output="TopAnswer",
+                status="FAILED",
+                agents=[f.agent("ars", "FAILED"), f.agent("arax")],
+            ),
+            f.asset(
+                "A3",
+                expected_output="NeverShow",
+                agents=[f.agent("ars"), f.agent("arax", "NO_RESULTS")],
+            ),
+            f.asset("A4", expected_output="Acceptable", agents=[f.agent("ars")]),
+        ],
+    )
+    _load(app, payload)
+
+    with app.state.sessionmaker() as session:
+        run = queries.get_run(session, payload.run.run_id)
+        counts = queries.agent_expected_counts(run)
+    # expected outputs in their fixed order, per agent
+    assert counts["ars"] == [
+        ("TopAnswer", {"PASSED": 1, "FAILED": 1}),
+        ("Acceptable", {"PASSED": 1}),
+        ("NeverShow", {"PASSED": 1}),
+    ]
+    assert counts["arax"] == [
+        ("TopAnswer", {"FAILED": 1, "PASSED": 1}),
+        ("NeverShow", {"NO_RESULTS": 1}),
+    ]
+
+    page = browser.get(f"/runs/{payload.run.run_id}").text
+    assert "By agent and expected output" in page
+    # a count opens the grid filtered to that agent, status, and expected output
+    assert "agent=arax&amp;status=FAILED&amp;expected=TopAnswer#matrix" in page
+    filtered = browser.get(
+        f"/runs/{payload.run.run_id}",
+        params={"agent": "arax", "status": "FAILED", "expected": "TopAnswer"},
+    ).text
+    assert "A1 name" in filtered and "A2 name" not in filtered

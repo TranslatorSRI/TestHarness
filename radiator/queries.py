@@ -248,6 +248,38 @@ def run_agents(run: Run) -> list[str]:
     return sorted(agents, key=agent_sort_key)
 
 
+# The acceptance tests' expected outputs, best-ranked answer first.
+EXPECTED_OUTPUTS = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
+
+
+def expected_output_sort_key(expected: Optional[str]):
+    if expected in EXPECTED_OUTPUTS:
+        return (0, EXPECTED_OUTPUTS.index(expected), "")
+    # anything else after those, alphabetically; no expected output last
+    return (1 if expected else 2, 0, expected or "")
+
+
+def agent_expected_counts(
+    run: Run,
+) -> dict[str, list[tuple[Optional[str], dict[str, int]]]]:
+    """Each agent's status counts, split by the assets' expected output.
+
+    ``{agent: [(expected_output, {status: n}), ...]}``, expected outputs in
+    the order of EXPECTED_OUTPUTS. An asset without one is under None.
+    """
+    counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    for asset in run.assets:
+        for agent in asset.agents:
+            counts[agent.agent][asset.expected_output][agent.status] += 1
+    return {
+        agent: sorted(
+            ((expected, dict(c)) for expected, c in by_expected.items()),
+            key=lambda item: expected_output_sort_key(item[0]),
+        )
+        for agent, by_expected in counts.items()
+    }
+
+
 def agent_counts(run: Run) -> dict[str, dict[str, int]]:
     counts: dict = defaultdict(lambda: defaultdict(int))
     for asset in run.assets:

@@ -359,6 +359,7 @@ def run_page(
         diff=diff,
         agents=agents,
         agent_counts=queries.agent_counts(run),
+        agent_expected_counts=queries.agent_expected_counts(run),
         overall=overall,
         rate=queries.pass_rate(overall),
         previous_rate=previous_rate,

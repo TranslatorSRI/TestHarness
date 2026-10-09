@@ -50,7 +50,7 @@ deploy/
 - **Runs**: every run, newest first, with its status breakdown, pass rate, and
   duration; filter by suite and environment.
 - **A run**: pass rate against the previous run, regressions and fixes, a
-  per-agent breakdown, and the results grid: every asset against every agent,
+  per-agent breakdown (also split by expected output), and the results grid: every asset against every agent,
   with the rank the expected answer came back at. Filter by status (overall or
   per agent), expected output, or search by name/id/CURIE. Each cell opens its
   pk in ARAX.
