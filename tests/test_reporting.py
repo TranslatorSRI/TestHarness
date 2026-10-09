@@ -92,13 +92,15 @@ def _ara_result(curie, score):
     }
 
 
-def _ars_result(curie, sugeno, rank):
-    """An ARS-shaped result: already scored (sugeno) and ranked by the ARS."""
+def _ars_result(curie, confidence, sugeno=0.5, rank=1):
+    """An ARS-shaped result: scored by the ARS with a confidence (plus the
+    sugeno score and rank, which shouldn't be used)."""
     return {
         "node_bindings": {"n1": [{"id": curie}]},
         "analyses": [{"score": 0.1}],
         "sugeno": sugeno,
         "rank": rank,
+        "ordering_components": {"confidence": confidence},
     }
 
 
@@ -108,15 +110,15 @@ def test_csv_reports_expected_answer_rank_and_score():
     uploaded to the radiator carries."""
     collector = ResultCollector("dev", logger)
     report = TestReport(pks={}, result={}, test_details=None)
-    # ARS found it 2nd with a sugeno score; an ARA found it 3rd with its own
+    # ARS found it 2nd by confidence; an ARA found it 3rd with its own
     # analysis score; another ARA didn't return it at all.
     report.result["ars"] = AgentReport(AgentStatus.SKIPPED, None, None)
     run_acceptance_pass_fail_analysis(
         report.result,
         "ars",
         [
-            _ars_result("MONDO:1", 0.9, 1),
-            _ars_result("CHEBI:2", 0.8, 2),
+            _ars_result("MONDO:1", 0.9),
+            _ars_result("CHEBI:2", 0.8),
         ],
         "CHEBI:2",
         "TopAnswer",
@@ -152,7 +154,7 @@ def test_csv_reports_expected_answer_rank_and_score():
         for suffix in ("_found", "_rank", "_score"):
             assert f"{agent}{suffix}" in header
 
-    # ARS: found, with the sugeno rank/score.
+    # ARS: found, with the confidence rank/score.
     assert row["ars"] == AgentStatus.PASSED.value
     assert row["ars_found"] == "true"
     assert row["ars_rank"] == "2"
@@ -197,6 +199,28 @@ def test_csv_expected_answer_columns_blank_when_no_analysis():
     assert row["ars_rank"] == "" and row["ars_score"] == ""
     assert row["shepherd-aragorn_found"] == ""
     assert row["shepherd-aragorn_rank"] == ""
+
+
+def test_ars_results_ranked_by_confidence():
+    """ARS results are scored by confidence (not sugeno) and ranked by their
+    position once sorted by it, even if they come back out of order."""
+    results = [
+        _ars_result("MONDO:1", 0.2, sugeno=0.9, rank=1),
+        _ars_result("MONDO:3", 0.5, sugeno=0.8, rank=2),
+        _ars_result("CHEBI:2", 0.9, sugeno=0.1, rank=3),
+    ]
+    report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
+    run_acceptance_pass_fail_analysis(report, "ars", results, "CHEBI:2", "Acceptable")
+    # Top 50% after sorting is just CHEBI:2, so it passes.
+    assert report["ars"].status == AgentStatus.PASSED
+    assert report["ars"].actual_output["ars_rank"] == 1
+    assert report["ars"].actual_output["ars_score"] == 0.9
+
+    report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
+    run_acceptance_pass_fail_analysis(report, "ars", results, "MONDO:1", "Acceptable")
+    assert report["ars"].status == AgentStatus.FAILED
+    assert report["ars"].actual_output["ars_rank"] == 3
+    assert report["ars"].actual_output["ars_score"] == 0.2
 
 
 def test_analysis_records_expected_answer_found_flag():
