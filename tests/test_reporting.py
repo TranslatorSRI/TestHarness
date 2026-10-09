@@ -11,6 +11,8 @@ Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
   summary at all, has to reach Slack as a FAIL rather than reading as a pass.
 * Agents that returned no response were written to the CSV but omitted from
   the per-agent JSON stats.
+* A failed ARS query submission (eg a 502) skipped the test for every agent
+  instead of erroring the ARS and skipping only the ARAs.
 """
 
 import json
@@ -31,7 +33,8 @@ from test_harness.performance_test_runner import (
 )
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
-from test_harness.utils import AgentReport, AgentStatus, TestReport
+from test_harness.runner.generate_query import generate_query
+from test_harness.utils import AgentReport, AgentStatus, TestReport, hash_test_asset
 
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
@@ -663,3 +666,70 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
     for label_set in reporter.labels:
         assert {label["key"] for label in label_set} == set(collector.agents)
         assert all(label["value"] == AgentStatus.SKIPPED.value for label in label_set)
+
+
+class _IdentityCuries(dict):
+    def __missing__(self, curie):
+        return curie
+
+
+class _ArsBadGatewayQueryRunner(MockQueryRunner):
+    """Sends every asset's query to an ARS whose submit endpoint 502s."""
+
+    def run_queries(self, test_case):
+        queries = {}
+        for asset in test_case.test_assets:
+            queries[hash_test_asset(asset)] = {
+                "query": generate_query(asset),
+                "responses": {},
+                "pks": {},
+            }
+        self._send_queries([{"url": "http://ars", "infores": "infores:ars"}], queries)
+        return queries, _IdentityCuries()
+
+
+def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
+    """A 502 on ARS query submission is an ARS error: the test and the ARS are
+    marked ERROR, while the ARAs (which never saw the query) are SKIPPED."""
+    httpx_mock.add_response(url="http://ars/ars/api/submit", status_code=502)
+    mocker.patch(
+        "test_harness.run.QueryRunner",
+        return_value=_ArsBadGatewayQueryRunner(logger),
+    )
+
+    collector = ResultCollector("ci", logger)
+    reporter = _RecordingReporter(base_url="http://ir")
+    run_tests(
+        tests=example_test_cases,
+        reporter=reporter,
+        collector=collector,
+        logger=logger,
+        args={"suite": "acceptance", "trapi_version": "1.6.0"},
+    )
+
+    # Nothing was polled after the failed submit.
+    assert all(
+        request.url == "http://ars/ars/api/submit"
+        for request in httpx_mock.get_requests()
+    )
+
+    assert len(reporter.finished) == 3
+    assert all(result == AgentStatus.ERROR.value for _, result in reporter.finished)
+    assert collector.acceptance_report[AgentStatus.ERROR.value] == 3
+    assert collector.acceptance_report[AgentStatus.SKIPPED.value] == 0
+
+    for agent in collector.agents:
+        expected = AgentStatus.ERROR if agent == "ars" else AgentStatus.SKIPPED
+        total = sum(
+            collector.acceptance_stats[agent][query_type][expected.value]
+            for query_type in collector.query_types
+        )
+        assert total == 3, f"{agent} should have 3 {expected.value}"
+
+    assert len(reporter.labels) == 3
+    for label_set in reporter.labels:
+        labels = {label["key"]: label["value"] for label in label_set}
+        assert set(labels) == set(collector.agents)
+        for agent, value in labels.items():
+            expected = AgentStatus.ERROR if agent == "ars" else AgentStatus.SKIPPED
+            assert value == expected.value

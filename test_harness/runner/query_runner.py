@@ -92,8 +92,22 @@ class QueryRunner:
                 self.logger.error(f"Something went wrong: {e}")
 
         if infores == "infores:ars":
-            # handle the ARS polling
             parent_pk = response.get("pk", "")
+            if status_code > 299 or not parent_pk:
+                # The ARS never accepted the query (eg a 502 from submit), so
+                # there's nothing to poll and no ARA ever saw it. Record the
+                # failure against the ARS only; the ARAs are left out and get
+                # reported as skipped.
+                self.logger.error(
+                    f"ARS query submission failed with status code {status_code}."
+                )
+                responses["ars"] = {
+                    "response": response,
+                    "status_code": status_code,
+                    "submission_failed": True,
+                }
+                return query_hash, responses, pks
+            # handle the ARS polling
             ars_responses, pks = self.get_ars_responses(parent_pk, base_url)
             responses.update(ars_responses)
         else:

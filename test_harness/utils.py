@@ -17,7 +17,7 @@ NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
     "ci": "https://nodenorm-es.ci.transltr.io",
     "test": "https://nodenorm-es.test.transltr.io",
-    "prod": "https://nodenorm.transltr.io/1.4",
+    "prod": "https://nodenorm-es.transltr.io",
 }
 
 # The MVP query types, keyed by the test asset predicate that decides which
