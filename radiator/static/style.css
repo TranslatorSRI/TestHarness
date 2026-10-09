@@ -306,7 +306,6 @@ details.table-view[open] summary { margin-bottom: 8px; }
   border: 1px solid color-mix(in srgb, var(--status-failed) 40%, transparent);
   border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 13px;
 }
-.pager { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
 .pager-head, .pager-foot {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 4px 0 8px;
 }

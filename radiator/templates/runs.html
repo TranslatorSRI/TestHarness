@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}Runs{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -19,12 +20,29 @@
       {% for e in options.envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
     </select>
   </label>
+  {# a new filter starts again at page 1, at the same page size #}
+  {% if request.query_params.get('per_page') %}<input type="hidden" name="per_page" value="{{ request.query_params.get('per_page') }}">{% endif %}
   <noscript><button type="submit">Filter</button></noscript>
   {% if suite or env %}<a class="clear" href="/">Clear</a>{% endif %}
 </form>
 
 <div class="card">
   {% if runs %}
+  {% set p = runs_page %}
+  <div class="pager-head">
+    <span class="muted">Showing {{ p.start }}–{{ p.end }} of {{ p.total }} run{{ '' if p.total == 1 else 's' }}, newest first</span>
+    <form method="get" class="per-page">
+      {% if suite %}<input type="hidden" name="suite" value="{{ suite }}">{% endif %}
+      {% if env %}<input type="hidden" name="env" value="{{ env }}">{% endif %}
+      <label>Per page
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in per_page_options %}<option value="{{ n }}" {{ 'selected' if p.per_page == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <noscript><button type="submit">Show</button></noscript>
+    </form>
+    {{ m.pager(request, p) }}
+  </div>
   <div class="scroll">
   <table class="data">
     <thead><tr>
@@ -58,10 +76,12 @@
     </tbody>
   </table>
   </div>
-  <div class="pager">
-    {% if page > 1 %}<a href="{{ query_string(request, page=page - 1) }}">← Newer</a>{% endif %}
-    {% if has_next %}<a href="{{ query_string(request, page=page + 1) }}">Older →</a>{% endif %}
+  {% if p.pages > 1 %}
+  <div class="pager-foot">
+    <span></span>
+    {{ m.pager(request, p) }}
   </div>
+  {% endif %}
   {% else %}
   <p class="empty">No runs yet. They appear here as soon as the harness starts one.</p>
   {% endif %}

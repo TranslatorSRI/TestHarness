@@ -442,3 +442,44 @@ def test_pages_keep_their_filters(app, browser):
     assert _shown(second) == [f"Asset_{i:03d}" for i in range(500, 600, 10)]
     # the filter form keeps the page size, and drops the page
     assert 'type="hidden" name="per_page" value="50"' in page
+
+
+def test_runs_list_is_paginated(app, browser):
+    import re
+
+    _load(
+        app,
+        *[
+            _payload(
+                T0 + timedelta(hours=i), [f.asset()], env="test" if i % 3 == 0 else "ci"
+            )
+            for i in range(60)
+        ],
+    )
+
+    def started(html):
+        return re.findall(r">(2026-09-\d\d \d\d:\d\d) UTC</a>", html)
+
+    first = browser.get("/").text
+    assert "Showing 1–25 of 60 runs, newest first" in first
+    assert "Page 1 of 3" in first
+    # newest first
+    assert started(first)[0] == "2026-09-03 17:00"
+    assert len(started(first)) == 25
+
+    last = browser.get("/", params={"page": 3}).text
+    assert "Showing 51–60 of 60 runs" in last
+    assert started(last)[-1] == "2026-09-01 06:00"
+
+    assert len(started(browser.get("/", params={"per_page": 50}).text)) == 50
+    # no "all" for runs: it falls back to the default
+    assert len(started(browser.get("/", params={"per_page": "all"}).text)) == 25
+
+    filtered = browser.get("/", params={"env": "test", "per_page": 50}).text
+    assert "Showing 1–20 of 20 runs" in filtered
+    assert 'type="hidden" name="per_page" value="50"' in filtered
+    # one page: no pager
+    assert "Page 1 of" not in filtered
+
+    paged = browser.get("/", params={"env": "ci"}).text
+    assert "env=ci&amp;page=2" in paged

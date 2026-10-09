@@ -42,6 +42,10 @@ PK_VIEWER = "https://arax.ci.transltr.io/?r={pk}"
 
 TREND_WINDOWS = [30, 90, 180, 365]
 
+# Page sizes for the runs list. No "all": there can be thousands of runs.
+RUNS_PER_PAGE = [25, 50, 100]
+DEFAULT_RUNS_PER_PAGE = 25
+
 # Page sizes for a run's results grid; "all" shows every asset on one page.
 RESULTS_PER_PAGE = [50, 100, 250]
 DEFAULT_RESULTS_PER_PAGE = 50
@@ -64,32 +68,52 @@ class Page:
         return 1 if self.per_page is None else (self.number - 1) * self.per_page + 1
 
     @property
+    def offset(self) -> int:
+        """How many items come before this page."""
+        return 0 if self.per_page is None else (self.number - 1) * self.per_page
+
+    @property
     def end(self) -> int:
         if self.per_page is None:
             return self.total
         return min(self.number * self.per_page, self.total)
 
 
-def paginate(items: list, page: int, per_page: Optional[str]) -> tuple[list, Page]:
-    """Slice ``items`` to one page. ``per_page`` is one of RESULTS_PER_PAGE
-    or "all"; anything else gets the default. A page past the end shows the
-    last page."""
+def make_page(
+    total: int,
+    page: int,
+    per_page: Optional[str],
+    sizes: list[int],
+    default: int,
+    allow_all: bool = False,
+) -> Page:
+    """Work out which page to show. ``per_page`` is one of ``sizes`` (or
+    "all", when allowed); anything else gets ``default``. A page past the end
+    shows the last page."""
     size: Optional[int]
-    if per_page == "all":
+    if per_page == "all" and allow_all:
         size = None
     else:
         try:
             size = int(per_page)
         except (TypeError, ValueError):
             size = None
-        if size not in RESULTS_PER_PAGE:
-            size = DEFAULT_RESULTS_PER_PAGE
-    total = len(items)
+        if size not in sizes:
+            size = default
     pages = 1 if size is None else max(1, -(-total // size))
-    number = min(max(page, 1), pages)
-    if size is not None:
-        items = items[(number - 1) * size : number * size]
-    return items, Page(number=number, pages=pages, per_page=size, total=total)
+    return Page(
+        number=min(max(page, 1), pages), pages=pages, per_page=size, total=total
+    )
+
+
+def paginate(items: list, page: int, per_page: Optional[str]) -> tuple[list, Page]:
+    """One page of a run's results grid, sliced from all of them."""
+    p = make_page(
+        len(items), page, per_page, RESULTS_PER_PAGE, DEFAULT_RESULTS_PER_PAGE, True
+    )
+    if p.per_page is not None:
+        items = items[p.offset : p.offset + p.per_page]
+    return items, p
 
 
 # --- template helpers ----------------------------------------------------------
@@ -235,14 +259,19 @@ def runs_page(
     suite: Optional[str] = None,
     env: Optional[str] = None,
     page: int = 1,
+    per_page: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
-    per_page = 30
-    page = max(page, 1)
-    runs = queries.list_runs(
-        session, suite=suite, env=env, limit=per_page, offset=(page - 1) * per_page
-    )
     total = queries.count_runs(session, suite=suite, env=env)
+    runs_page = make_page(total, page, per_page, RUNS_PER_PAGE, DEFAULT_RUNS_PER_PAGE)
+    # only this page's runs come out of the database
+    runs = queries.list_runs(
+        session,
+        suite=suite,
+        env=env,
+        limit=runs_page.per_page,
+        offset=runs_page.offset,
+    )
     run_ids = [run.id for run in runs]
     return render(
         request,
@@ -255,8 +284,8 @@ def runs_page(
         options=queries.filter_options(session),
         suite=suite,
         env=env,
-        page=page,
-        has_next=page * per_page < total,
+        runs_page=runs_page,
+        per_page_options=RUNS_PER_PAGE,
         total=total,
     )
 
