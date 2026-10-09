@@ -597,3 +597,49 @@ def test_slack_links_only_to_where_the_run_went(mocker, monkeypatch, tmp_path):
     for message in slacker.messages:
         assert "/test-runs/local" not in message
         assert "View in the new Information Radiator" in message
+
+
+def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPXMock):
+    """A real run can be fewer results than one batch while taking an hour;
+    each test case's results are sent as soon as it finishes."""
+    httpx_mock.add_response(url="http://localhost:8080/query", json=kp_response)
+    httpx_mock.add_response(
+        url="https://nodenorm-es.ci.transltr.io/get_normalized_nodes",
+        json={
+            curie: None
+            for curie in [
+                "MONDO:0010794",
+                "DRUGBANK:DB00313",
+                "MESH:D001463",
+                "CHEBI:18295",
+                "CHEBI:31690",
+                "CL:0000097",
+                "MONDO:0004979",
+                "NCBIGene:3815",
+                "NCBIGene:4254",
+                "PR:000049994",
+            ]
+        },
+    )
+    client = _recording_client()
+    sent = []
+    client.flush = lambda: (
+        sent.append(len(client._pending.results)),
+        client._pending.results.clear(),
+    )
+    collector = MockResultCollector("ci", logger, target="aragorn", radiator=client)
+    run_tests(
+        tests=example_test_cases,
+        reporter=MockReporter(base_url="http://test"),
+        collector=collector,
+        logger=logger,
+        args={
+            "suite": "testing",
+            "trapi_version": "1.6.0",
+            "target_url": "http://localhost:8080",
+            "target": "aragorn",
+        },
+    )
+    # one flush per test case, each carrying that case's assets
+    assert len(sent) == len(example_test_cases)
+    assert sum(sent) == len(client.payload.results) > 0

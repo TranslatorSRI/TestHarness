@@ -399,6 +399,11 @@ class ResultCollector:
             else:
                 self.radiator.add_performance(record)
 
+    def flush(self):
+        """Upload whatever the radiator has buffered."""
+        if self.radiator is not None:
+            self.radiator.flush()
+
     def record_performance_error(
         self,
         test: Union[TestCase, PathfinderTestCase],

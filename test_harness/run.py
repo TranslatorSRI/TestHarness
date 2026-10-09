@@ -454,5 +454,10 @@ def run_tests(
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
 
+        # Send this test case's results to the radiator now rather than when a
+        # batch fills: each case waits minutes on its queries, so a whole run
+        # can be under one batch, and nothing would show until the end.
+        collector.flush()
+
         # delete this big object to help out the garbage collector
         del query_responses
