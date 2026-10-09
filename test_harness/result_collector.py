@@ -53,20 +53,10 @@ class ResultCollector:
         self.has_performance_results = False
         agents = [
             "ars",
-            "aragorn",
-            "arax",
-            "biothings-explorer",
-            "improving-agent",
-            "unsecret-agent",
-            "cqs",
+            "shepherd-aragorn",
+            "shepherd-arax",
+            "shepherd-bte",
         ]
-        if test_env == "dev" or test_env == "ci" or test_env == "test":
-            agents = [
-                "ars",
-                "shepherd-aragorn",
-                "shepherd-arax",
-                "shepherd-bte",
-            ]
         if target is not None:
             target = target.split("infores:")[-1]
             if target != "ars":
