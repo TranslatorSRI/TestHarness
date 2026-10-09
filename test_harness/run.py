@@ -71,7 +71,11 @@ def run_tests(
     target = args.get("target")
     trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
     query_runner = QueryRunner(
-        logger, target_url=target_url, target=target, trapi_version=trapi_version
+        logger,
+        target_url=target_url,
+        target=target,
+        trapi_version=trapi_version,
+        query_parameters=args.get("query_parameters"),
     )
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=trapi_version)

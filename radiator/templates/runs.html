@@ -39,6 +39,7 @@
         <td>{{ run.suite }}
           {% if run.target %}<span class="badge" title="queries sent to {{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
           {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+          {% if run.query_parameters %}<span class="badge" title="Query parameters: {{ params_text(run.query_parameters) }}">parameters</span>{% endif %}
         </td>
         <td>{{ run.env or '–' }}</td>
         {% if pc and not c %}

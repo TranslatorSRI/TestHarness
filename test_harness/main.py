@@ -25,7 +25,12 @@ from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.slacker import LocalSlacker, Slacker
-from test_harness.trapi import DEFAULT_TRAPI_VERSION, trapi_minor_version
+from test_harness.trapi import (
+    DEFAULT_TRAPI_VERSION,
+    parse_query_parameters,
+    trapi_minor_version,
+    validate_query_parameters,
+)
 from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 
 setproctitle("TestHarness")
@@ -165,6 +170,21 @@ def main(args):
     if bool(args.get("target_url")) != bool(args.get("target")):
         logger.error("--target_url and --target must be provided together.")
         return EXIT_COULD_NOT_RUN
+    # Check the query parameters against the TRAPI version now, so a typo
+    # stops the run before any query goes out rather than failing every one.
+    try:
+        args["query_parameters"] = validate_query_parameters(
+            args.get("query_parameters"),
+            args.get("trapi_version") or DEFAULT_TRAPI_VERSION,
+        )
+    except ValueError as e:
+        logger.error(str(e))
+        return EXIT_COULD_NOT_RUN
+    if args["query_parameters"]:
+        logger.info(
+            f"Sending these parameters with every query: "
+            f"{json.dumps(args['query_parameters'])}"
+        )
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -256,10 +276,16 @@ def main(args):
             target=args.get("target"),
             target_url=args.get("target_url"),
             query_type=query_type,
+            query_parameters=args.get("query_parameters"),
             harness_version=harness_version(),
             tests_source=args.get("tests_url") or args.get("tests_dir"),
             started_at=datetime.now().astimezone(),
         )
+    )
+    params_note = (
+        f"\nQuery parameters: `{json.dumps(args['query_parameters'])}`"
+        if args.get("query_parameters")
+        else ""
     )
     # Only link to Zebrunner when the run went there: the local stand-in's
     # "URL" leads nowhere.
@@ -282,7 +308,7 @@ def main(args):
         queried_envs.add(test.test_env)
     slacker.post_notification(
         messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{zebrunner_link}{radiator_link}"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{params_note}{zebrunner_link}{radiator_link}"
         ]
     )
     start_time = time.time()
@@ -350,6 +376,14 @@ def main(args):
 
     logger.info("All tests have completed!")
     return EXIT_OK
+
+
+def _query_parameters(value: str):
+    """Parse --query_parameters / QUERY_PARAMETERS: JSON, or @file."""
+    try:
+        return parse_query_parameters(value)
+    except (ValueError, OSError) as e:
+        raise ArgumentTypeError(str(e))
 
 
 def _trapi_version(value: str) -> str:
@@ -507,6 +541,20 @@ def cli():
             "TRAPI (SemVer) version to test: queries are written in it and "
             "only services registered for it are queried. 2.0.x or 1.6.x "
             f"(default {DEFAULT_TRAPI_VERSION})."
+        ),
+    )
+
+    parser.add_argument(
+        "--query_parameters",
+        type=_query_parameters,
+        default=os.getenv("QUERY_PARAMETERS"),
+        help=(
+            "Parameters sent with every query, as a JSON object or @file, eg "
+            '\'{"timeout": 300, "bypass_cache": true}\'. TRAPI 2.0 queries carry '
+            "them in their parameters object (timeout, log_level, bypass_cache, "
+            "and any a service defines); TRAPI 1.6 queries take only log_level "
+            "and bypass_cache. Defaults to $QUERY_PARAMETERS. Not used by "
+            "performance tests, which send HelmsDeep's own queries."
         ),
     )
 

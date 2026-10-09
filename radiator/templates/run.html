@@ -10,6 +10,7 @@
     <span>Duration {{ duration(run) }}{% if not run.ended_at %} <span class="badge">running</span>{% endif %}</span>
     {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
     {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+    {% if run.query_parameters %}<span title="Sent with every query">query parameters: <span class="mono">{{ params_text(run.query_parameters) }}</span></span>{% endif %}
     {% if run.harness_version %}<span>harness {{ run.harness_version }}</span>{% endif %}
     {% if run.origin == 'zebrunner_import' %}<span class="badge">imported from Zebrunner</span>{% endif %}
   </div>

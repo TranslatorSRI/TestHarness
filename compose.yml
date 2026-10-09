@@ -80,6 +80,8 @@ services:
       RADIATOR_URL: http://radiator:8000
       RADIATOR_PUBLIC_URL: http://localhost:${RADIATOR_PORT:-8000}
       RADIATOR_TOKEN: ${RADIATOR_TOKEN:-local-dev-token}
+      # parameters sent with every query, eg {"timeout": 300}
+      QUERY_PARAMETERS: ${QUERY_PARAMETERS:-}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_TOKEN: ${SLACK_TOKEN:-}
       SLACK_CHANNEL: ${SLACK_CHANNEL:-}

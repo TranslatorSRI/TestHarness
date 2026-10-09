@@ -73,6 +73,7 @@ Everything is configurable from a `.env` file next to `compose.yml`:
 | `RADIATOR_USERNAME` / `RADIATOR_PASSWORD` | `translator` / `radiator` | The login |
 | `RADIATOR_TOKEN` | `local-dev-token` | The API token the harness uploads with |
 | `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
+| `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
 | `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
 
 Then:
@@ -183,6 +184,32 @@ is rejected by 2.0 services), and a Pathfinder query is an ordinary query graph
 with `paths` and no `edges`. Responses are read in either shape — a 2.0
 binding is one object with an `ids` list, a 1.x binding a list of objects each
 with an `id` — since the ARS can return either.
+
+### Sending parameters with every query
+To send the same parameters with every query of a run, such as a longer
+timeout or a request to skip caches, pass them as a JSON object:
+- `test-harness --query_parameters '{"timeout": 300, "bypass_cache": true}' download <suite>`
+
+or keep them in a file and pass `--query_parameters @params.json`. The
+`QUERY_PARAMETERS` environment variable does the same, which is handier in
+`.env` for Docker Compose or in a CronJob; the flag wins if both are set.
+
+Where they go depends on the TRAPI version:
+- **TRAPI 2.0** (the default): in the query's `parameters` object. The
+  standard ones are `timeout` (seconds), `log_level` (`ERROR`, `WARNING`,
+  `INFO` or `DEBUG`) and `bypass_cache`; a service can define its own as well,
+  and those are passed through as given.
+- **TRAPI 1.6** (`--trapi_version 1.6.0`): as top-level fields of the query.
+  1.6 only has `log_level` and `bypass_cache`, so anything else is refused.
+
+They're checked before the run starts: a value of the wrong type, an unknown
+log level, or a parameter the TRAPI version can't carry stops the run with a
+message saying which, instead of failing every query. The run's parameters are
+shown in its Slack message and recorded in the Information Radiator, on the run
+page.
+
+They go to whatever the harness queries (the ARS, or the `--target_url`
+service). Performance tests don't use them: HelmsDeep sends its own queries.
 
 ### Result files
 The acceptance results CSV has a row per test asset, with the asset's name, its

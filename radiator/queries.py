@@ -560,6 +560,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "env": run.env,
         "target": run.target,
         "query_type": run.query_type,
+        "query_parameters": run.query_parameters,
         "harness_version": run.harness_version,
         "origin": run.origin,
         "started_at": run.started_at.isoformat(),

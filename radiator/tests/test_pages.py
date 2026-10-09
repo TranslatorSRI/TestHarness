@@ -368,3 +368,18 @@ def test_dashboard_lines_are_steps():
     assert len(coords) == 5
     for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
         assert x1 == x2 or y1 == y2
+
+
+def test_query_parameters_are_recorded_and_shown(app, api, browser):
+    payload = _payload(
+        T0, [f.asset()], query_parameters={"timeout": 300.0, "bypass_cache": True}
+    )
+    _load(app, payload)
+    run_id = payload.run.run_id
+    assert api.get(f"/api/runs/{run_id}?results=false").json()["query_parameters"] == {
+        "timeout": 300.0,
+        "bypass_cache": True,
+    }
+    page = browser.get(f"/runs/{run_id}").text
+    assert "timeout=300.0 · bypass_cache=true" in page
+    assert 'title="Query parameters: timeout=300.0' in browser.get("/").text

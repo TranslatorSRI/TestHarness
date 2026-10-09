@@ -1,5 +1,6 @@
 """The dashboard's pages. Everything here requires the shared login."""
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -79,6 +80,16 @@ def _counts_text(counts: dict) -> str:
     )
 
 
+def params_text(params: Optional[dict]) -> str:
+    """Query parameters as a compact one-liner, eg ``timeout=300 · bypass_cache=true``."""
+    if not params:
+        return ""
+    return " · ".join(
+        f"{key}={json.dumps(value) if not isinstance(value, str) else value}"
+        for key, value in params.items()
+    )
+
+
 def pct(value: Optional[float], digits: int = 0) -> str:
     return "–" if value is None else f"{value * 100:.{digits}f}%"
 
@@ -147,6 +158,7 @@ def register_template_helpers(templates) -> None:
         status_badge=status_badge,
         status_bar=status_bar,
         pct=pct,
+        params_text=params_text,
         when=when,
         ago=ago,
         duration=duration,

@@ -60,6 +60,9 @@ class RunCreate(BaseModel):
     target: Optional[str] = None
     target_url: Optional[str] = None
     query_type: Optional[str] = None
+    # Parameters sent with every query of the run (TRAPI 2.0's
+    # Query.parameters, eg timeout or bypass_cache), as given.
+    query_parameters: Optional[Dict[str, Any]] = None
     harness_version: Optional[str] = None
     # Where the suite came from: the Tests repo archive URL, or a local dir.
     tests_source: Optional[str] = None

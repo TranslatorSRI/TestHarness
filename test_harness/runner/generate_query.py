@@ -15,7 +15,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestAsset,
 )
 
-from test_harness.trapi import DEFAULT_TRAPI_VERSION, is_trapi_2
+from test_harness.trapi import (
+    DEFAULT_TRAPI_VERSION,
+    apply_query_parameters,
+    is_trapi_2,
+)
 from test_harness.utils import QUERY_TYPE_PREDICATES, get_qualifier_constraints
 
 # Which query node a test asset's input pins, by query type and input
@@ -154,10 +158,20 @@ def _pathfinder_query(
 def generate_query(
     test_asset: Union[TestAsset, PathfinderTestAsset],
     trapi_version: str = DEFAULT_TRAPI_VERSION,
+    query_parameters: Optional[Dict] = None,
 ) -> dict:
-    """Generate a TRAPI query for ``trapi_version`` (2.0.x or 1.6.x)."""
+    """Generate a TRAPI query for ``trapi_version`` (2.0.x or 1.6.x).
+
+    ``query_parameters`` (already checked by ``validate_query_parameters``)
+    go out with the query: under ``parameters`` in TRAPI 2.0, as top-level
+    fields in 1.6.
+    """
     if isinstance(test_asset, PathfinderTestAsset):
-        return _pathfinder_query(test_asset, trapi_version).to_dict()
+        return apply_query_parameters(
+            _pathfinder_query(test_asset, trapi_version).to_dict(),
+            query_parameters,
+            trapi_version,
+        )
 
     query_type = _query_type(test_asset)
     input_node = INPUT_NODES[query_type].get(test_asset.input_category)
@@ -170,7 +184,7 @@ def generate_query(
         query = _one_hop_query_2_0(query_type, test_asset, input_node)
     else:
         query = _one_hop_query_1_6(query_type, test_asset, input_node)
-    return query.to_dict()
+    return apply_query_parameters(query.to_dict(), query_parameters, trapi_version)
 
 
 if __name__ == "__main__":

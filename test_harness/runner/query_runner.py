@@ -35,11 +35,15 @@ class QueryRunner:
         target_url: Optional[str] = None,
         target: Optional[str] = None,
         trapi_version: str = DEFAULT_TRAPI_VERSION,
+        query_parameters: Optional[Dict] = None,
     ):
         """Initialize the Query Runner.
 
         ``trapi_version`` is the TRAPI version queries are written in, and the
         version of the services picked from the SmartAPI registry.
+
+        ``query_parameters`` go out with every query (see
+        ``trapi.validate_query_parameters``).
 
         ``target_url`` and ``target`` override the target service specified in
         the tests themselves: when given, every query is sent to ``target_url``
@@ -57,6 +61,7 @@ class QueryRunner:
         # fail on an unsupported version now, not once per generated query
         trapi_minor_version(trapi_version)
         self.trapi_version = trapi_version
+        self.query_parameters = query_parameters
 
     def retrieve_registry(self, trapi_version: str):
         if self.target_url is not None:
@@ -334,7 +339,9 @@ class QueryRunner:
             if asset_hash not in queries:
                 # generate query
                 try:
-                    query = generate_query(test_asset, self.trapi_version)
+                    query = generate_query(
+                        test_asset, self.trapi_version, self.query_parameters
+                    )
                     queries[asset_hash] = {
                         "query": query,
                         "responses": {},

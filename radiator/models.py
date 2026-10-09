@@ -46,6 +46,7 @@ class Run(Base):
     target: Mapped[Optional[str]] = mapped_column(String(255))
     target_url: Mapped[Optional[str]] = mapped_column(Text)
     query_type: Mapped[Optional[str]] = mapped_column(String(32))
+    query_parameters: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType)
     harness_version: Mapped[Optional[str]] = mapped_column(String(64))
     tests_source: Mapped[Optional[str]] = mapped_column(Text)
     origin: Mapped[str] = mapped_column(String(32), default="harness")
