@@ -73,7 +73,7 @@ POLL_INTERVAL_SECONDS = 5
 
 # The query the scheduled run actually sent ("--query_type inferred"): NCATSTranslator/Tests
 # test_suites/performance_tests.json, TestCase_87 / Asset_668 -- an inferred
-# MVP1 "what treats Ehlers-Danlos Syndrome?" (MONDO:0017314) against the CI ARS.
+# MVP1 "what treats Ehlers-Danlos Syndrome?" (MONDO:0020066) against the CI ARS.
 # That suite only ever had this one asset, so it is the whole curie list. This
 # is generate_query()'s output for that asset.
 INFERRED_QUERY = {
@@ -82,7 +82,7 @@ INFERRED_QUERY = {
             "nodes": {
                 "ON": {
                     "categories": ["biolink:Disease"],
-                    "ids": ["MONDO:0017314"],
+                    "ids": ["MONDO:0020066"],
                 },
                 "SN": {"categories": ["biolink:ChemicalEntity"]},
             },
