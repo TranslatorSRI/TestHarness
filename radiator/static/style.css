@@ -307,6 +307,22 @@ details.table-view[open] summary { margin-bottom: 8px; }
   border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; font-size: 13px;
 }
 .pager { display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px; }
+.pager-head, .pager-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 4px 0 8px;
+}
+.pager-head .per-page { margin-left: auto; }
+.pager-head .per-page label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.pager-head .per-page select {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 3px 6px;
+}
+.pager-foot { justify-content: space-between; margin-top: 8px; }
+.pager-foot .sub { margin: 0; }
+.pager-bar { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.pager-bar a, .pager-bar span { padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+.pager-bar a:hover { background: var(--surface-2); text-decoration: none; }
+.pager-bar .disabled { color: var(--ink-muted); opacity: 0.6; }
+.pager-bar .where { color: var(--ink-2); }
 
 .narrow-only { display: none; }
 @media (max-width: 640px) {

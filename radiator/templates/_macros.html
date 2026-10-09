@@ -19,3 +19,24 @@
   {% for s in STATUSES %}<span class="key">{{ status_badge(s) }}</span>{% endfor %}
 </div>
 {%- endmacro %}
+
+{# Moving between pages of a list, keeping every other parameter (filters). #}
+{% macro pager(request, p, anchor='') -%}
+{% if p.pages > 1 %}
+<nav class="pager-bar" aria-label="Pages">
+  {% if p.number > 1 %}
+    <a href="{{ query_string(request, page=None) }}{{ anchor }}" aria-label="First page">« First</a>
+    <a href="{{ query_string(request, page=p.number - 1 if p.number > 2 else None) }}{{ anchor }}" rel="prev">‹ Previous</a>
+  {% else %}
+    <span class="disabled">« First</span><span class="disabled">‹ Previous</span>
+  {% endif %}
+  <span class="where">Page {{ p.number }} of {{ p.pages }}</span>
+  {% if p.number < p.pages %}
+    <a href="{{ query_string(request, page=p.number + 1) }}{{ anchor }}" rel="next">Next ›</a>
+    <a href="{{ query_string(request, page=p.pages) }}{{ anchor }}" aria-label="Last page">Last »</a>
+  {% else %}
+    <span class="disabled">Next ›</span><span class="disabled">Last »</span>
+  {% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

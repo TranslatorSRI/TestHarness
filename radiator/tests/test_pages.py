@@ -383,3 +383,62 @@ def test_query_parameters_are_recorded_and_shown(app, api, browser):
     page = browser.get(f"/runs/{run_id}").text
     assert "timeout=300.0 · bypass_cache=true" in page
     assert 'title="Query parameters: timeout=300.0' in browser.get("/").text
+
+
+def _big_run(app, n=120):
+    """A run whose assets sort as Asset_000, Asset_001, ...; every 10th fails."""
+    results = [
+        f.asset(
+            f"Asset_{i:03d}",
+            status="FAILED" if i % 10 == 0 else "PASSED",
+            agents=[f.agent("ars", "FAILED" if i % 10 == 0 else "PASSED")],
+        )
+        for i in range(n)
+    ]
+    payload = _payload(T0, results)
+    _load(app, payload)
+    return f"/runs/{payload.run.run_id}"
+
+
+def _shown(html):
+    import re
+
+    return re.findall(r">(Asset_\d{3}) name<", html)
+
+
+def test_results_are_paginated(app, browser):
+    url = _big_run(app)
+
+    first = browser.get(url).text
+    assert _shown(first) == [f"Asset_{i:03d}" for i in range(50)]
+    assert "Showing 1–50 of 120 assets" in first
+    assert "Page 1 of 3" in first
+
+    last = browser.get(url, params={"page": 3}).text
+    assert _shown(last) == [f"Asset_{i:03d}" for i in range(100, 120)]
+    assert "Showing 101–120 of 120 assets" in last
+
+    # past the end: the last page, not an empty one
+    assert _shown(browser.get(url, params={"page": 99}).text) == _shown(last)
+
+    bigger = browser.get(url, params={"per_page": 100}).text
+    assert len(_shown(bigger)) == 100 and "Page 1 of 2" in bigger
+    everything = browser.get(url, params={"per_page": "all"}).text
+    assert len(_shown(everything)) == 120 and "Page 1 of" not in everything
+    # an unknown page size falls back to the default
+    assert len(_shown(browser.get(url, params={"per_page": 7}).text)) == 50
+
+
+def test_pages_keep_their_filters(app, browser):
+    url = _big_run(app, n=600)
+    page = browser.get(url, params={"status": "FAILED", "per_page": 50}).text
+    # 60 failures over two pages, and the links carry the filter
+    assert "Showing 1–50 of 60 assets matching" in page
+    assert len(_shown(page)) == 50
+    assert "status=FAILED&amp;per_page=50&amp;page=2#matrix" in page
+    second = browser.get(
+        url, params={"status": "FAILED", "per_page": 50, "page": 2}
+    ).text
+    assert _shown(second) == [f"Asset_{i:03d}" for i in range(500, 600, 10)]
+    # the filter form keeps the page size, and drops the page
+    assert 'type="hidden" name="per_page" value="50"' in page

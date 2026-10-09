@@ -59,7 +59,7 @@
         <td class="nowrap">{{ m.agent_head(agent) }}</td>
         <td style="width:35%">{{ status_bar(c) }}</td>
         <td class="num">{{ pct(pass_rate(c)) }}</td>
-        {% for s in STATUSES %}<td class="num">{% if c.get(s) %}<a href="{{ query_string(request, agent=agent, status=s) }}#matrix">{{ c.get(s) }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}
+        {% for s in STATUSES %}<td class="num">{% if c.get(s) %}<a href="{{ query_string(request, agent=agent, status=s, page=None) }}#matrix">{{ c.get(s) }}</a>{% else %}<span class="muted">0</span>{% endif %}</td>{% endfor %}
       </tr>
     {% endfor %}
     </tbody>
@@ -114,10 +114,27 @@
       </select>
     </label>
     <label>Search <input name="q" value="{{ filters.q or '' }}" placeholder="name, id or CURIE"></label>
+    {# a new filter starts again at page 1, at the same page size #}
+    {% if request.query_params.get('per_page') %}<input type="hidden" name="per_page" value="{{ request.query_params.get('per_page') }}">{% endif %}
     <button type="submit">Filter</button>
     {% if filtered %}<a class="clear" href="/runs/{{ run.id }}#matrix">Clear</a>{% endif %}
   </form>
   {% if assets %}
+  {% set p = results_page %}
+  <div class="pager-head">
+    <span class="muted">Showing {{ p.start }}–{{ p.end }} of {{ p.total }} asset{{ '' if p.total == 1 else 's' }}{% if filtered %} matching{% endif %}</span>
+    <form method="get" action="#matrix" class="per-page">
+      {% for key in ['status', 'agent', 'expected', 'q'] %}{% if filters[key] %}<input type="hidden" name="{{ key }}" value="{{ filters[key] }}">{% endif %}{% endfor %}
+      <label>Per page
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in per_page_options %}<option value="{{ n }}" {{ 'selected' if p.per_page == n }}>{{ n }}</option>{% endfor %}
+          <option value="all" {{ 'selected' if p.per_page is none }}>All</option>
+        </select>
+      </label>
+      <noscript><button type="submit">Show</button></noscript>
+    </form>
+    {{ m.pager(request, p, '#matrix') }}
+  </div>
   <div class="scroll">
   <table class="data matrix">
     <thead><tr>
@@ -140,7 +157,10 @@
     </tbody>
   </table>
   </div>
-  <p class="sub" style="margin-top:8px">{{ assets|length }} of {{ run.assets|length }} assets. Hover a cell for details; click it to open the response.</p>
+  <div class="pager-foot">
+    <p class="sub">{% if filtered %}{{ p.total }} of {{ run.assets|length }} assets match. {% endif %}Hover a cell for details; click it to open the response.</p>
+    {{ m.pager(request, p, '#matrix') }}
+  </div>
   {% else %}
   <p class="empty">No assets match these filters.</p>
   {% endif %}

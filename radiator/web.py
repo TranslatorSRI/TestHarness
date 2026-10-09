@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlencode
@@ -40,6 +41,55 @@ STATUS_LABELS = {
 PK_VIEWER = "https://arax.ci.transltr.io/?r={pk}"
 
 TREND_WINDOWS = [30, 90, 180, 365]
+
+# Page sizes for a run's results grid; "all" shows every asset on one page.
+RESULTS_PER_PAGE = [50, 100, 250]
+DEFAULT_RESULTS_PER_PAGE = 50
+
+
+@dataclass
+class Page:
+    """One page of a list, and where it sits in the whole."""
+
+    number: int
+    pages: int
+    per_page: Optional[int]  # None: everything on one page
+    total: int
+
+    @property
+    def start(self) -> int:
+        """1-based position of the first item shown (0 when there are none)."""
+        if not self.total:
+            return 0
+        return 1 if self.per_page is None else (self.number - 1) * self.per_page + 1
+
+    @property
+    def end(self) -> int:
+        if self.per_page is None:
+            return self.total
+        return min(self.number * self.per_page, self.total)
+
+
+def paginate(items: list, page: int, per_page: Optional[str]) -> tuple[list, Page]:
+    """Slice ``items`` to one page. ``per_page`` is one of RESULTS_PER_PAGE
+    or "all"; anything else gets the default. A page past the end shows the
+    last page."""
+    size: Optional[int]
+    if per_page == "all":
+        size = None
+    else:
+        try:
+            size = int(per_page)
+        except (TypeError, ValueError):
+            size = None
+        if size not in RESULTS_PER_PAGE:
+            size = DEFAULT_RESULTS_PER_PAGE
+    total = len(items)
+    pages = 1 if size is None else max(1, -(-total // size))
+    number = min(max(page, 1), pages)
+    if size is not None:
+        items = items[(number - 1) * size : number * size]
+    return items, Page(number=number, pages=pages, per_page=size, total=total)
 
 
 # --- template helpers ----------------------------------------------------------
@@ -226,6 +276,8 @@ def run_page(
     agent: Optional[str] = None,
     expected: Optional[str] = None,
     q: Optional[str] = None,
+    page: int = 1,
+    per_page: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
     run = _load_run(session, run_id)
@@ -267,6 +319,7 @@ def run_page(
                 )
             ).lower()
         ]
+    shown, results_page = paginate(assets, page, per_page)
 
     return render(
         request,
@@ -280,7 +333,9 @@ def run_page(
         overall=overall,
         rate=queries.pass_rate(overall),
         previous_rate=previous_rate,
-        assets=assets,
+        assets=shown,
+        results_page=results_page,
+        per_page_options=RESULTS_PER_PAGE,
         expected_outputs=sorted(
             {a.expected_output for a in run.assets if a.expected_output}
         ),
