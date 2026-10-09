@@ -151,7 +151,7 @@ class ResultCollector:
 
         Returns (found, rank, score), pulled from the same ``actual_output``
         that goes into the report JSON uploaded to the radiator. ARS results
-        are scored/ranked by the ARS itself (sugeno), ARA results by their own
+        are scored/ranked by the ARS confidence score, ARA results by their own
         analyses, so whichever of the two the analysis filled in is used.
         Cells are left blank when the agent never got far enough for the
         question to have an answer (eg it errored out).
