@@ -60,20 +60,10 @@ class ResultCollector:
         self.has_performance_results = False
         agents = [
             "ars",
-            "aragorn",
-            "arax",
-            "biothings-explorer",
-            "improving-agent",
-            "unsecret-agent",
-            "cqs",
+            "shepherd-aragorn",
+            "shepherd-arax",
+            "shepherd-bte",
         ]
-        if test_env == "dev" or test_env == "ci" or test_env == "test":
-            agents = [
-                "ars",
-                "shepherd-aragorn",
-                "shepherd-arax",
-                "shepherd-bte",
-            ]
         if target is not None:
             target = target.split("infores:")[-1]
             if target != "ars":
@@ -281,7 +271,7 @@ class ResultCollector:
 
         Returns (found, rank, score), pulled from the same ``actual_output``
         that goes into the report JSON uploaded to the radiator. ARS results
-        are scored/ranked by the ARS itself (sugeno), ARA results by their own
+        are scored/ranked by the ARS confidence score, ARA results by their own
         analyses, so whichever of the two the analysis filled in is used.
         Each is None when the agent never got far enough for the question to
         have an answer (eg it errored out).

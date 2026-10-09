@@ -151,7 +151,14 @@ def run_tests(
                         agent_report = report.result[agent]
                         record_response_meta(agent_report, response)
                         try:
-                            if response["status_code"] > 299:
+                            if response.get("submission_failed"):
+                                # The query never made it into the component
+                                # (eg the ARS returned a 502 on submit). That's
+                                # an error on the component, not a test failure.
+                                agent_report.status = AgentStatus.ERROR
+                                agent_report.message = f"Query submission failed with status code: {response['status_code']}"
+                                continue
+                            elif response["status_code"] > 299:
                                 agent_report.status = AgentStatus.FAILED
                                 if str(response["status_code"]) == "598":
                                     agent_report.message = "Timed out"
@@ -231,6 +238,11 @@ def run_tests(
                     # all to SKIPPED so the radiator labels, CSV, and JSON stats
                     # stay consistent with the skipped test-level status.
                     force_skipped = status == AgentStatus.SKIPPED
+                    submission_failed = bool(
+                        test_query["responses"]
+                        .get(status_agent, {})
+                        .get("submission_failed")
+                    )
 
                     collector.collect_acceptance_result(
                         test,
@@ -248,6 +260,20 @@ def run_tests(
                                 {
                                     "key": ara,
                                     "value": AgentStatus.SKIPPED.value,
+                                }
+                                for ara in collector.agents
+                            ]
+                        elif submission_failed:
+                            # The query never reached the ARAs, so they're
+                            # skipped while the status agent shows the error.
+                            labels = [
+                                {
+                                    "key": ara,
+                                    "value": (
+                                        report.result[ara].status.value
+                                        if ara in report.result
+                                        else AgentStatus.SKIPPED.value
+                                    ),
                                 }
                                 for ara in collector.agents
                             ]
