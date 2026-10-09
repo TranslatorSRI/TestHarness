@@ -260,6 +260,13 @@ def main(args):
             started_at=datetime.now().astimezone(),
         )
     )
+    # Only link to Zebrunner when the run went there: the local stand-in's
+    # "URL" leads nowhere.
+    zebrunner_link = (
+        ""
+        if reporter.is_local
+        else f"\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+    )
     radiator_link = (
         f"\n<{radiator.run_url}|View in the new Information Radiator>"
         if radiator.run_url
@@ -274,7 +281,7 @@ def main(args):
         queried_envs.add(test.test_env)
     slacker.post_notification(
         messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>{radiator_link}"
+            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{zebrunner_link}{radiator_link}"
         ]
     )
     start_time = time.time()
@@ -293,11 +300,11 @@ def main(args):
 
     slacker.post_notification(
         messages=[
-            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}\n<{ir_url}|View in the Information Radiator>{radiator_link}\n{result_summary}""".format(
+            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}{zebrunner_link}{radiator_link}\n{result_summary}""".format(
                 test_suite=args["suite"],
                 duration=round(time.time() - start_time, 2),
                 envs=(",").join(list(queried_envs)),
-                ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
+                zebrunner_link=zebrunner_link,
                 radiator_link=radiator_link,
                 result_summary=radiator_headline(radiator, collector)
                 + collector.dump_result_summary(),

@@ -123,9 +123,11 @@ Reading, with the token or a session:
 3. **The radiator.** Adapt and apply `deploy/radiator.example.yaml` (image tag,
    hostname, TLS secret, ingress class). Migrations run in an init container on
    every start; they're a no-op when the schema is current.
-4. **The harness.** Add `RADIATOR_URL` (the radiator's **public** URL: it's
-   also the link posted to Slack) and `RADIATOR_TOKEN` (the same api-token) to
-   `test-harness-secrets`; `deploy/cronjob.example.yaml` already reads them.
+4. **The harness.** Add `RADIATOR_URL` and `RADIATOR_TOKEN` (the same
+   api-token) to `test-harness-secrets`; `deploy/cronjob.example.yaml` already
+   reads them. `RADIATOR_URL` can be the in-cluster service
+   (`http://radiator`); then also set `RADIATOR_PUBLIC_URL` to the address
+   people open, since the links in Slack are built from it.
    The harness then reports to both Zebrunner and the radiator.
 5. **History.** Run the Zebrunner import (below).
 6. **Cutover**, after a couple of weeks of both: point people at the new UI,
@@ -168,6 +170,11 @@ The endpoints were read from Zebrunner's published images
 whether it works against yours.
 
 ## Developing
+
+The quickest way to a running radiator is Docker Compose, from the repo root:
+`docker compose up --build` (see the README's
+[Trying it out with Docker Compose](../README.md#trying-it-out-with-docker-compose)).
+To work on the radiator's code itself, without Docker:
 
 ```
 # a Postgres to develop against, then:

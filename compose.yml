@@ -1,6 +1,70 @@
-version: '3.7'
+# Try the harness and the new Information Radiator together, locally:
+#
+#   docker compose up --build
+#
+# starts Postgres, migrates it, starts the radiator on http://localhost:8000,
+# then runs a test suite that reports to it. When the run finishes the
+# harness exits; the radiator keeps running. Log in with RADIATOR_USERNAME /
+# RADIATOR_PASSWORD (translator / radiator unless set in .env).
+#
+# This reports to the new radiator only, never to Zebrunner: the harness gets
+# no ZE_* settings, whatever is in your environment. Slack is off unless the
+# SLACK_* settings are in .env. The defaults below are for local use only.
+
+x-radiator-env: &radiator-env
+  RADIATOR_DATABASE_URL: postgresql+psycopg://radiator:radiator@radiator-db:5432/radiator
+  RADIATOR_API_TOKEN: ${RADIATOR_TOKEN:-local-dev-token}
+  RADIATOR_USERNAME: ${RADIATOR_USERNAME:-translator}
+  RADIATOR_PASSWORD: ${RADIATOR_PASSWORD:-radiator}
+  RADIATOR_SESSION_SECRET: ${RADIATOR_SESSION_SECRET:-local-dev-session-secret}
+  # plain http on localhost
+  RADIATOR_SECURE_COOKIES: "false"
 
 services:
+  radiator-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: radiator
+      POSTGRES_PASSWORD: radiator
+      POSTGRES_DB: radiator
+    volumes:
+      - radiator-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "radiator"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  # brings the schema up to date, then exits
+  radiator-migrate:
+    image: testharness-radiator
+    build:
+      context: .
+      dockerfile: radiator/Dockerfile
+    command: alembic -c radiator/alembic.ini upgrade head
+    environment: *radiator-env
+    depends_on:
+      radiator-db:
+        condition: service_healthy
+
+  radiator:
+    image: testharness-radiator
+    environment: *radiator-env
+    ports:
+      - "${RADIATOR_PORT:-8000}:8000"
+    depends_on:
+      radiator-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
   harness:
     image: test-harness
     container_name: test-harness
@@ -8,12 +72,21 @@ services:
       context: .
     volumes:
       - ./logs:/app/logs
-    command: test-harness download sprint_4_tests
+    # A small local suite by default; set HARNESS_ARGS in .env to run another,
+    # eg HARNESS_ARGS="download sprint_4_tests". It still queries the real
+    # Translator services, so expect a run to take a few minutes.
+    command: test-harness ${HARNESS_ARGS:-load local_acceptance}
     environment:
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
-      SLACK_TOKEN: ${SLACK_TOKEN}
-      SLACK_CHANNEL: ${SLACK_CHANNEL}
-      ZE_BASE_URL: ${ZE_BASE_URL}
-      ZE_REFRESH_TOKEN: ${ZE_REFRESH_TOKEN}
-      RADIATOR_URL: ${RADIATOR_URL}
-      RADIATOR_TOKEN: ${RADIATOR_TOKEN}
+      RADIATOR_URL: http://radiator:8000
+      RADIATOR_PUBLIC_URL: http://localhost:${RADIATOR_PORT:-8000}
+      RADIATOR_TOKEN: ${RADIATOR_TOKEN:-local-dev-token}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_TOKEN: ${SLACK_TOKEN:-}
+      SLACK_CHANNEL: ${SLACK_CHANNEL:-}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      radiator:
+        condition: service_healthy
+
+volumes:
+  radiator-db:

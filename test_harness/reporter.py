@@ -18,6 +18,9 @@ from translator_testing_model.datamodel.pydanticmodel import (
 class Reporter:
     """Reports tests and statuses to the Information Radiator."""
 
+    # True for the stand-in that reports nowhere
+    is_local = False
+
     def __init__(
         self,
         base_url=None,
@@ -263,6 +266,8 @@ class LocalReporter(Reporter):
     the Reporter interface but hands out sequential ids and logs instead of
     uploading, so the rest of the harness is oblivious to the difference.
     """
+
+    is_local = True
 
     def __init__(
         self,

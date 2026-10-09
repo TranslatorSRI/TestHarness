@@ -125,6 +125,10 @@ spec:
                 - name: RADIATOR_TOKEN
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: radiator-token, optional: true}
+                # Uploads can go to the in-cluster service; links people
+                # click (in Slack) need the radiator's public address.
+                - name: RADIATOR_PUBLIC_URL
+                  value: https://radiator.example.org
 
               resources:
                 # The load generator is the workload here: locust drives up to

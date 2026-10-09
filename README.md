@@ -42,28 +42,82 @@ isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
 ### The new Information Radiator
-A replacement for the Zebrunner-based Information Radiator is being built in
-this repo (see [`docs/information-radiator.md`](docs/information-radiator.md)).
-Until it takes over, the harness reports to both. The new one gets structured
-results instead of labels and log lines: for each test asset, every agent's
-status, whether the expected answer was found and its rank/score, the number
-of results, the HTTP status, and (for direct queries) the response time.
+A replacement for the Zebrunner-based Information Radiator lives in this repo,
+in `radiator/` (full details in
+[`docs/information-radiator.md`](docs/information-radiator.md)). It gets
+structured results instead of labels and log lines: for each test asset, every
+agent's status, whether the expected answer was found and its rank/score, the
+number of results, the HTTP status, and (for direct queries) the response
+time. Its dashboard shows each run, what changed since the previous one, each
+asset's history, agent pass-rate trends, and performance trends.
 
-It's configured with `RADIATOR_URL` and `RADIATOR_TOKEN` (or `--radiator_url` /
-`--radiator_token`). Results are posted in batches; an unreachable radiator
-never fails a run. Whenever a run isn't uploaded (`--local`, the radiator isn't
-configured, or an upload failed) it's saved to `--output_dir` as
-`radiator_<run id>.json` instead, which can be uploaded later:
+#### Trying it out with Docker Compose
+With Docker installed, from the repo root:
+- `docker compose up --build`
+
+That starts Postgres, sets up its tables, starts the radiator, and then runs a
+small test suite (`local_acceptance`) that reports to it. When the suite
+finishes, the harness container exits; the radiator keeps running at
+<http://localhost:8000>. Log in with `translator` / `radiator`.
+
+The suite queries the real Translator services (the ARS on ci), so the run
+needs internet access and takes a few minutes. It reports to the new radiator
+only: the harness gets no Zebrunner settings, even if they're in your
+environment.
+
+Everything is configurable from a `.env` file next to `compose.yml`:
+
+| Setting | Default | |
+| --- | --- | --- |
+| `HARNESS_ARGS` | `load local_acceptance` | What the harness runs, eg `download sprint_4_tests`, or `--query_type MVP1 download sprint_4_tests` |
+| `RADIATOR_USERNAME` / `RADIATOR_PASSWORD` | `translator` / `radiator` | The login |
+| `RADIATOR_TOKEN` | `local-dev-token` | The API token the harness uploads with |
+| `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
+| `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
+
+Then:
+- **Run another suite** against the same radiator, without restarting it:
+  `docker compose run --rm harness test-harness download sprint_4_tests`
+- **See the dashboard with made-up history** instead (eg to look around without
+  waiting for real runs): `docker compose run --rm radiator python -m radiator.demo`.
+  Don't do this in a radiator you'll keep: the demo runs mix in with real ones.
+- **Stop it**: `docker compose down` keeps the results (in the `radiator-db`
+  volume) for next time; `docker compose down -v` wipes them.
+
+If the harness exits with `Permission denied: '/app/logs/harness.log'` (a Linux
+host where `./logs` isn't writable by the container's user), run
+`chmod a+w logs` (and remove `logs/harness.log` if it exists and isn't
+yours), then `docker compose up` again.
+
+#### Reporting to a radiator from the harness
+Point the harness at a radiator with `RADIATOR_URL` and `RADIATOR_TOKEN` (or
+`--radiator_url` / `--radiator_token`). If people open the radiator at a
+different address than the harness uploads to (eg an in-cluster service name),
+set `RADIATOR_PUBLIC_URL` for the links in the logs and Slack. Until the new
+radiator takes over, the harness reports to it alongside Zebrunner, if that's
+configured too.
+
+Results are posted in batches; an unreachable radiator never fails a run.
+Whenever a run isn't uploaded (`--local`, the radiator isn't configured, or an
+upload failed) it's saved to `--output_dir` as `radiator_<run id>.json`
+instead, which can be uploaded later:
 - `test-harness-radiator push test_results/radiator_<run id>.json`
+
+Uploads are idempotent, so pushing a run that partly made it is safe. The
+radiator never depends on Zebrunner or Slack: if either fails, the run still
+reaches the radiator (or is saved for it).
 
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass
 rate, regressions, and fixes, charted per agent; for performance runs, each
 service's max sustainable concurrency and checkpoint verdict.
 
-Uploads are idempotent, so pushing a run that partly made it is safe. The
-radiator never depends on Zebrunner or Slack: if either fails, the run still
-reaches the radiator (or is saved for it).
+#### Deploying it
+To run it for real, in the same Kubernetes namespace as the harness, follow
+[Deploying](docs/information-radiator.md#deploying): a database, a secret, the
+manifests in `deploy/`, and two settings for the harness. To bring over the
+history from Zebrunner, see
+[Importing from Zebrunner](docs/information-radiator.md#importing-from-zebrunner).
 
 ### Running local test files
 `test-harness download <suite>` fetches the suites from

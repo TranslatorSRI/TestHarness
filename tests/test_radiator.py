@@ -243,6 +243,17 @@ def test_run_tests_records_response_metadata(httpx_mock: HTTPXMock):
         assert aragorn.response_time_s is not None
 
 
+def test_links_use_the_public_url(monkeypatch):
+    """Uploads go to RADIATOR_URL; links people click use RADIATOR_PUBLIC_URL."""
+    monkeypatch.setenv("RADIATOR_PUBLIC_URL", "http://localhost:8000/")
+    client = RadiatorClient(base_url="http://radiator:8000", token="tok")
+    run = _run()
+    client.payload = RunPayload(run=run)
+    assert client.base_url == "http://radiator:8000"
+    assert client.run_url == f"http://localhost:8000/runs/{run.run_id}"
+    assert client.diff_url == f"http://localhost:8000/runs/{run.run_id}/diff"
+
+
 def test_client_needs_url_and_token():
     assert not RadiatorClient.is_configured()
     assert not RadiatorClient.is_configured(base_url=BASE)
@@ -576,3 +587,13 @@ def test_performance_line_variants():
         first
         == "ars: max sustainable concurrency 12.0 (unsupported, see stage warnings)"
     )
+
+
+def test_slack_links_only_to_where_the_run_went(mocker, monkeypatch, tmp_path):
+    """Without Zebrunner, the report links to the new radiator only."""
+    slacker = _main_with_slack(
+        mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}
+    )
+    for message in slacker.messages:
+        assert "/test-runs/local" not in message
+        assert "View in the new Information Radiator" in message

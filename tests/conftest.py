@@ -16,6 +16,7 @@ def isolate_radiator(monkeypatch, tmp_path):
     """
     monkeypatch.delenv("RADIATOR_URL", raising=False)
     monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    monkeypatch.delenv("RADIATOR_PUBLIC_URL", raising=False)
     save = RadiatorClient.save
 
     def save_to_tmp(self, output_dir, prefix=""):

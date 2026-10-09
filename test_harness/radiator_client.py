@@ -40,6 +40,7 @@ class RadiatorClient:
         base_url: Optional[str] = None,
         token: Optional[str] = None,
         enabled: bool = True,
+        public_url: Optional[str] = None,
         batch_size: int = 50,
         logger: logging.Logger = logging.getLogger(__name__),
     ):
@@ -47,8 +48,16 @@ class RadiatorClient:
 
         With ``enabled=False``, or without a URL and token, nothing is sent:
         the client only records, which is what ``--local`` runs want.
+
+        ``public_url`` (or RADIATOR_PUBLIC_URL) is where people open the
+        radiator, for the links the harness logs and posts to Slack, when it
+        differs from where the harness uploads to: eg ``http://radiator:8000``
+        inside docker compose, but ``http://localhost:8000`` in a browser.
         """
         self.base_url = (base_url or os.getenv("RADIATOR_URL") or "").rstrip("/")
+        self.public_url = (
+            public_url or os.getenv("RADIATOR_PUBLIC_URL") or self.base_url
+        ).rstrip("/")
         self.token = token or os.getenv("RADIATOR_TOKEN")
         self.enabled = enabled and bool(self.base_url and self.token)
         self.batch_size = batch_size
@@ -74,7 +83,7 @@ class RadiatorClient:
         """Link to the run in the radiator UI, once a run is open."""
         if not self.enabled or self.payload is None:
             return None
-        return f"{self.base_url}/runs/{self.payload.run.run_id}"
+        return f"{self.public_url}/runs/{self.payload.run.run_id}"
 
     def start_run(self, run: RunCreate):
         """Open a run."""
