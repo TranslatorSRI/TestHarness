@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Weekly{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Weekly test status</h1>
+  <div class="meta">
+    <span>{{ digest.since.strftime('%b %-d') }} – {{ digest.until.strftime('%b %-d') }}</span>
+    <span>Each environment's latest full runs, against the run before</span>
+    <span><a href="?week_of={{ previous_week }}">← previous week</a>{% if next_week %} · <a href="?week_of={{ next_week }}">next week →</a>{% endif %}</span>
+  </div>
+</div>
+
+<div class="card">
+  {% if digest.envs %}
+  <div class="scroll">
+  <table class="data weekly">
+    <thead><tr>
+      <th>Environment</th>
+      {% for kind in kinds %}<th>{{ kind_labels[kind] }}</th>{% endfor %}
+      <th class="num">Flags</th>
+    </tr></thead>
+    <tbody>
+    {% for env in digest.envs %}
+      <tr>
+        <td class="env-name">
+          {{ (env.env or 'no environment')|upper }}
+          {% for cid in env.cycle_ids %}<div class="sub"><a href="/cycles/{{ cid }}">run cycle</a></div>{% endfor %}
+        </td>
+        {% for kind in kinds %}{% set rows = env.cell(kind) %}
+        <td>
+          {% for row in rows %}
+          <div class="entry">
+            <div>{{ verdict_chip(row.verdict) }}</div>
+            <div class="headline">
+              {% if row.perf %}<span class="who">{{ row.perf.helmsdeep_target or row.perf.host }}</span>{% endif %}
+              <a href="/runs/{{ row.run.id }}" class="value">{{ row.value_text }}</a>
+              <span class="change">{{ row.change_text }}</span>
+            </div>
+            <div class="sub">{{ row.detail_text }} · #{{ row.run.number }}, {{ row.run.started_at.strftime('%a %b %-d') }}{% if row.previous_run and row.perf is none %} · <a href="/runs/{{ row.run.id }}/diff">what changed</a>{% endif %}</div>
+          </div>
+          {% else %}<span class="muted">not run this week</span>{% endfor %}
+        </td>
+        {% endfor %}
+        <td class="num">{% if env.flags %}<a href="#flags-{{ env.env or 'none' }}">⚑ {{ env.flags|length }}</a>{% else %}<span class="muted">–</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">No finished runs in this week.</p>
+  {% endif %}
+</div>
+
+{% for env in digest.envs if env.flags %}
+<div class="card" id="flags-{{ env.env or 'none' }}">
+  <h2>Flags · {{ (env.env or 'no environment')|upper }}</h2>
+  <p class="sub">Oddities against the previous run: results gone, new errors, slower responses, the expected answer ranked much lower while still passing, and performance drops.</p>
+  <ul class="flags">
+    {% for flag in env.flags %}<li><a href="/runs/{{ flag.run_id }}">{{ flag.text }}</a></li>{% endfor %}
+  </ul>
+</div>
+{% endfor %}
+
+<div class="card">
+  <h2>Recent run cycles</h2>
+  <p class="sub">Acceptance, pathfinder and performance, back to back in one environment.</p>
+  {% if recent %}
+  <table class="data">
+    <thead><tr><th>Started</th><th>Environment</th></tr></thead>
+    <tbody>
+    {% for cid, env, started in recent %}
+      <tr><td><a href="/cycles/{{ cid }}">{{ when(started) }}</a></td><td>{{ env or '–' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No run cycles yet. See <code>test-harness-cycle</code> in the README.</p>
+  {% endif %}
+</div>
+{% endblock %}

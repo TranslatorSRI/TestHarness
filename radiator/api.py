@@ -1,13 +1,14 @@
 """The JSON API: ingest for the harness, and a small read API for scripts."""
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 import radiator_schema as schema
 from radiator import grid as run_grid
-from radiator import history_png, ingest, queries
+from radiator import board_png, cycles, history_png, ingest, queries
 from radiator.auth import require_token, require_token_or_login
 from radiator.models import Run
 
@@ -175,3 +176,64 @@ def get_run_grid_png(
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+def _png(data: bytes) -> Response:
+    return Response(
+        data, media_type="image/png", headers={"Cache-Control": "private, max-age=300"}
+    )
+
+
+@read_router.get("/cycles")
+def list_cycles(limit: int = 20, session: Session = Depends(get_session)):
+    """The latest run cycles, newest first."""
+    return [
+        {"cycle_id": str(cycle_id), "env": env, "started_at": started.isoformat()}
+        for cycle_id, env, started in cycles.recent_cycles(
+            session, limit=min(max(limit, 1), 200)
+        )
+    ]
+
+
+def _cycle_or_404(session: Session, cycle_id: uuid.UUID) -> cycles.Cycle:
+    cycle = cycles.get_cycle(session, cycle_id)
+    if cycle is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such cycle")
+    return cycle
+
+
+@read_router.get("/cycles/{cycle_id}")
+def get_cycle(cycle_id: uuid.UUID, session: Session = Depends(get_session)):
+    """A run cycle's board: each test against its previous run, with the
+    regressions and fixes by agent, and flags. For the Slack report."""
+    return cycles.cycle_json(_cycle_or_404(session, cycle_id))
+
+
+@read_router.get("/cycles/{cycle_id}/board.png")
+def get_cycle_board_png(cycle_id: uuid.UUID, session: Session = Depends(get_session)):
+    """The cycle's board as a PNG (for Slack)."""
+    return _png(board_png.board_png(_cycle_or_404(session, cycle_id)))
+
+
+def _digest(session: Session, days: int, until: datetime | None) -> cycles.Digest:
+    return cycles.digest(session, until=until, days=min(max(days, 1), 31))
+
+
+@read_router.get("/digest")
+def get_digest(
+    days: int = 7,
+    until: datetime | None = None,
+    session: Session = Depends(get_session),
+):
+    """Every environment's latest runs of each test over the last ``days``."""
+    return cycles.digest_json(_digest(session, days, until))
+
+
+@read_router.get("/digest.png")
+def get_digest_png(
+    days: int = 7,
+    until: datetime | None = None,
+    session: Session = Depends(get_session),
+):
+    """The weekly digest as a PNG (for Slack)."""
+    return _png(board_png.digest_png(_digest(session, days, until)))

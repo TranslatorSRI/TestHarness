@@ -31,6 +31,9 @@ setup(
             # Runs one suite against several services in turn, so a single
             # scheduled Job can sweep the ARS and each ARA sequentially.
             "test-harness-sweep = test_harness.sweep:cli",
+            # Acceptance, then pathfinder, then performance in one
+            # environment, and the radiator's board for the whole cycle.
+            "test-harness-cycle = test_harness.cycle:cli",
             # Uploads a run the harness saved instead of sending to the
             # Information Radiator (--local, or the radiator was unreachable).
             "test-harness-radiator = test_harness.radiator_client:cli",

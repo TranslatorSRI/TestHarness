@@ -72,6 +72,11 @@ class RunCreate(BaseModel):
     origin: Literal["harness", "zebrunner_import"] = "harness"
     # The run's id in the system it came from, for imported runs.
     origin_ref: Optional[str] = None
+    # Set when the run is one step of a run cycle (``test-harness-cycle``):
+    # acceptance, pathfinder and performance run back to back in one
+    # environment. The cycle's runs share this id, and the radiator reports
+    # on them together.
+    cycle_id: Optional[UUID] = None
 
 
 class AgentResult(BaseModel):

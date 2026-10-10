@@ -12,7 +12,7 @@ from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from setproctitle import setproctitle
 
@@ -53,6 +53,13 @@ def url_type(arg):
     if all((url.scheme, url.netloc)):
         return arg
     raise TypeError("Invalid URL")
+
+
+def uuid_type(arg):
+    try:
+        return UUID(arg)
+    except ValueError:
+        raise ArgumentTypeError(f"Not a UUID: {arg!r}")
 
 
 def harness_version():
@@ -129,18 +136,6 @@ def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
     the report stands without them."""
     charts = []
     if collector.has_acceptance_results:
-        run = radiator.payload.run if radiator.payload else None
-        # the grid shows full runs only: one against an override target, or
-        # of a single query type, wouldn't be on it
-        if run is not None and not run.target and not run.query_type:
-            charts.append(
-                (
-                    radiator.grid_png,
-                    "run_grid.png",
-                    "Acceptance run grid",
-                    f"Acceptance runs of {suite} by environment, up to this one",
-                )
-            )
         charts.append(
             (
                 radiator.history_png,
@@ -289,6 +284,7 @@ def main(args):
             target_url=args.get("target_url"),
             query_type=query_type,
             query_parameters=args.get("query_parameters"),
+            cycle_id=args.get("cycle_id"),
             harness_version=harness_version(),
             tests_source=args.get("tests_url") or args.get("tests_dir"),
             started_at=datetime.now().astimezone(),
@@ -527,6 +523,16 @@ def cli():
             "treats disease queries, MVP2 for the chemical affects gene "
             "queries. Every test in the suite is run if this isn't given. "
             "Mainly useful for local evaluation runs."
+        ),
+    )
+
+    parser.add_argument(
+        "--cycle_id",
+        type=uuid_type,
+        help=(
+            "Mark the run as one step of a run cycle, whose runs share this "
+            "id (a UUID). test-harness-cycle sets it; there's no need to pass "
+            "it by hand."
         ),
     )
 

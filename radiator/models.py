@@ -61,6 +61,8 @@ class Run(Base):
     tests_source: Mapped[Optional[str]] = mapped_column(Text)
     origin: Mapped[str] = mapped_column(String(32), default="harness")
     origin_ref: Mapped[Optional[str]] = mapped_column(String(255))
+    # the runs of one run cycle share this (see radiator_schema.RunCreate)
+    cycle_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     counts: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)

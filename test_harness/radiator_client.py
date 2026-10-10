@@ -163,12 +163,6 @@ class RadiatorClient:
         res = self._read("history.png", params={"runs": runs})
         return res.content if res is not None else None
 
-    def grid_png(self, days: int = 35) -> Optional[bytes]:
-        """The acceptance run grid for this run's suite, every environment over
-        the last ``days`` days up to this run (marked NEW), as a PNG, or None."""
-        res = self._read("grid.png", params={"days": days})
-        return res.content if res is not None else None
-
     def performance_png(self, runs: int = 30) -> Optional[bytes]:
         """Each of the run's services' max sustainable concurrency up to this
         run, as a PNG, or None."""
@@ -182,14 +176,49 @@ class RadiatorClient:
             return None
         if self.payload.finish is None:
             return None
-        url = f"{self.base_url}/api/runs/{self.payload.run.run_id}/{what}"
+        return self._get(
+            f"/api/runs/{self.payload.run.run_id}/{what}", params, f"the run's {what}"
+        )
+
+    # --- run cycles and the weekly digest ------------------------------------
+
+    def cycle_url(self, cycle_id) -> Optional[str]:
+        return f"{self.public_url}/cycles/{cycle_id}" if self.enabled else None
+
+    @property
+    def weekly_url(self) -> Optional[str]:
+        return f"{self.public_url}/weekly" if self.enabled else None
+
+    def cycle(self, cycle_id) -> Optional[dict]:
+        """A run cycle's board (each test against its previous run, changes by
+        agent, flags), or None if it isn't available."""
+        res = self._get(f"/api/cycles/{cycle_id}", what="the run cycle")
+        return res.json() if res is not None else None
+
+    def cycle_board_png(self, cycle_id) -> Optional[bytes]:
+        res = self._get(f"/api/cycles/{cycle_id}/board.png", what="the cycle board")
+        return res.content if res is not None else None
+
+    def digest(self, days: int = 7) -> Optional[dict]:
+        """Every environment's latest runs over the last ``days``, or None."""
+        res = self._get("/api/digest", {"days": days}, "the weekly digest")
+        return res.json() if res is not None else None
+
+    def digest_png(self, days: int = 7) -> Optional[bytes]:
+        res = self._get("/api/digest.png", {"days": days}, "the weekly digest")
+        return res.content if res is not None else None
+
+    def _get(self, path: str, params: Optional[dict] = None, what: str = "it"):
+        """GET from the read API. Best effort: never raises."""
+        if not self.enabled:
+            return None
         try:
-            res = self._http().get(url, params=params)
+            res = self._http().get(f"{self.base_url}{path}", params=params)
             res.raise_for_status()
             return res
         except Exception as e:
             self.logger.warning(
-                f"Couldn't get the run's {what} from the Information Radiator: {e}"
+                f"Couldn't get {what} from the Information Radiator: {e}"
             )
             return None
 
@@ -244,6 +273,21 @@ def cli():
         help="Upload a run saved by the harness (radiator_<run id>.json)",
     )
     push_parser.add_argument("files", nargs="+", help="Saved run payload(s)")
+    digest_parser = subparsers.add_parser(
+        "digest",
+        help=(
+            "Post the weekly digest to Slack: every environment's latest runs "
+            "of each test, with flags (needs the SLACK_* settings)"
+        ),
+    )
+    digest_parser.add_argument(
+        "--days", type=int, default=7, help="How far back to look (default 7)"
+    )
+    digest_parser.add_argument(
+        "--output_dir",
+        default="test_results",
+        help="Where to save the digest if Slack isn't configured",
+    )
     parser.add_argument("--radiator_url", help="Defaults to $RADIATOR_URL")
     parser.add_argument("--radiator_token", help="Defaults to $RADIATOR_TOKEN")
     args = parser.parse_args()
@@ -253,6 +297,12 @@ def cli():
     if not RadiatorClient.is_configured(args.radiator_url, args.radiator_token):
         logger.error("Set RADIATOR_URL and RADIATOR_TOKEN (or pass the flags).")
         sys.exit(1)
+
+    if args.command == "digest":
+        from test_harness.cycle import digest_cli
+
+        client = RadiatorClient(args.radiator_url, args.radiator_token, logger=logger)
+        sys.exit(digest_cli(client, args.days, args.output_dir, logger))
 
     failed = 0
     for path in args.files:

@@ -80,6 +80,10 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 Then:
 - **Run another suite** against the same radiator, without restarting it:
   `docker compose run --rm harness test-harness download sprint_4_tests`
+- **Run a cycle** (acceptance, then pathfinder, then performance) and get its
+  board: `docker compose run --rm harness test-harness-cycle --download
+  --acceptance sprint_4_tests --pathfinder pathfinder_tests` (see
+  [Run cycles](#run-cycles-and-the-weekly-digest)).
 - **See the dashboard with made-up history** instead (eg to look around without
   waiting for real runs): `docker compose run --rm radiator python -m radiator.demo`.
   Don't do this in a radiator you'll keep: the demo runs mix in with real ones.
@@ -112,13 +116,15 @@ reaches the radiator (or is saved for it).
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass
 rate, regressions, and fixes, charted per agent; for performance runs, each
-service's max sustainable concurrency and checkpoint verdict. A full
-acceptance run (no `--target`, no `--query_type`) also gets the run grid: the
-suite's runs in every environment, with this one marked NEW, colored by
-whether the pass rate went up, down, or held. The same grid is on the
-dashboard under **Run grid**. The `dev` environment is shown greyed out as
-excluded; set `RADIATOR_EXCLUDED_ENVS` on the radiator (comma-separated) to
-change which.
+service's max sustainable concurrency and checkpoint verdict. Runs of a
+[run cycle](#run-cycles-and-the-weekly-digest) also get the cycle's board when
+the cycle finishes, and the radiator's **Weekly** page and Monday digest cover
+every environment.
+
+The dashboard's **Run grid** page shows a suite's runs in every environment
+over time, colored by whether the pass rate went up, down, or held. The `dev`
+environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
+on the radiator (comma-separated) to change which.
 
 #### Deploying it
 To run it for real, in the same Kubernetes namespace as the harness, follow
@@ -370,6 +376,49 @@ Budget the time before you schedule it: with `--performance_profile mixed` a
 four-service sweep is roughly 70 min for the ARS plus 61 min per ARA (~4.2
 hours); the single-class default profile is ~58 + ~35 × 3 (~2.7 hours). Nothing
 overlaps, by design.
+
+### Run cycles and the weekly digest
+A run cycle is a weekly look at one environment: acceptance, then pathfinder,
+then a HelmsDeep performance run against that environment's ARS, one after
+another so they never load the services at the same time (about 2 hours with
+the `mixed` profile). The intended schedule is one environment a day: dev on
+Monday, ci on Tuesday, test on Wednesday, prod on Thursday.
+
+```
+test-harness-cycle --download \
+    --acceptance sprint_4_tests --pathfinder pathfinder_tests \
+    --performance performance_tests \
+    --performance_target ars=https://ars.ci.transltr.io \
+    --performance_profile mixed \
+    -- --log_level INFO
+```
+
+Each step is an ordinary harness run with its usual Slack report. Leave out any
+step you don't want; anything after `--` goes to every step (eg
+`--query_parameters`). When the last step finishes, the cycle posts the
+Information Radiator's **board**: each test against its previous run in that
+environment (pass rate or max concurrency, the change, regressions and fixes),
+with a verdict of *Regressed*, *Improved*, *Mixed* or *Steady*, the regressions
+and fixes by agent, and **flags** for oddities a pass rate hides:
+
+- an agent returned no results on 3+ assets that had results last run;
+- an agent errored on 3+ assets that didn't error last run;
+- an agent's median response time at least doubled, and by 5s or more;
+- the expected answer fell 30+ places while still passing;
+- the ARS's max sustainable concurrency fell by 25% or more, its run failed, or
+  it missed checkpoints it passed last run.
+
+The cycle needs `RADIATOR_URL`/`RADIATOR_TOKEN` for the board (without them,
+the steps still run and report). Its exit status works like the sweep's.
+[`deploy/cycle.example.yaml`](deploy/cycle.example.yaml) is the CronJob, with
+the schedule for each environment.
+
+Every Monday morning, `test-harness-radiator digest` posts the **weekly digest**:
+each environment's latest runs of acceptance, pathfinder and performance over
+the past week, against the run before, with their flags. It reads from the
+radiator only, so it's quick; [`deploy/digest.example.yaml`](deploy/digest.example.yaml)
+schedules it. The same view is the radiator's **Weekly** page, with a page per
+cycle.
 
 ### Overriding the target service
 Tests specify which component to run against (`ars`, `ara`, ...), and the

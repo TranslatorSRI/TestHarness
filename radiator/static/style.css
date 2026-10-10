@@ -25,6 +25,13 @@
   --status-skipped: #d6d5ce;
   --grid-base: #898781;
   --grid-excl: #b5b3ab;
+  /* verdicts: status colors, always shown with their word */
+  --v-regressed: #d03b3b;
+  --v-mixed: #eda100;
+  --v-improved: #0ca30c;
+  --v-steady: #898781;
+  --v-first: #2a78d6;
+  --v-nodata: #52514e;
 
   --agent-1: #2a78d6;
   --agent-2: #eb6834;
@@ -55,6 +62,12 @@
     --status-skipped: #4a4a46;
     --grid-base: #9a9890;
     --grid-excl: #5c5b57;
+    --v-regressed: #e66767;
+    --v-mixed: #c98500;
+    --v-improved: #0ca30c;
+    --v-steady: #9a9890;
+    --v-first: #3987e5;
+    --v-nodata: #c3c2b7;
 
     --agent-1: #3987e5;
     --agent-2: #d95926;
@@ -380,3 +393,31 @@ details.table-view[open] summary { margin-bottom: 8px; }
 .grid-key { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
 .grid-legend { margin: 0 0 10px; }
 .run-grid a, .run-grid a:hover { text-decoration: none; }
+
+/* --- run cycles and the weekly digest --------------------------------------- */
+
+.verdict { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+.verdict .vdot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.v-regressed .vdot { background: var(--v-regressed); }
+.v-mixed .vdot { background: var(--v-mixed); }
+.v-improved .vdot { background: var(--v-improved); }
+.v-steady .vdot { background: var(--v-steady); }
+.v-first .vdot { background: var(--v-first); }
+.v-nodata .vdot { background: var(--v-nodata); }
+
+.spark { display: block; overflow: visible; }
+.spark-line { fill: none; stroke: var(--ink-2); stroke-width: 1.6; stroke-linejoin: miter; }
+.spark-dot { fill: var(--ink-2); stroke: var(--surface); stroke-width: 1.2; }
+.spark-now { fill: var(--ink); stroke: var(--surface); stroke-width: 2; }
+
+table.board td, table.weekly td { vertical-align: top; }
+table.board .big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+table.board .sub, table.weekly .sub { color: var(--ink-muted); font-size: 12px; margin: 2px 0 0; }
+table.weekly .env-name { font-size: 15px; font-weight: 650; text-align: left; white-space: nowrap; }
+table.weekly .entry + .entry { margin-top: 10px; }
+table.weekly .headline { margin-top: 2px; white-space: nowrap; }
+table.weekly .value { font-size: 18px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+table.weekly .who { font-weight: 600; margin-right: 4px; }
+table.weekly .change { color: var(--ink-2); margin-left: 6px; }
+ul.flags { margin: 0; padding-left: 18px; }
+ul.flags li { margin: 4px 0; }

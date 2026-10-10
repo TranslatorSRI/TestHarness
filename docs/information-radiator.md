@@ -37,16 +37,26 @@ radiator/
   queries.py, web.py      the dashboard's queries and pages
   templates/, static/     server-rendered HTML, CSS, a small hover script
   charts.py               server-side SVG charts
+  cycles.py, board_png.py run cycles: the board, flags, the weekly digest
   zebrunner_import.py     the history import
   demo.py                 made-up data for development
 deploy/
   radiator.example.yaml           Deployment (+ migration init container), Service, Ingress
   radiator-postgres.example.yaml  a small in-namespace Postgres, if you need one
   radiator-import.example.yaml    one-off Job for the Zebrunner import
+  cycle.example.yaml              weekly run cycle CronJob, one per environment
+  digest.example.yaml             Monday digest CronJob
 ```
 
 ## The dashboard
 
+- **Weekly**: each environment's latest full runs of acceptance, pathfinder
+  and performance over a week, against the run before, with a verdict
+  (regressed, improved, mixed, steady) and the flags; step back a week at a
+  time. Links to each run cycle.
+- **A run cycle**: the board for one environment's cycle (each test against
+  its previous run, with a step line of its last 8 runs), the flags, and the
+  regressions and fixes by agent.
 - **Runs**: every run, newest first, with its status breakdown, pass rate, and
   duration; filter by suite and environment.
 - **A run**: pass rate against the previous run, regressions and fixes, a
@@ -84,9 +94,6 @@ this run is posted under it:
 
 - **Acceptance runs:** pass rate and its change, regressions, fixes, and a link
   to what changed; the chart is each agent's pass rate over the last 30 runs.
-- **Full acceptance runs** also get the run grid, posted first: the suite's
-  runs in every environment up to this one, which is marked NEW. It shows at
-  most 10 runs per environment and at least the last 7 days.
 - **Performance runs:** for each service, its max sustainable concurrency and
   its change since the service's previous run, and the checkpoint verdict; the
   chart is that concurrency over the service's last 30 runs, with missed
@@ -96,9 +103,40 @@ this run is posted under it:
 
 The charts use step lines: a run's value holds until the next run, so every rise
 and drop shows plainly (the dashboard's trend charts do the same). The radiator
-draws them (`grid.png`, `history.png`, `performance.png`); the harness fetches them with its
+draws them (`history.png`, `performance.png`); the harness fetches them with its
 token and uploads them, since Slack can't reach pages behind the login. Without
 the radiator, or if it can't be reached, the report is what it always was.
+
+### Run cycles and the weekly digest
+
+`test-harness-cycle` runs acceptance, pathfinder and performance in one
+environment and marks their runs with a shared `cycle_id`. When it finishes, it
+posts the cycle's board (`/api/cycles/{id}/board.png`) and a message with each
+test's headline, the regressions and fixes by agent, and the flags. The
+digest, `test-harness-radiator digest`, posts `/api/digest.png` and the same
+kind of message for every environment. See the README's
+[Run cycles](../README.md#run-cycles-and-the-weekly-digest) for the command and
+the flags.
+
+How the board is worked out (`radiator/cycles.py`):
+
+- **Which test a run is**: a run with performance results is performance; one
+  whose results are all pathfinder assets is pathfinder; anything else is
+  acceptance.
+- **Compared with what**: each run against the previous finished run of its
+  series (same suite, environment, target override and query type), which is
+  last week's cycle in practice. Performance compares per service.
+- **Verdict**: acceptance and pathfinder by regressions against fixes (agent
+  results that went from passing to not, or back): more regressions is
+  *Regressed*, more fixes *Improved*, an equal number *Mixed*, none *Steady*.
+  Performance by max sustainable concurrency: down 10% or more (or newly
+  missed checkpoints) is *Regressed*, up 10% or more *Improved*.
+- **Flags**: thresholds are at the top of `cycles.py`, to tune as we learn
+  what's noise.
+- **The digest** takes each environment's latest full run of each suite over
+  the week (no `--query_type`; acceptance and pathfinder without a target
+  override) and each performance target's latest run, whether or not a cycle
+  ran them.
 
 ## API
 
@@ -123,7 +161,12 @@ Reading, with the token or a session:
 | `GET /api/runs?suite=&env=&limit=` | runs, newest first |
 | `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
-| `GET /api/runs/{run_id}/grid.png?days=35` | the run grid posted to Slack, up to this run |
+| `GET /api/runs/{run_id}/grid.png?days=35` | the run grid for this run's suite, up to this run |
+| `GET /api/cycles?limit=20` | the latest run cycles |
+| `GET /api/cycles/{cycle_id}` | a cycle's board: each test against its previous run, changes by agent, flags |
+| `GET /api/cycles/{cycle_id}/board.png` | the board posted to Slack |
+| `GET /api/digest?days=7&until=` | every environment's latest runs over the week |
+| `GET /api/digest.png?days=7&until=` | the digest posted to Slack |
 | `GET /api/runs/{run_id}/history.png?runs=30` | the pass-rate chart posted to Slack |
 | `GET /api/runs/{run_id}/performance.png?runs=30` | the concurrency chart posted to Slack |
 

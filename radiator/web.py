@@ -3,7 +3,7 @@
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
-from radiator import charts, queries
+from radiator import charts, cycles, queries
 from radiator import grid as run_grid
 from radiator.api import get_session
 from radiator.auth import is_logged_in
@@ -641,4 +641,102 @@ def grid_page(
         windows=GRID_WINDOWS,
         excluded=request.app.state.settings.excluded_envs,
         trend_labels=run_grid.TREND_LABELS,
+    )
+
+
+# --- run cycles and the weekly digest ----------------------------------------
+
+
+def sparkline(
+    values: list, pct: bool = True, width: int = 140, height: int = 30
+) -> Markup:
+    """A small step line of a test's last runs; this run is the dark dot."""
+    points = [(i, v) for i, v in enumerate(values) if v is not None]
+    if not points:
+        return Markup('<span class="muted">–</span>')
+    lo, hi = min(v for _, v in points), max(v for _, v in points)
+    floor = 0.10 if pct else max(hi * 0.2, 1.0)
+    if hi - lo < floor:
+        mid = (hi + lo) / 2
+        lo, hi = mid - floor / 2, mid + floor / 2
+    n = max(len(values), 2)
+
+    def px(i):
+        return 4 + i * (width - 8) / (n - 1)
+
+    def py(v):
+        return height - 4 - (v - lo) / (hi - lo) * (height - 8)
+
+    path = []
+    for k, (i, v) in enumerate(points):
+        if k == 0:
+            path.append(f"M{px(i):.1f},{py(v):.1f}")
+        else:
+            path.append(f"H{px(i):.1f}V{py(v):.1f}")
+    dots = "".join(
+        f'<circle cx="{px(i):.1f}" cy="{py(v):.1f}" r="2.2" class="spark-dot"/>'
+        for i, v in points[:-1]
+    )
+    i, v = points[-1]
+    return Markup(
+        f'<svg class="spark" viewBox="0 0 {width} {height}" width="{width}" '
+        f'height="{height}" role="img" aria-label="last {len(values)} runs">'
+        f'<path d="{" ".join(path)}" class="spark-line"/>{dots}'
+        f'<circle cx="{px(i):.1f}" cy="{py(v):.1f}" r="4" class="spark-now"/></svg>'
+    )
+
+
+def verdict_chip(verdict: str) -> Markup:
+    return Markup(
+        f'<span class="verdict v-{verdict}"><span class="vdot" aria-hidden="true">'
+        f"</span>{escape(cycles.VERDICT_LABELS[verdict])}</span>"
+    )
+
+
+@router.get("/cycles/{cycle_id}", response_class=HTMLResponse)
+def cycle_page(
+    request: Request, cycle_id: uuid.UUID, session: Session = Depends(get_session)
+):
+    cycle = cycles.get_cycle(session, cycle_id)
+    if cycle is None:
+        raise HTTPException(404, "No such cycle")
+    return render(
+        request,
+        "cycle.html",
+        nav="weekly",
+        cycle=cycle,
+        sparkline=sparkline,
+        verdict_chip=verdict_chip,
+        history_runs=cycles.HISTORY_RUNS,
+    )
+
+
+@router.get("/weekly", response_class=HTMLResponse)
+def weekly_page(
+    request: Request,
+    week_of: Optional[date] = None,
+    session: Session = Depends(get_session),
+):
+    """The digest for the 7 days ending ``week_of`` (today by default)."""
+    today = datetime.now(timezone.utc).date()
+    end_day = min(week_of or today, today)
+    until = (
+        datetime.now(timezone.utc)
+        if end_day == today
+        else datetime.combine(end_day, time.max, tzinfo=timezone.utc)
+    )
+    digest = cycles.digest(session, until=until, days=7)
+    return render(
+        request,
+        "weekly.html",
+        nav="weekly",
+        digest=digest,
+        kinds=cycles.KINDS,
+        kind_labels=cycles.KIND_LABELS,
+        verdict_chip=verdict_chip,
+        recent=cycles.recent_cycles(session, limit=12),
+        previous_week=(end_day - timedelta(days=7)).isoformat(),
+        next_week=(
+            (end_day + timedelta(days=7)).isoformat() if end_day < today else None
+        ),
     )

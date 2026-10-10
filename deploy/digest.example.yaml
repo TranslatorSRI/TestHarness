@@ -1,0 +1,47 @@
+# Example CronJob for the weekly digest: every Monday morning, one Slack post
+# with each environment's latest runs of acceptance, pathfinder and
+# performance over the past week, each against the run before, and the flags.
+#
+# It only reads from the Information Radiator, so it's quick and light.
+# The image tag and secret names are placeholders.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-harness-weekly-digest
+spec:
+  schedule: "52 8 * * 1"            # Monday, 08:52
+  timeZone: "America/New_York"      # requires Kubernetes >= 1.27
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest
+              image: ghcr.io/translatorsri/testharness:latest
+              imagePullPolicy: IfNotPresent
+              command: ["test-harness-radiator", "digest"]
+              env:
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-webhook-url}
+                - name: SLACK_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-token}
+                - name: SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-channel}
+                - name: RADIATOR_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-url}
+                - name: RADIATOR_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-token}
+                - name: RADIATOR_PUBLIC_URL
+                  value: https://radiator.example.org
+              resources:
+                requests: {cpu: "100m", memory: "128Mi"}
+                limits: {memory: "256Mi"}

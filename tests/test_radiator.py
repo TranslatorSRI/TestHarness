@@ -495,9 +495,6 @@ def _main_with_slack(
             "test_harness.main.RadiatorClient.history_png", return_value=b"\x89PNG"
         )
         mocker.patch(
-            "test_harness.main.RadiatorClient.grid_png", return_value=b"\x89PNG grid"
-        )
-        mocker.patch(
             "test_harness.main.RadiatorClient.performance_png",
             return_value=b"\x89PNG perf",
         )
@@ -521,26 +518,19 @@ def test_slack_report_carries_the_radiator_history(mocker, monkeypatch, tmp_path
     assert "Pass rate 86% (-4.0 pts vs the previous run)" in report
     assert "3 regressions · 1 fixed" in report
     assert "/diff|What changed>" in report
-    [grid, history] = slacker.files
-    assert grid[:2] == ("run_grid.png", b"\x89PNG grid")
-    assert history[:2] == ("pass_rate_history.png", b"\x89PNG")
-    assert "Open in the Information Radiator" in history[2]
+    [(filename, content, comment)] = slacker.files
+    assert filename == "pass_rate_history.png" and content == b"\x89PNG"
+    assert "Open in the Information Radiator" in comment
 
 
-@pytest.mark.parametrize(
-    "args",
-    [
-        {"target": "arax", "target_url": "http://arax"},
-        {"query_type": "MVP1"},
-    ],
-)
-def test_slack_report_grid_only_for_full_runs(mocker, monkeypatch, tmp_path, args):
-    """The grid shows full runs, so a narrowed run doesn't post it."""
-    slacker = _main_with_slack(
-        mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}, args=args
+def test_runs_of_a_cycle_carry_its_id(mocker, monkeypatch, tmp_path):
+    from uuid import UUID
+
+    cycle_id = UUID("1b4e28ba-2fa1-11d2-883f-0016d3cca427")
+    _main_with_slack(
+        mocker, monkeypatch, tmp_path, radiator=False, args={"cycle_id": cycle_id}
     )
-    [(filename, _, _)] = slacker.files
-    assert filename.endswith("pass_rate_history.png")
+    assert _saved_payload(tmp_path).run.cycle_id == cycle_id
 
 
 def test_slack_report_first_run_of_a_series(mocker, monkeypatch, tmp_path):

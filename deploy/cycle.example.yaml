@@ -1,0 +1,102 @@
+# Example CronJobs for weekly run cycles: one environment a day, Monday to
+# Thursday (dev, ci, test, prod), so a regression shows up in dev before it
+# reaches prod and Friday is free for re-runs.
+#
+# Each cycle runs acceptance (~50 min), then pathfinder, then a HelmsDeep
+# performance run against that environment's ARS (~70 min with the mixed
+# profile), one after another so they never load the services at the same
+# time. Each step posts its own Slack report as usual; when the cycle finishes
+# it posts the Information Radiator's board for the whole cycle.
+#
+# This file is the dev CronJob in full. For the others, copy it and change the
+# four lines marked CHANGE PER ENVIRONMENT:
+#
+#   name                     schedule (America/New_York)   ARS
+#   test-harness-cycle-dev   "52 1 * * 1"  Monday          https://ars.dev.transltr.io
+#   test-harness-cycle-ci    "52 1 * * 2"  Tuesday         https://ars.ci.transltr.io
+#   test-harness-cycle-test  "52 1 * * 3"  Wednesday       https://ars.test.transltr.io
+#   test-harness-cycle-prod  "52 1 * * 4"  Thursday        https://ars.transltr.io
+#
+# and the suites: the environment comes from the test cases, so each
+# environment runs the suites written for it.
+#
+# The image tag, namespace, secret names and suite names are placeholders.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: test-harness-cycle-dev                  # CHANGE PER ENVIRONMENT
+spec:
+  schedule: "52 1 * * 1"                        # CHANGE PER ENVIRONMENT
+  timeZone: "America/New_York"                  # requires Kubernetes >= 1.27
+  # Never two cycles at once: they would load the same services together.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Never retry: a retry re-runs every step and re-posts every report.
+      # The Job only fails when a step couldn't run at all, never on a test
+      # result.
+      backoffLimit: 0
+      # A cycle takes ~2 h; 4 h leaves room without letting a wedged run hold
+      # the next day's environment.
+      activeDeadlineSeconds: 14400
+      template:
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 120
+          containers:
+            - name: test-harness
+              image: ghcr.io/translatorsri/testharness:latest
+              imagePullPolicy: IfNotPresent
+              command: ["test-harness-cycle"]
+              args:
+                - "--download"
+                - "--acceptance"
+                - "sprint_4_tests"                  # CHANGE PER ENVIRONMENT: its acceptance suite
+                - "--pathfinder"
+                - "pathfinder_tests"                # its pathfinder suite
+                - "--performance"
+                - "performance_tests"               # its performance suite
+                - "--performance_target"
+                - "ars=https://ars.dev.transltr.io" # CHANGE PER ENVIRONMENT
+                # The only profile with pass/fail checkpoints.
+                - "--performance_profile"
+                - "mixed"
+                # Everything after `--` goes to every step.
+                - "--"
+                - "--log_level"
+                - "INFO"
+              env:
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-webhook-url}
+                - name: SLACK_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-token}
+                - name: SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: slack-channel}
+                # The board comes from the radiator: without it, each step
+                # still reports, but there's no board at the end.
+                - name: RADIATOR_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-url}
+                - name: RADIATOR_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-token}
+                - name: RADIATOR_PUBLIC_URL
+                  value: https://radiator.example.org
+              resources:
+                # HelmsDeep's load generator runs in this container during the
+                # performance step; give it real CPU (see cronjob.example.yaml).
+                requests: {cpu: "2", memory: "2Gi"}
+                limits: {cpu: "2", memory: "4Gi"}
+              volumeMounts:
+                - name: results
+                  mountPath: /app/test_results
+          volumes:
+            - name: results
+              emptyDir: {}

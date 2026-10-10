@@ -13,7 +13,6 @@ the harness's Slack report.
 """
 
 import io
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional
