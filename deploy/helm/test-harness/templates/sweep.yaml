@@ -1,0 +1,61 @@
+{{- if .Values.sweep.enabled }}
+{{- if not .Values.sweep.targets }}
+{{- fail "sweep.targets is required when the sweep is enabled, eg [\"aragorn=https://aragorn.ci.transltr.io\"]" }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "harness.fullname" . }}-performance-sweep
+  labels:
+    {{- include "harness.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sweep
+spec:
+  schedule: {{ .Values.sweep.schedule | quote }}
+  timeZone: {{ .Values.timeZone | quote }}
+  suspend: {{ .Values.sweep.suspend }}
+  # A sweep runs for hours; never start a second one on top of it.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.sweep.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Chart.Name }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: sweep
+        spec:
+          terminationGracePeriodSeconds: 120
+          {{- $container := include "harness.sweepContainer" . }}
+          {{- include "harness.podSpec" (dict "root" . "container" $container) | nindent 10 }}
+{{- end }}
+
+{{- define "harness.sweepContainer" -}}
+- name: test-harness
+  image: {{ include "harness.image" . }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  command: ["test-harness-sweep"]
+  args:
+    - --suite
+    - {{ .Values.sweep.suite | quote }}
+    {{- include "harness.testsArgs" . | trim | nindent 4 }}
+    {{- range .Values.sweep.targets }}
+    - {{ . | quote }}
+    {{- end }}
+    - "--"
+    {{- with .Values.sweep.profile }}
+    - --performance_profile
+    - {{ . | quote }}
+    {{- end }}
+    {{- range .Values.harnessArgs }}
+    - {{ . | quote }}
+    {{- end }}
+  env:
+    {{- include "harness.env" . | nindent 4 }}
+  resources: {{- toYaml .Values.sweep.resources | nindent 4 }}
+  volumeMounts:
+    - {name: results, mountPath: /app/test_results}
+{{- end -}}

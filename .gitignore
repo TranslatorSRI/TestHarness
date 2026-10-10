@@ -8,3 +8,6 @@ scripts/
 .vscode
 test_results/
 test_report.json
+# Helm values for a real deployment: copies of the charts' values.example.yaml
+deploy/helm/*/values.*.yaml
+!deploy/helm/*/values.example.yaml

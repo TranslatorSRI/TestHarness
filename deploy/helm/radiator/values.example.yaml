@@ -1,0 +1,50 @@
+# Example values for the radiator chart. Copy to values.<name>.yaml next to
+# this file (those are git-ignored), fill it in, and install with
+#
+#   helm upgrade --install radiator deploy/helm/radiator \
+#     -n translator -f deploy/helm/radiator/values.<name>.yaml
+#
+# Keep real secrets out of git: either create the Secret yourself (below,
+# recommended) or keep the copy of this file outside the repo.
+
+image:
+  # Pin a release rather than latest, eg the tag the release workflow pushed.
+  tag: latest
+
+# Created with:
+#   kubectl -n translator create secret generic radiator-secrets \
+#     --from-literal=database-url='postgresql+psycopg://radiator:PASSWORD@radiator-postgres:5432/radiator' \
+#     --from-literal=api-token="$(openssl rand -base64 32)" \
+#     --from-literal=username=translator \
+#     --from-literal=password="$(openssl rand -base64 18)" \
+#     --from-literal=session-secret="$(openssl rand -base64 32)"
+existingSecret: radiator-secrets
+
+# ...or let the chart create it (then leave existingSecret empty):
+# secrets:
+#   databaseUrl: ""            # empty: the chart's own Postgres, if enabled
+#   apiToken: CHANGE-ME
+#   username: translator
+#   password: CHANGE-ME
+#   sessionSecret: CHANGE-ME
+
+ingress:
+  enabled: true
+  className: nginx
+  host: radiator.example.org
+  tlsSecretName: radiator-tls
+
+# Only if the namespace has no database to use.
+postgres:
+  enabled: true
+  # kubectl -n translator create secret generic radiator-postgres \
+  #   --from-literal=password="$(openssl rand -base64 24)"
+  existingSecret: radiator-postgres
+  storage: 10Gi
+  # storageClassName: standard
+
+# To bring over Zebrunner's history once the radiator is up:
+# zebrunnerImport:
+#   enabled: true
+#   env: ci
+#   args: ["--dry-run", "--limit", "5"]

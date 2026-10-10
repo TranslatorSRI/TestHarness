@@ -67,6 +67,24 @@ jobs:
           RADIATOR_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/radiator_test
         run: pytest radiator/tests
 
+  helm-lint:
+    name: Lint and render the Helm charts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Lint and render each chart with its example values
+        run: |
+          for chart in deploy/helm/*/; do
+            helm lint "$chart" -f "$chart/values.example.yaml"
+            helm template ci "$chart" -f "$chart/values.example.yaml" > /dev/null
+          done
+
   check-format:
     name: Check that code matches Black formatter
     runs-on: ubuntu-latest

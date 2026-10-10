@@ -127,9 +127,13 @@ environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
 on the radiator (comma-separated) to change which.
 
 #### Deploying it
-To run it for real, in the same Kubernetes namespace as the harness, follow
-[Deploying](docs/information-radiator.md#deploying): a database, a secret, the
-manifests in `deploy/`, and two settings for the harness. To bring over the
+To run it for real, in the same Kubernetes namespace as the harness, use the
+Helm charts in [`deploy/helm`](deploy/helm/README.md): one for the radiator
+(and, if you need it, a small Postgres), one for the harness's scheduled run
+cycles, digest and sweeps. Copy each chart's `values.example.yaml` to a
+git-ignored `values.<name>.yaml` and install. The plain manifests in `deploy/`
+show the same setup without Helm; see
+[Deploying](docs/information-radiator.md#deploying). To bring over the
 history from Zebrunner, see
 [Importing from Zebrunner](docs/information-radiator.md#importing-from-zebrunner).
 
@@ -410,14 +414,15 @@ and fixes by agent, and **flags** for oddities a pass rate hides:
 
 The cycle needs `RADIATOR_URL`/`RADIATOR_TOKEN` for the board (without them,
 the steps still run and report). Its exit status works like the sweep's.
-[`deploy/cycle.example.yaml`](deploy/cycle.example.yaml) is the CronJob, with
-the schedule for each environment.
+The [test-harness Helm chart](deploy/helm/README.md) schedules a cycle per
+environment; [`deploy/cycle.example.yaml`](deploy/cycle.example.yaml) is the
+same CronJob without Helm.
 
 Every Monday morning, `test-harness-radiator digest` posts the **weekly digest**:
 each environment's latest runs of acceptance, pathfinder and performance over
 the past week, against the run before, with their flags. It reads from the
-radiator only, so it's quick; [`deploy/digest.example.yaml`](deploy/digest.example.yaml)
-schedules it. The same view is the radiator's **Weekly** page, with a page per
+radiator only, so it's quick; the Helm chart schedules it too (or
+[`deploy/digest.example.yaml`](deploy/digest.example.yaml) without Helm). The same view is the radiator's **Weekly** page, with a page per
 cycle.
 
 ### Overriding the target service

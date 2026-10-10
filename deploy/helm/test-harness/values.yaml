@@ -1,0 +1,102 @@
+# Defaults for the test-harness chart. Don't edit this file for a deployment:
+# copy values.example.yaml to values.<name>.yaml (git-ignored) and pass that
+# with -f. See deploy/helm/README.md.
+
+image:
+  repository: ghcr.io/translatorsri/testharness
+  # Defaults to the chart's appVersion (latest). Pin a release for production.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Schedules are in this time zone (needs Kubernetes >= 1.27).
+timeZone: America/New_York
+
+# The harness's secrets. Either name a Secret you've created yourself, with
+# the keys below, or leave existingSecret empty and set them under `secrets`
+# for the chart to create one.
+#   radiator-token                                  the radiator's api-token
+#   slack-webhook-url, slack-token, slack-channel   optional: without them,
+#                                                   reports are saved to files
+#   ze-base-url, ze-refresh-token                   optional: Zebrunner, until
+#                                                   the radiator takes over
+existingSecret: ""
+secrets:
+  radiatorToken: ""
+  slackWebhookUrl: ""
+  slackToken: ""
+  # The channel ID (eg C0123ABCD), not its #name.
+  slackChannel: ""
+  zeBaseUrl: ""
+  zeRefreshToken: ""
+
+radiator:
+  # Where the harness uploads: the radiator's in-cluster service.
+  url: http://radiator
+  # Where people open it, for the links in Slack.
+  publicUrl: ""
+
+tests:
+  # Download the suites from the Tests repo (otherwise they must be in the
+  # image).
+  download: true
+  # Pin a branch or fork, eg
+  # https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip
+  testsUrl: ""
+
+# Passed to every harness run (after the `--`).
+harnessArgs: ["--log_level", "INFO"]
+# JSON sent as parameters with every query, eg '{"timeout": 300}'.
+queryParameters: ""
+
+podSecurityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Weekly run cycles: acceptance, then pathfinder, then performance, in one
+# environment. One CronJob per entry in `environments`.
+cycles:
+  enabled: true
+  # Applied to every environment unless the environment sets its own.
+  defaults:
+    pathfinder: pathfinder_tests
+    performance: performance_tests
+    performanceProfile: mixed
+    # ~2 h expected; this stops a wedged run before the next environment's day.
+    activeDeadlineSeconds: 14400
+    resources:
+      # HelmsDeep's load generator runs in this container during the
+      # performance step: give it real CPU, requests == limits.
+      requests: {cpu: "2", memory: "2Gi"}
+      limits: {cpu: "2", memory: "4Gi"}
+  # Each: name, schedule, acceptance, performanceTargets (NAME=URL, in
+  # order), and optionally pathfinder, performance, performanceProfile,
+  # harnessArgs, suspend, activeDeadlineSeconds, resources. See
+  # values.example.yaml.
+  environments: []
+
+# The Monday digest: every environment's latest runs, posted to Slack.
+digest:
+  enabled: true
+  schedule: "52 8 * * 1"
+  days: 7
+  suspend: false
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+# A performance sweep of several services in turn (test-harness-sweep), eg
+# the ARAs, outside the cycles. ~61 min per ARA with the mixed profile.
+sweep:
+  enabled: false
+  schedule: "0 2 * * 0"
+  suspend: false
+  suite: performance_tests
+  profile: mixed
+  # NAME=URL, in the order they're loaded.
+  targets: []
+  activeDeadlineSeconds: 21600
+  resources:
+    requests: {cpu: "2", memory: "2Gi"}
+    limits: {cpu: "2", memory: "4Gi"}

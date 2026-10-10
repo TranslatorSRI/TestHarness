@@ -41,6 +41,7 @@ radiator/
   zebrunner_import.py     the history import
   demo.py                 made-up data for development
 deploy/
+  helm/                           Helm charts for the radiator and the harness
   radiator.example.yaml           Deployment (+ migration init container), Service, Ingress
   radiator-postgres.example.yaml  a small in-namespace Postgres, if you need one
   radiator-import.example.yaml    one-off Job for the Zebrunner import
@@ -171,6 +172,13 @@ Reading, with the token or a session:
 | `GET /api/runs/{run_id}/performance.png?runs=30` | the concurrency chart posted to Slack |
 
 ## Deploying
+
+The Helm charts in [`deploy/helm`](../deploy/helm/README.md) do all of this:
+`radiator` (the app, migrations, Service, Ingress, optionally Postgres and the
+Zebrunner import) and `test-harness` (the run cycles, digest and sweep). Copy
+each chart's `values.example.yaml` to a git-ignored `values.<name>.yaml`, fill
+it in, and `helm upgrade --install`. Without Helm, the steps with the plain
+manifests are:
 
 1. **Database.** Use an existing Postgres, or apply
    `deploy/radiator-postgres.example.yaml`. Back it up: it's the only copy of

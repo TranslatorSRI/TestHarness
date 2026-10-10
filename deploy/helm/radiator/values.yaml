@@ -1,0 +1,95 @@
+# Defaults for the radiator chart. Don't edit this file for a deployment:
+# copy values.example.yaml to values.<name>.yaml (git-ignored) and pass that
+# with -f. See deploy/helm/README.md.
+
+image:
+  repository: ghcr.io/translatorsri/testharness-radiator
+  # Defaults to the chart's appVersion (latest). Pin a release for production.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The radiator's secrets. Either name a Secret you've created yourself, with
+# the keys database-url, api-token, username, password and session-secret, or
+# leave existingSecret empty and set them under `secrets` for the chart to
+# create one.
+existingSecret: ""
+secrets:
+  # postgresql+psycopg://USER:PASSWORD@HOST:5432/DB. Leave empty with
+  # postgres.enabled and the chart points it at its own Postgres.
+  databaseUrl: ""
+  # The bearer token the harness uploads with (its RADIATOR_TOKEN).
+  apiToken: ""
+  # The one shared login for the consortium.
+  username: translator
+  password: ""
+  # Signs the session cookie; changing it logs everyone out.
+  sessionSecret: ""
+
+config:
+  # Only send the session cookie over HTTPS. Turn off only for plain-http
+  # testing.
+  secureCookies: true
+  # Environments the run grid greys out (comma-separated).
+  excludedEnvs: dev
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: radiator.example.org
+  # An existing TLS secret for the host; empty for no TLS.
+  tlsSecretName: ""
+  annotations:
+    # uploads from the harness come in batches; leave room for big ones
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 512Mi}
+
+# The migration init container, run before every start; a no-op when the
+# schema is current.
+migrate:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+podSecurityContext:
+  runAsNonRoot: true
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# A small in-namespace Postgres, for when there's no database to use. Back
+# its volume up: it's the only copy of the results history.
+postgres:
+  enabled: false
+  image: postgres:16
+  # A Secret with the key `password`; or leave empty and set `password` for
+  # the chart to create one.
+  existingSecret: ""
+  password: ""
+  storage: 10Gi
+  storageClassName: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+# A one-off Job importing past runs from Zebrunner (see
+# docs/information-radiator.md). Enable for one install/upgrade, then turn off.
+zebrunnerImport:
+  enabled: false
+  # A Secret with the keys ze-base-url and ze-refresh-token (the harness's
+  # test-harness-secrets has them).
+  existingSecret: test-harness-secrets
+  # Zebrunner never recorded the environment: say which one these runs were.
+  env: ci
+  # Extra arguments, eg ["--dry-run", "--limit", "5"] or ["--suite", "x"].
+  args: []
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}

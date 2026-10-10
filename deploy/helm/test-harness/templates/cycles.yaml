@@ -1,0 +1,90 @@
+{{- if .Values.cycles.enabled }}
+{{- $d := .Values.cycles.defaults }}
+{{- range $env := .Values.cycles.environments }}
+{{- $name := required "each cycles.environments entry needs a name" $env.name }}
+{{- $pick := dict }}
+{{- range $field := list "acceptance" "pathfinder" "performance" "performanceProfile" "activeDeadlineSeconds" "resources" }}
+{{- $_ := set $pick $field (ternary (get $env $field) (get $d $field) (hasKey $env $field)) }}
+{{- end }}
+{{- $targets := $env.performanceTargets | default list }}
+{{- if and $pick.performance (not $targets) }}
+{{- fail (printf "cycles.environments[%s]: performance needs performanceTargets, eg [\"ars=https://ars.%s.transltr.io\"] (or set performance: \"\")" $name $name) }}
+{{- end }}
+{{- if not (or $pick.acceptance $pick.pathfinder $pick.performance) }}
+{{- fail (printf "cycles.environments[%s]: nothing to run" $name) }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "harness.fullname" $ }}-cycle-{{ $name }}
+  labels:
+    {{- include "harness.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: cycle
+    translator.ncats.io/environment: {{ $name | quote }}
+spec:
+  schedule: {{ required (printf "cycles.environments[%s].schedule is required" $name) $env.schedule | quote }}
+  timeZone: {{ $.Values.timeZone | quote }}
+  suspend: {{ $env.suspend | default false }}
+  # Never two cycles at once: they would load the same services together.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Never retry: a retry re-runs every step and re-posts every report.
+      # The Job only fails when a step couldn't run at all.
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ $pick.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ $.Chart.Name }}
+            app.kubernetes.io/instance: {{ $.Release.Name }}
+            app.kubernetes.io/component: cycle
+        spec:
+          terminationGracePeriodSeconds: 120
+          {{- $container := include "harness.cycleContainer" (dict "root" $ "env" $env "pick" $pick "targets" $targets) }}
+          {{- include "harness.podSpec" (dict "root" $ "container" $container) | nindent 10 }}
+{{- end }}
+{{- end }}
+
+{{- define "harness.cycleContainer" -}}
+{{- $ := .root -}}
+- name: test-harness
+  image: {{ include "harness.image" $ }}
+  imagePullPolicy: {{ $.Values.image.pullPolicy }}
+  command: ["test-harness-cycle"]
+  args:
+    {{- include "harness.testsArgs" $ | trim | nindent 4 }}
+    {{- with .pick.acceptance }}
+    - --acceptance
+    - {{ . | quote }}
+    {{- end }}
+    {{- with .pick.pathfinder }}
+    - --pathfinder
+    - {{ . | quote }}
+    {{- end }}
+    {{- if .pick.performance }}
+    - --performance
+    - {{ .pick.performance | quote }}
+    {{- range .targets }}
+    - --performance_target
+    - {{ . | quote }}
+    {{- end }}
+    {{- with .pick.performanceProfile }}
+    - --performance_profile
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    # everything after `--` goes to every step
+    - "--"
+    {{- range (concat $.Values.harnessArgs (.env.harnessArgs | default list)) }}
+    - {{ . | quote }}
+    {{- end }}
+  env:
+    {{- include "harness.env" $ | nindent 4 }}
+  resources: {{- toYaml .pick.resources | nindent 4 }}
+  volumeMounts:
+    - {name: results, mountPath: /app/test_results}
+{{- end -}}
