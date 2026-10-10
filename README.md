@@ -65,7 +65,8 @@ needs internet access and takes a few minutes. It reports to the new radiator
 only: the harness gets no Zebrunner settings, even if they're in your
 environment.
 
-Everything is configurable from a `.env` file next to `compose.yml`:
+Everything is configurable from a `.env` file next to `compose.yml`; copy
+`.env.example` to `.env` to start from the Slack settings:
 
 | Setting | Default | |
 | --- | --- | --- |
