@@ -476,6 +476,7 @@ def _main_with_slack(
     summary=None,
     acceptance=True,
     performance=False,
+    args=None,
 ):
     def fake_run_tests(tests, reporter, collector, logger, args):
         collector.has_acceptance_results = acceptance
@@ -494,10 +495,13 @@ def _main_with_slack(
             "test_harness.main.RadiatorClient.history_png", return_value=b"\x89PNG"
         )
         mocker.patch(
+            "test_harness.main.RadiatorClient.grid_png", return_value=b"\x89PNG grid"
+        )
+        mocker.patch(
             "test_harness.main.RadiatorClient.performance_png",
             return_value=b"\x89PNG perf",
         )
-    assert main(_main_args(tmp_path)) == 0
+    assert main({**_main_args(tmp_path), **(args or {})}) == 0
     return slacker
 
 
@@ -517,9 +521,26 @@ def test_slack_report_carries_the_radiator_history(mocker, monkeypatch, tmp_path
     assert "Pass rate 86% (-4.0 pts vs the previous run)" in report
     assert "3 regressions · 1 fixed" in report
     assert "/diff|What changed>" in report
-    [(filename, content, comment)] = slacker.files
-    assert filename == "pass_rate_history.png" and content == b"\x89PNG"
-    assert "Open in the Information Radiator" in comment
+    [grid, history] = slacker.files
+    assert grid[:2] == ("run_grid.png", b"\x89PNG grid")
+    assert history[:2] == ("pass_rate_history.png", b"\x89PNG")
+    assert "Open in the Information Radiator" in history[2]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"target": "arax", "target_url": "http://arax"},
+        {"query_type": "MVP1"},
+    ],
+)
+def test_slack_report_grid_only_for_full_runs(mocker, monkeypatch, tmp_path, args):
+    """The grid shows full runs, so a narrowed run doesn't post it."""
+    slacker = _main_with_slack(
+        mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}, args=args
+    )
+    [(filename, _, _)] = slacker.files
+    assert filename.endswith("pass_rate_history.png")
 
 
 def test_slack_report_first_run_of_a_series(mocker, monkeypatch, tmp_path):

@@ -129,6 +129,18 @@ def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
     the report stands without them."""
     charts = []
     if collector.has_acceptance_results:
+        run = radiator.payload.run if radiator.payload else None
+        # the grid shows full runs only: one against an override target, or
+        # of a single query type, wouldn't be on it
+        if run is not None and not run.target and not run.query_type:
+            charts.append(
+                (
+                    radiator.grid_png,
+                    "run_grid.png",
+                    "Acceptance run grid",
+                    f"Acceptance runs of {suite} by environment, up to this one",
+                )
+            )
         charts.append(
             (
                 radiator.history_png,

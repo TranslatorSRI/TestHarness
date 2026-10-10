@@ -192,14 +192,10 @@ def demo_runs(days=30, env="ci", suite="sprint_4_tests", seed=7):
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     n_runs = days
     payloads = []
-    for i in range(n_runs):
-        started = (
-            now
-            - timedelta(days=n_runs - 1 - i, hours=-6 if i == n_runs - 1 else 0)
-            - timedelta(hours=8)
-        )
+
+    def acceptance(env, key, started, i, skip_all=False):
         run = schema.RunCreate(
-            run_id=uuid.uuid5(uuid.NAMESPACE_URL, f"demo:{suite}:{env}:{i}"),
+            run_id=uuid.uuid5(uuid.NAMESPACE_URL, f"demo:{suite}:{env}:{key}"),
             suite=suite,
             env=env,
             harness_version="0.8.0",
@@ -209,7 +205,10 @@ def demo_runs(days=30, env="ci", suite="sprint_4_tests", seed=7):
         results = []
         counts = {}
         for spec in assets:
-            agents = [agent_result(a, spec, i, n_runs, rng) for a in AGENTS]
+            if skip_all:
+                agents = [schema.AgentResult(agent=a, status="SKIPPED") for a in AGENTS]
+            else:
+                agents = [agent_result(a, spec, i, n_runs, rng) for a in AGENTS]
             overall = agents[0].status
             counts[overall] = counts.get(overall, 0) + 1
             fields = {k: v for k, v in spec.items() if k != "difficulty"}
@@ -231,6 +230,33 @@ def demo_runs(days=30, env="ci", suite="sprint_4_tests", seed=7):
                     counts=counts,
                 ),
             )
+        )
+
+    # ci: daily
+    for i in range(n_runs):
+        started = (
+            now
+            - timedelta(days=n_runs - 1 - i, hours=-6 if i == n_runs - 1 else 0)
+            - timedelta(hours=8)
+        )
+        acceptance(env, i, started, i)
+    # test: every few days; prod: weekly, with a quick re-run now and then
+    for i in range(0, n_runs, 3):
+        acceptance("test", i, now - timedelta(days=n_runs - 1 - i, hours=3), i)
+    for i in range(2, n_runs, 7):
+        acceptance("prod", i, now - timedelta(days=n_runs - 1 - i, hours=-2), i)
+        if i % 2:
+            acceptance(
+                "prod", f"{i}b", now - timedelta(days=n_runs - 1 - i, hours=-12), i
+            )
+    # dev: every four days, and often broken (everything skipped)
+    for i in range(1, n_runs, 4):
+        acceptance(
+            "dev",
+            i,
+            now - timedelta(days=n_runs - 1 - i, hours=10),
+            i,
+            skip_all=i % 8 == 1,
         )
 
     # performance sweeps every few days: like test-harness-sweep, one run per
@@ -289,7 +315,8 @@ def main():
     import os
 
     sessionmaker = make_sessionmaker(os.environ["RADIATOR_DATABASE_URL"])
-    payloads = demo_runs()
+    # in the order they ran, so their run numbers follow time
+    payloads = sorted(demo_runs(), key=lambda p: p.run.started_at)
     with sessionmaker() as session:
         for payload in payloads:
             ingest_payload(session, payload)

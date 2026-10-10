@@ -13,6 +13,7 @@ from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 
 from radiator import charts, queries
+from radiator import grid as run_grid
 from radiator.api import get_session
 from radiator.auth import is_logged_in
 
@@ -597,4 +598,47 @@ def performance_page(
         panels=panels,
         days=days,
         windows=TREND_WINDOWS,
+    )
+
+
+GRID_WINDOWS = [7, 14, 35, 90]
+
+
+@router.get("/grid", response_class=HTMLResponse)
+def grid_page(
+    request: Request,
+    suite: Optional[str] = None,
+    days: int = 14,
+    session: Session = Depends(get_session),
+):
+    options = queries.filter_options(session)
+    if suite is None:
+        # the suite of the latest full acceptance run
+        latest = queries.list_runs(session, limit=20)
+        suite = next(
+            (r.suite for r in latest if r.target is None and r.query_type is None),
+            options["suites"][0] if options["suites"] else None,
+        )
+    days = days if days in GRID_WINDOWS else 14
+    grid = None
+    if suite:
+        grid = run_grid.build(
+            session,
+            suite,
+            days=days,
+            width=charts.WIDTH_FULL,
+            excluded_envs=request.app.state.settings.excluded_envs,
+        )
+    return render(
+        request,
+        "grid.html",
+        nav="grid",
+        grid=grid,
+        grid_svg=run_grid.to_svg(grid) if grid and not grid.empty else None,
+        options=options,
+        suite=suite,
+        days=days,
+        windows=GRID_WINDOWS,
+        excluded=request.app.state.settings.excluded_envs,
+        trend_labels=run_grid.TREND_LABELS,
     )

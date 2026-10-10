@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
   <div class="crumbs"><a href="/">Runs</a> / {{ run.suite }}</div>
-  <h1>{{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
+  <h1><span class="muted">#{{ run.number }}</span> {{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
   <div class="meta">
     <span>{{ when(run.started_at) }}</span>
     <span>Duration {{ duration(run) }}{% if not run.ended_at %} <span class="badge">running</span>{% endif %}</span>

@@ -46,13 +46,14 @@
   <div class="scroll">
   <table class="data">
     <thead><tr>
-      <th>Started</th><th>Suite</th><th>Env</th><th>Results</th>
+      <th>Run</th><th>Started</th><th>Suite</th><th>Env</th><th>Results</th>
       <th class="num">Pass rate</th><th class="num">Assets</th><th class="num">Duration</th><th></th>
     </tr></thead>
     <tbody>
     {% for run in runs %}
       {% set c = counts[run.id] %}{% set pc = perf_counts.get(run.id) %}
       <tr>
+        <td class="nowrap"><a href="/runs/{{ run.id }}">#{{ run.number }}</a></td>
         <td class="nowrap"><a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a><br><span class="muted">{{ ago(run.started_at) }}</span></td>
         <td>{{ run.suite }}
           {% if run.target %}<span class="badge" title="queries sent to {{ run.target_url }}">target: {{ run.target }}</span>{% endif %}

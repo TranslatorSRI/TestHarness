@@ -19,6 +19,7 @@ x-radiator-env: &radiator-env
   RADIATOR_SESSION_SECRET: ${RADIATOR_SESSION_SECRET:-local-dev-session-secret}
   # plain http on localhost
   RADIATOR_SECURE_COOKIES: "false"
+  RADIATOR_EXCLUDED_ENVS: ${RADIATOR_EXCLUDED_ENVS:-dev}
 
 services:
   radiator-db:

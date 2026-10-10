@@ -417,6 +417,7 @@ def import_runs(
 ) -> ImportStats:
     """Import every matching launch. ``radiator=None`` is a dry run."""
     stats = ImportStats()
+    selected = []
     for launch in zebrunner.launches():
         started = parse_time(launch.get("startedAt"))
         if since and started and started < since:
@@ -425,8 +426,14 @@ def import_runs(
             continue
         if suite and suite_from_name(launch.get("name")) != suite:
             continue
-        if limit is not None and stats.launches >= limit:
+        if limit is not None and len(selected) >= limit:
             break
+        selected.append(launch)
+    # Oldest first: the radiator numbers runs as they arrive, so this keeps
+    # imported runs' numbers in the order they ran.
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    selected.sort(key=lambda launch: parse_time(launch.get("startedAt")) or epoch)
+    for launch in selected:
         stats.launches += 1
         name = f"launch {launch.get('id')} ({launch.get('name')})"
         run_id = run_id_for(zebrunner.base_url, launch["id"])

@@ -163,6 +163,12 @@ class RadiatorClient:
         res = self._read("history.png", params={"runs": runs})
         return res.content if res is not None else None
 
+    def grid_png(self, days: int = 35) -> Optional[bytes]:
+        """The acceptance run grid for this run's suite, every environment over
+        the last ``days`` days up to this run (marked NEW), as a PNG, or None."""
+        res = self._read("grid.png", params={"days": days})
+        return res.content if res is not None else None
+
     def performance_png(self, runs: int = 30) -> Optional[bytes]:
         """Each of the run's services' max sustainable concurrency up to this
         run, as a PNG, or None."""

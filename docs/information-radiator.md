@@ -62,6 +62,16 @@ deploy/
 - **Trends**: each agent's pass rate over full runs of a suite, overall and by
   expected output. Skips are left out; runs with a target override or a single
   query type aren't included.
+- **Run grid**: every full acceptance run of a suite (no target override, no
+  single query type), one lane per environment, over the last 7–90 days. Each
+  card shows the run's number, date, pass rate, its change against the
+  previous run in that environment, and passed/failed/skipped counts; its color
+  says whether the pass rate went up, down, or held (within 0.1 pts), or that
+  it's the first run in the environment. Runs close together stack, and a line
+  joins each run to the next in its lane. Environments in
+  `RADIATOR_EXCLUDED_ENVS` (default `dev`) are greyed out and marked excluded.
+  Every run gets a number from the radiator (`#123`), in order of when it
+  started; imported runs are numbered oldest first.
 - **Performance**: HelmsDeep's max sustainable concurrency per service over
   time (per host, run type, profile, and environment), with checkpoint
   verdicts.
@@ -74,6 +84,9 @@ this run is posted under it:
 
 - **Acceptance runs:** pass rate and its change, regressions, fixes, and a link
   to what changed; the chart is each agent's pass rate over the last 30 runs.
+- **Full acceptance runs** also get the run grid, posted first: the suite's
+  runs in every environment up to this one, which is marked NEW. It shows at
+  most 10 runs per environment and at least the last 7 days.
 - **Performance runs:** for each service, its max sustainable concurrency and
   its change since the service's previous run, and the checkpoint verdict; the
   chart is that concurrency over the service's last 30 runs, with missed
@@ -83,7 +96,7 @@ this run is posted under it:
 
 The charts use step lines: a run's value holds until the next run, so every rise
 and drop shows plainly (the dashboard's trend charts do the same). The radiator
-draws them (`history.png`, `performance.png`); the harness fetches them with its
+draws them (`grid.png`, `history.png`, `performance.png`); the harness fetches them with its
 token and uploads them, since Slack can't reach pages behind the login. Without
 the radiator, or if it can't be reached, the report is what it always was.
 
@@ -110,6 +123,7 @@ Reading, with the token or a session:
 | `GET /api/runs?suite=&env=&limit=` | runs, newest first |
 | `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
+| `GET /api/runs/{run_id}/grid.png?days=35` | the run grid posted to Slack, up to this run |
 | `GET /api/runs/{run_id}/history.png?runs=30` | the pass-rate chart posted to Slack |
 | `GET /api/runs/{run_id}/performance.png?runs=30` | the concurrency chart posted to Slack |
 

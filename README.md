@@ -111,7 +111,13 @@ reaches the radiator (or is saved for it).
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass
 rate, regressions, and fixes, charted per agent; for performance runs, each
-service's max sustainable concurrency and checkpoint verdict.
+service's max sustainable concurrency and checkpoint verdict. A full
+acceptance run (no `--target`, no `--query_type`) also gets the run grid: the
+suite's runs in every environment, with this one marked NEW, colored by
+whether the pass rate went up, down, or held. The same grid is on the
+dashboard under **Run grid**. The `dev` environment is shown greyed out as
+excluded; set `RADIATOR_EXCLUDED_ENVS` on the radiator (comma-separated) to
+change which.
 
 #### Deploying it
 To run it for real, in the same Kubernetes namespace as the harness, follow

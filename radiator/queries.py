@@ -588,6 +588,7 @@ def performance_series(
 def run_json(run: Run, with_results: bool = False) -> dict:
     data = {
         "run_id": str(run.id),
+        "number": run.number,
         "suite": run.suite,
         "env": run.env,
         "target": run.target,

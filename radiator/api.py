@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 import radiator_schema as schema
+from radiator import grid as run_grid
 from radiator import history_png, ingest, queries
 from radiator.auth import require_token, require_token_or_login
 from radiator.models import Run
@@ -130,6 +131,47 @@ def get_run_performance_png(
     series = queries.performance_series(session, run, limit=min(max(runs, 1), 120))
     return Response(
         history_png.render_performance(run, series),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
+GRID_TITLE = "Acceptance run grid"
+GRID_MAX_PER_LANE = 10
+
+
+def grid_subtitle(suite: str, days: float) -> str:
+    return (
+        f"{suite} · environment × time, last {days:.0f} days · cards show pass "
+        "rate, passed / failed / skipped"
+    )
+
+
+@read_router.get("/runs/{run_id}/grid.png")
+def get_run_grid_png(
+    request: Request,
+    run_id: uuid.UUID,
+    days: int = 35,
+    session: Session = Depends(get_session),
+):
+    """The acceptance run grid for this run's suite, up to this run, with the
+    run marked NEW, as a PNG (for Slack)."""
+    run = _run_or_404(session, run_id)
+    days = min(max(days, 1), 180)
+    grid = run_grid.build(
+        session,
+        run.suite,
+        until=run.started_at,
+        days=days,
+        width=1600,
+        excluded_envs=request.app.state.settings.excluded_envs,
+        new_run_id=run.id,
+        # a busy environment narrows the window, so it stays readable
+        max_per_lane=GRID_MAX_PER_LANE,
+    )
+    shown_days = (grid.until - grid.since).total_seconds() / 86400
+    return Response(
+        run_grid.to_png(grid, GRID_TITLE, grid_subtitle(run.suite, shown_days)),
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )

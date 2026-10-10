@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Sequence,
     String,
     Text,
     UniqueConstraint,
@@ -37,10 +38,19 @@ class Base(DeclarativeBase):
     pass
 
 
+# Runs are numbered #1, #2, ... in the order they reach the radiator, for
+# people to refer to them by. The database assigns the number on insert, so a
+# re-uploaded run keeps its own.
+RUN_NUMBER_SEQ = Sequence("run_number_seq")
+
+
 class Run(Base):
     __tablename__ = "runs"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    number: Mapped[int] = mapped_column(
+        Integer, RUN_NUMBER_SEQ, server_default=RUN_NUMBER_SEQ.next_value(), unique=True
+    )
     suite: Mapped[str] = mapped_column(String(255))
     env: Mapped[Optional[str]] = mapped_column(String(32))
     target: Mapped[Optional[str]] = mapped_column(String(255))

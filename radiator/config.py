@@ -20,6 +20,9 @@ class Settings:
     session_secret: str
     # Only send the session cookie over HTTPS. Off just for local development.
     secure_cookies: bool = True
+    # Environments the run grid greys out and gives no trend: their runs are
+    # shown, but don't count. Comma-separated in RADIATOR_EXCLUDED_ENVS.
+    excluded_envs: tuple[str, ...] = ("dev",)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -37,4 +40,9 @@ class Settings:
             session_secret=required("RADIATOR_SESSION_SECRET"),
             secure_cookies=os.getenv("RADIATOR_SECURE_COOKIES", "true").lower()
             not in ("0", "false", "no"),
+            excluded_envs=tuple(
+                env.strip().lower()
+                for env in os.getenv("RADIATOR_EXCLUDED_ENVS", "dev").split(",")
+                if env.strip()
+            ),
         )

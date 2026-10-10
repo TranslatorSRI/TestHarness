@@ -23,6 +23,8 @@
   --status-error: #ec835a;
   --status-failed: #d03b3b;
   --status-skipped: #d6d5ce;
+  --grid-base: #898781;
+  --grid-excl: #b5b3ab;
 
   --agent-1: #2a78d6;
   --agent-2: #eb6834;
@@ -51,6 +53,8 @@
     --up: #0ca30c;
     --down: #e66767;
     --status-skipped: #4a4a46;
+    --grid-base: #9a9890;
+    --grid-excl: #5c5b57;
 
     --agent-1: #3987e5;
     --agent-2: #d95926;
@@ -341,3 +345,38 @@ details.table-view[open] summary { margin-bottom: 8px; }
   .card-head { flex-direction: column; gap: 4px; }
   .tile.hero .value { font-size: 40px; }
 }
+
+/* run grid: trend colors are the status palette, always with their label */
+.run-grid { width: 100%; min-width: 900px; height: auto; display: block; }
+.run-grid .band { fill: var(--surface); }
+.run-grid .band-alt { fill: var(--surface-2); }
+.run-grid .lane-label { font-size: 17px; font-weight: 650; fill: var(--ink); }
+.run-grid .lane-note { font-size: 12px; fill: var(--ink-muted); }
+.run-grid .tick { stroke: var(--grid); stroke-width: 1; }
+.run-grid .tick-label { font-size: 12px; fill: var(--ink-muted); }
+.run-grid .link { stroke-width: 3.5; }
+.run-grid .link.t-excl, .run-grid .link.t-nodata { stroke-dasharray: 4 4; stroke-width: 2.5; }
+.run-grid .card-box { stroke-width: 2; }
+.run-grid .t-excl .card-box, .run-grid .t-nodata .card-box { stroke-dasharray: 5 4; }
+.run-grid .chip-label { font-size: 10.5px; font-weight: 700; fill: #0b0b0b; letter-spacing: 0.03em; }
+.run-grid .t-down .chip-label { fill: #fff; }
+.run-grid .number { font-size: 14px; font-weight: 700; fill: var(--ink); }
+.run-grid .when { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.run-grid .rate { font-size: 13.5px; font-weight: 650; fill: var(--ink); }
+.run-grid .counts { font-size: 11.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.run-grid .new { fill: var(--ink); }
+.run-grid .new-label { font-size: 10px; font-weight: 700; fill: var(--surface); }
+.run-grid a:hover .card-box, .run-grid a:focus .card-box { stroke-width: 3.5; }
+.run-grid .t-up .card-box { fill: color-mix(in srgb, var(--status-passed) 12%, var(--surface)); stroke: var(--status-passed); }
+.run-grid .t-down .card-box { fill: color-mix(in srgb, var(--status-failed) 12%, var(--surface)); stroke: var(--status-failed); }
+.run-grid .t-flat .card-box { fill: color-mix(in srgb, var(--status-no-results) 14%, var(--surface)); stroke: var(--status-no-results); }
+.run-grid .t-base .card-box { fill: var(--surface); stroke: var(--grid-base); }
+.run-grid .t-excl .card-box, .run-grid .t-nodata .card-box { fill: var(--surface-2); stroke: var(--grid-excl); }
+.run-grid .t-up .chip, .run-grid .link.t-up, .grid-key.t-up { fill: var(--status-passed); stroke: var(--status-passed); background: var(--status-passed); }
+.run-grid .t-down .chip, .run-grid .link.t-down, .grid-key.t-down { fill: var(--status-failed); stroke: var(--status-failed); background: var(--status-failed); }
+.run-grid .t-flat .chip, .run-grid .link.t-flat, .grid-key.t-flat { fill: var(--status-no-results); stroke: var(--status-no-results); background: var(--status-no-results); }
+.run-grid .t-base .chip, .run-grid .link.t-base, .grid-key.t-base { fill: var(--grid-base); stroke: var(--grid-base); background: var(--grid-base); }
+.run-grid .t-excl .chip, .run-grid .t-nodata .chip, .run-grid .link.t-excl, .run-grid .link.t-nodata, .grid-key.t-excl { fill: var(--grid-excl); stroke: var(--grid-excl); background: var(--grid-excl); }
+.grid-key { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+.grid-legend { margin: 0 0 10px; }
+.run-grid a, .run-grid a:hover { text-decoration: none; }
