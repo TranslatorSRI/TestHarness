@@ -14,6 +14,9 @@
     {% endif %}
   </div>
 </div>
+{% if trapi_change %}
+<div class="callout" role="note"><b>TRAPI {{ trapi_change[0] }} → {{ trapi_change[1] }}</b> since the previous run: some of the changes may come from the version change rather than from the services.</div>
+{% endif %}
 {% if base and running %}
 <p class="sub">This run hasn't finished: these are the changes among the assets tested so far. Reload to see more.</p>
 {% endif %}

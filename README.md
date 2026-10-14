@@ -222,14 +222,28 @@ query type (eg `MVP1_test_report.json`) so runs of different slices stay
 distinguishable.
 
 ### TRAPI version
-The harness speaks **TRAPI 2.0** by default. Queries are built with
+The harness speaks **TRAPI 2.0 and 1.6**. Queries are built with
 [`translator_tom`](https://github.com/NCATSTranslator/TRAPIObjectModeling)
 (TOM), the Translator-wide TRAPI object model, so each query is validated
 against the spec before it is sent. `--trapi_version` picks the version the
 queries are written in and which services are taken from the SmartAPI
 registry (only those registered with the same `x-trapi` major.minor):
-- `test-harness --trapi_version 1.6.0 download <suite>` to test services still
-  on TRAPI 1.6.
+- `auto` (the default): the version the environment's ARS is registered with
+  in SmartAPI (or, with `--target`, that service's), the newest the harness
+  speaks if it's registered with more than one. While environments move to
+  2.0 one at a time, each run follows its environment with no configuration.
+  The log says what it chose and why; if nothing is registered, or SmartAPI
+  can't be read, it falls back to 2.0 with a warning.
+- `--trapi_version 1.6.0` or `--trapi_version 2.0.0` to choose one, eg if an
+  environment's SmartAPI registration and its deployment disagree for a while.
+  In a run cycle, pass it after the `--` (or, with the Helm chart, in that
+  environment's `harnessArgs`).
+
+Each run's TRAPI version is recorded in the Information Radiator, shown on the
+run and in the runs list, and the start of the Slack report says it. When a
+run's version differs from the previous run's (an environment that just moved
+to 2.0), the run page, What changed, the cycle board's flags and the Slack
+headline all say so: what changed may be the upgrade, not the services.
 
 What 2.0 changed in the queries the harness sends: an MVP2 query's qualifiers
 go in the query edge's `constraints.qualifiers` as one

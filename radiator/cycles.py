@@ -372,6 +372,24 @@ def performance_flags(
 # --- rows ---------------------------------------------------------------------------
 
 
+def trapi_flag(previous: Optional[Run], run: Run) -> list[Flag]:
+    """A flag when the TRAPI version changed since the previous run, so its
+    changes can be read as the upgrade's rather than as regressions."""
+    change = queries.trapi_change(previous, run)
+    if change is None:
+        return []
+    before, after = change
+    return [
+        Flag(
+            "trapi_change",
+            "TRAPI",
+            f"TRAPI {before} → {after} since the previous run: changes here may "
+            "come from the version change",
+            run.id,
+        )
+    ]
+
+
 def _changes_by_agent(diff: queries.Diff) -> list[AgentChanges]:
     by_agent: dict = {}
     for kind in ("regression", "fixed"):
@@ -437,7 +455,7 @@ def _result_row(session: Session, run: Run, kind: str) -> Row:
         row.regressions = diff.count("regression")
         row.fixed = diff.count("fixed")
         row.changes = _changes_by_agent(diff)
-        row.flags = result_flags(base, run)
+        row.flags = trapi_flag(base, run) + result_flags(base, run)
     row.verdict = _result_verdict(row)
     return row
 
@@ -460,7 +478,9 @@ def _perf_rows(session: Session, run: Run) -> list[Row]:
             history=[p.max_sustainable_concurrency for _, p in history],
             perf=perf,
         )
-        row.flags = performance_flags(run, perf, previous)
+        row.flags = trapi_flag(previous_run, run) + performance_flags(
+            run, perf, previous
+        )
         row.verdict = _perf_verdict(row, previous)
         rows.append(row)
     return rows
@@ -681,6 +701,7 @@ def row_json(row: Row) -> dict:
         "unit": row.unit,
         "change_text": row.change_text,
         "detail_text": row.detail_text,
+        "trapi_version": row.run.trapi_version,
         "regressions": row.regressions,
         "fixed": row.fixed,
         "started_at": row.run.started_at.isoformat(),

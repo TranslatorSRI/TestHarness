@@ -80,6 +80,9 @@ class RunCreate(BaseModel):
     # How many assets the run will test, so the dashboard can show progress
     # while it's running. None when not known (eg imported runs).
     expected_assets: Optional[int] = None
+    # The TRAPI version the run's queries were written in (eg "2.0.0"), so a
+    # change of version between runs can be told apart from a regression.
+    trapi_version: Optional[str] = None
 
 
 class AgentResult(BaseModel):

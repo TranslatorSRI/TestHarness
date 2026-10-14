@@ -14,6 +14,7 @@ from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+import httpx
 from setproctitle import setproctitle
 
 from radiator_schema import RunCreate
@@ -25,7 +26,10 @@ from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
+from test_harness.runner.query_runner import env_map
+from test_harness.runner.smart_api_registry import registered_trapi_versions
 from test_harness.trapi import (
+    AUTO_TRAPI_VERSION,
     DEFAULT_TRAPI_VERSION,
     parse_query_parameters,
     trapi_minor_version,
@@ -111,7 +115,23 @@ def radiator_headline(radiator, collector) -> str:
         lines.append(line)
     if collector.has_performance_results:
         lines.extend(_performance_line(p) for p in summary.get("performance") or [])
+    change = _trapi_change(
+        summary.get("previous_trapi_version"), summary.get("trapi_version")
+    )
+    if lines and change:
+        lines.append(
+            f"TRAPI {change[0]} → {change[1]} since the previous run: some of "
+            "these changes may come from the version change"
+        )
     return "".join(f"\n> {line}" for line in lines) + ("\n" if lines else "")
+
+
+def _trapi_change(before, after):
+    """(from, to) major.minor TRAPI versions when they differ, else None."""
+    if not before or not after:
+        return None
+    before, after = ".".join(before.split(".")[:2]), ".".join(after.split(".")[:2])
+    return (before, after) if before != after else None
 
 
 def _performance_line(perf: dict) -> str:
@@ -234,21 +254,6 @@ def main(args):
     if bool(args.get("target_url")) != bool(args.get("target")):
         logger.error("--target_url and --target must be provided together.")
         return EXIT_COULD_NOT_RUN
-    # Check the query parameters against the TRAPI version now, so a typo
-    # stops the run before any query goes out rather than failing every one.
-    try:
-        args["query_parameters"] = validate_query_parameters(
-            args.get("query_parameters"),
-            args.get("trapi_version") or DEFAULT_TRAPI_VERSION,
-        )
-    except ValueError as e:
-        logger.error(str(e))
-        return EXIT_COULD_NOT_RUN
-    if args["query_parameters"]:
-        logger.info(
-            f"Sending these parameters with every query: "
-            f"{json.dumps(args['query_parameters'])}"
-        )
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -272,6 +277,25 @@ def main(args):
         if len(tests) < 1:
             logger.error(f"No {query_type} tests to run. Exiting.")
             return EXIT_COULD_NOT_RUN
+
+    # The TRAPI version: given, or (auto) what this environment's services are
+    # registered with, while environments are on different versions.
+    test_env = next(iter(tests.values())).test_env
+    args["trapi_version"] = resolve_trapi_version(args, test_env, logger)
+    # Check the query parameters against the TRAPI version now, so a typo
+    # stops the run before any query goes out rather than failing every one.
+    try:
+        args["query_parameters"] = validate_query_parameters(
+            args.get("query_parameters"), args["trapi_version"]
+        )
+    except ValueError as e:
+        logger.error(str(e))
+        return EXIT_COULD_NOT_RUN
+    if args["query_parameters"]:
+        logger.info(
+            f"Sending these parameters with every query: "
+            f"{json.dumps(args['query_parameters'])}"
+        )
 
     output_dir = args.get("output_dir") or "test_results"
 
@@ -303,7 +327,6 @@ def main(args):
             refresh_token=args.get("reporter_access_token"),
             logger=logger,
         )
-    test_env = next(iter(tests.values())).test_env
     try:
         reporter.get_auth()
         reporter.create_test_run(test_env, args["suite"])
@@ -345,6 +368,7 @@ def main(args):
             query_type=query_type,
             query_parameters=args.get("query_parameters"),
             cycle_id=args.get("cycle_id"),
+            trapi_version=args["trapi_version"],
             expected_assets=sum(len(test.test_assets) for test in tests.values()),
             harness_version=harness_version(),
             tests_source=args.get("tests_url") or args.get("tests_dir"),
@@ -426,7 +450,7 @@ def main(args):
         post(
             lambda: channel.post_notification(
                 messages=[
-                    f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{params_note}{links}"
+                    f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries, TRAPI {args['trapi_version']})...{params_note}{links}"
                 ]
             ),
             best_effort,
@@ -491,8 +515,50 @@ def _query_parameters(value: str):
         raise ArgumentTypeError(str(e))
 
 
+def resolve_trapi_version(args, test_env, logger) -> str:
+    """The TRAPI version to run: as given, or for ``auto``, the newest one the
+    environment's ARS (or the --target service) is registered with in
+    SmartAPI that the harness speaks. Falls back to the default, saying why."""
+    requested = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
+    if requested != AUTO_TRAPI_VERSION:
+        return requested
+    target = args.get("target")
+    infores = f"infores:{target.split('infores:')[-1]}" if target else "infores:ars"
+    maturity = env_map.get(test_env)
+    why = (
+        f"{infores} isn't registered in SmartAPI for {test_env} ({maturity}) "
+        "with a TRAPI version the harness speaks"
+    )
+    try:
+        versions = []
+        for version in registered_trapi_versions(infores, maturity):
+            try:
+                trapi_minor_version(version)
+            except ValueError:
+                continue
+            versions.append(version)
+    except httpx.HTTPError as e:
+        versions, why = [], f"couldn't read the SmartAPI registry ({e})"
+    if versions:
+        others = (
+            f" (also registered: {', '.join(versions[1:])})" if versions[1:] else ""
+        )
+        logger.info(
+            f"TRAPI {versions[0]}: what {infores} is registered with for "
+            f"{test_env} in SmartAPI{others}"
+        )
+        return versions[0]
+    logger.warning(
+        f"--trapi_version auto: {why}; using {DEFAULT_TRAPI_VERSION}. Pass "
+        "--trapi_version to choose one."
+    )
+    return DEFAULT_TRAPI_VERSION
+
+
 def _trapi_version(value: str) -> str:
     """Accept a TRAPI version only if the harness can write queries in it."""
+    if value == AUTO_TRAPI_VERSION:
+        return value
     try:
         trapi_minor_version(value)
     except ValueError as e:
@@ -651,11 +717,13 @@ def cli():
     parser.add_argument(
         "--trapi_version",
         type=_trapi_version,
-        default=DEFAULT_TRAPI_VERSION,
+        default=AUTO_TRAPI_VERSION,
         help=(
             "TRAPI (SemVer) version to test: queries are written in it and "
-            "only services registered for it are queried. 2.0.x or 1.6.x "
-            f"(default {DEFAULT_TRAPI_VERSION})."
+            "only services registered for it are queried. 2.0.x or 1.6.x, or "
+            "auto (the default): the version the environment's ARS (or the "
+            "--target service) is registered with in SmartAPI, falling back "
+            f"to {DEFAULT_TRAPI_VERSION}."
         ),
     )
 

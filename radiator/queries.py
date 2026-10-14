@@ -215,6 +215,25 @@ def _performance_summary(session: Session, run: Run) -> list[dict]:
     return out
 
 
+def trapi_minor(version: Optional[str]) -> Optional[str]:
+    """``"2.0.0"`` -> ``"2.0"``; None for an unknown version."""
+    if not version:
+        return None
+    parts = version.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else version
+
+
+def trapi_change(previous: Optional[Run], run: Run) -> Optional[tuple[str, str]]:
+    """(from, to) when the run's TRAPI version differs from the previous run's
+    (by major.minor); None when it's the same, or either isn't known."""
+    if previous is None:
+        return None
+    before, after = trapi_minor(previous.trapi_version), trapi_minor(run.trapi_version)
+    if before and after and before != after:
+        return before, after
+    return None
+
+
 def run_summary(session: Session, run: Run) -> dict:
     """The headline of a run against the previous one in its series, for
     notifications (eg the harness's Slack report)."""
@@ -229,10 +248,13 @@ def run_summary(session: Session, run: Run) -> dict:
         "previous_pass_rate": None,
         "regressions": None,
         "fixed": None,
+        "trapi_version": run.trapi_version,
+        "previous_trapi_version": None,
     }
     if previous is not None:
         diff = diff_runs(get_run(session, previous.id), get_run(session, run.id))
         summary.update(
+            previous_trapi_version=previous.trapi_version,
             previous_run_id=str(previous.id),
             previous_pass_rate=pass_rate(
                 status_counts(session, [previous.id])[previous.id]
@@ -660,6 +682,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "target": run.target,
         "query_type": run.query_type,
         "query_parameters": run.query_parameters,
+        "trapi_version": run.trapi_version,
         "harness_version": run.harness_version,
         "origin": run.origin,
         "started_at": run.started_at.isoformat(),

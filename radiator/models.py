@@ -65,6 +65,7 @@ class Run(Base):
     cycle_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, index=True)
     # for the progress bar while the run is going (see RunCreate)
     expected_assets: Mapped[Optional[int]] = mapped_column(Integer)
+    trapi_version: Mapped[Optional[str]] = mapped_column(String(32))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     counts: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)

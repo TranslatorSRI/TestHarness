@@ -854,3 +854,32 @@ def test_main_logs_where_the_run_went(mocker, monkeypatch, tmp_path, caplog):
     # run_tests is mocked out here, so nothing was recorded: every asset is named
     assert "Information Radiator: not uploaded; 0 of the" in caplog.text
     assert "have no result for the Information Radiator" in caplog.text
+
+
+def test_auto_trapi_reaches_the_run_and_slack(mocker, monkeypatch, tmp_path):
+    mocker.patch(
+        "test_harness.main.registered_trapi_versions",
+        side_effect=lambda infores, maturity: ["1.6.0"],
+    )
+    slacker = _main_with_slack(
+        mocker, monkeypatch, tmp_path, radiator=False, args={"trapi_version": "auto"}
+    )
+    assert _saved_payload(tmp_path).run.trapi_version == "1.6.0"
+    assert "TRAPI 1.6.0)" in slacker.messages[0]
+
+
+def test_slack_headline_flags_a_trapi_change(mocker, monkeypatch, tmp_path):
+    slacker = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={
+            "pass_rate": 0.8,
+            "previous_pass_rate": 0.9,
+            "regressions": 4,
+            "fixed": 0,
+            "trapi_version": "2.0.0",
+            "previous_trapi_version": "1.6.0",
+        },
+    )
+    assert "TRAPI 1.6 → 2.0 since the previous run" in slacker.messages[-1]

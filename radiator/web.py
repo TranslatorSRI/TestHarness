@@ -264,6 +264,7 @@ def register_template_helpers(templates) -> None:
         elapsed=elapsed,
         run_badge=run_badge,
         run_state=queries.run_state,
+        trapi_minor=queries.trapi_minor,
         pk_url=pk_url,
         cell_tip=cell_tip,
         agent_color=charts.agent_color,
@@ -402,6 +403,7 @@ def run_page(
         filtered=any([status, expected, q]),
         pass_rate=queries.pass_rate,
         progress=queries.run_progress(session, run),
+        trapi_change=queries.trapi_change(previous, run),
     )
 
 
@@ -432,6 +434,7 @@ def diff_page(
         diff=diff,
         kinds=queries.DIFF_KINDS,
         running=running,
+        trapi_change=queries.trapi_change(base_run, run),
     )
 
 

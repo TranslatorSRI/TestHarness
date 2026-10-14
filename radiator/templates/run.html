@@ -11,6 +11,7 @@
     <span>{% if run.ended_at %}Duration {{ duration(run) }}{% else %}{{ run_badge(run) }} for {{ elapsed(run) }}{% endif %}</span>
     {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
     {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+    {% if run.trapi_version %}<span class="badge" title="The TRAPI version the queries were written in">TRAPI {{ trapi_minor(run.trapi_version) }}</span>{% endif %}
     {% if run.query_parameters %}<span title="Sent with every query">query parameters: <span class="mono">{{ params_text(run.query_parameters) }}</span></span>{% endif %}
     {% if run.harness_version %}<span>harness {{ run.harness_version }}</span>{% endif %}
     {% if run.origin == 'zebrunner_import' %}<span class="badge">imported from Zebrunner</span>{% endif %}
@@ -18,6 +19,10 @@
 </div>
 
 <div class="live-note" data-live-indicator hidden></div>
+{% if trapi_change %}
+<div class="callout" role="note"><b>TRAPI {{ trapi_change[0] }} → {{ trapi_change[1] }}</b> since the previous run: some of the changes may come from the version change rather than from the services.</div>
+{% endif %}
+
 <div id="run-progress" data-live-region>
 {% if progress.running %}
   {% set done, total = progress.done_assets, progress.expected_assets %}

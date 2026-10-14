@@ -20,6 +20,9 @@ import translator_tom.v2_0 as trapi_2_0
 from pydantic import ValidationError
 
 DEFAULT_TRAPI_VERSION = "2.0.0"
+# --trapi_version auto: the version the environment's ARS (or the --target
+# service) is registered with in SmartAPI, for while environments differ.
+AUTO_TRAPI_VERSION = "auto"
 
 # The TRAPI minor versions there is a TOM model package for, keyed by the
 # "major.minor" prefix of a SemVer version.

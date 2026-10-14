@@ -4,12 +4,44 @@ import json
 import logging
 import re
 from collections import defaultdict
+from typing import List
 
 import httpx
 
 from test_harness.trapi import DEFAULT_TRAPI_VERSION
 
 LOGGER = logging.getLogger(__name__)
+
+
+SMARTAPI_URL = "https://smart-api.info/api/query?limit=1000&q=TRAPI"
+
+
+def registered_trapi_versions(infores: str, maturity: str, hits=None) -> List[str]:
+    """The TRAPI versions ``infores`` is registered with in SmartAPI for one
+    maturity (eg "staging"), newest first. ``hits`` are SmartAPI's
+    registrations, fetched when not given."""
+    if hits is None:
+        with httpx.Client(timeout=30) as client:
+            response = client.get(SMARTAPI_URL)
+            response.raise_for_status()
+            hits = response.json().get("hits", [])
+    versions = set()
+    for hit in hits:
+        info = hit.get("info") or {}
+        if (info.get("x-translator") or {}).get("infores") != infores:
+            continue
+        version = (info.get("x-trapi") or {}).get("version")
+        if not version:
+            continue
+        if any(
+            server.get("x-maturity") == maturity for server in hit.get("servers") or []
+        ):
+            versions.add(version)
+
+    def key(version):
+        return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
+
+    return sorted(versions, key=key, reverse=True)
 
 
 def retrieve_registry_from_smartapi(
@@ -25,7 +57,7 @@ def retrieve_registry_from_smartapi(
     """
     with httpx.Client(timeout=30) as client:
         try:
-            response = client.get("https://smart-api.info/api/query?limit=1000&q=TRAPI")
+            response = client.get(SMARTAPI_URL)
             response.raise_for_status()
         except httpx.HTTPError as e:
             LOGGER.error("Failed to query smart api. Exiting...")
