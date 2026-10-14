@@ -531,12 +531,12 @@ def resolve_trapi_version(args, test_env, logger) -> str:
     )
     try:
         versions = []
-        for version in registered_trapi_versions(infores, maturity):
+        for registered in registered_trapi_versions(infores, maturity):
             try:
-                trapi_minor_version(version)
+                trapi_minor_version(registered)
             except ValueError:
                 continue
-            versions.append(version)
+            versions.append(registered)
     except httpx.HTTPError as e:
         versions, why = [], f"couldn't read the SmartAPI registry ({e})"
     if versions:
