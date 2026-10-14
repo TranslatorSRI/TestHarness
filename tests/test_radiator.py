@@ -530,7 +530,12 @@ def test_runs_of_a_cycle_carry_its_id(mocker, monkeypatch, tmp_path):
     _main_with_slack(
         mocker, monkeypatch, tmp_path, radiator=False, args={"cycle_id": cycle_id}
     )
-    assert _saved_payload(tmp_path).run.cycle_id == cycle_id
+    run = _saved_payload(tmp_path).run
+    assert run.cycle_id == cycle_id
+    # for the dashboard's progress bar while the run is going
+    assert run.expected_assets == sum(
+        len(test.test_assets) for test in example_test_cases.values()
+    )
 
 
 def test_slack_report_first_run_of_a_series(mocker, monkeypatch, tmp_path):

@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 import radiator_schema as schema
-from radiator.models import AgentResult, AssetResult, PerformanceResult, Run
+from radiator.models import AgentResult, AssetResult, PerformanceResult, Run, utcnow
 
 
 class RunNotFound(LookupError):
@@ -35,6 +35,8 @@ def upsert_results(
     session: Session, run_id: uuid.UUID, batch: schema.ResultBatch
 ) -> None:
     _require_run(session, run_id)
+    # what the dashboard's live updates watch for
+    session.execute(update(Run).where(Run.id == run_id).values(updated_at=utcnow()))
     for result in batch.results:
         values = result.model_dump(exclude={"agents"})
         values["status"] = result.status.value

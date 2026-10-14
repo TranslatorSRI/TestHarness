@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Weekly{% endblock %}
+{% block live %}{% if not next_week %} data-live="/api/live" data-live-interval="60" data-live-version="{{ live_version }}"{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Weekly test status</h1>
@@ -10,6 +11,8 @@
   </div>
 </div>
 
+<div class="live-note" data-live-indicator hidden></div>
+<div id="weekly-body" data-live-region>
 <div class="card">
   {% if digest.envs %}
   <div class="scroll">
@@ -61,6 +64,7 @@
   </ul>
 </div>
 {% endfor %}
+</div>
 
 <div class="card">
   <h2>Recent run cycles</h2>

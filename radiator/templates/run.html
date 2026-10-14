@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}{{ run.suite }} · {{ when(run.started_at) }}{% endblock %}
+{% block live %}{% if progress.running %} data-live="/api/runs/{{ run.id }}/progress" data-live-interval="10" data-live-version="{{ progress.version }}" data-live-until-done{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div class="crumbs"><a href="/">Runs</a> / {{ run.suite }}</div>
   <h1><span class="muted">#{{ run.number }}</span> {{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
-  <div class="meta">
+  <div class="meta" id="run-meta" data-live-region>
     <span>{{ when(run.started_at) }}</span>
-    <span>Duration {{ duration(run) }}{% if not run.ended_at %} <span class="badge">running</span>{% endif %}</span>
+    <span>{% if run.ended_at %}Duration {{ duration(run) }}{% else %}{{ run_badge(run) }} for {{ elapsed(run) }}{% endif %}</span>
     {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
     {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
     {% if run.query_parameters %}<span title="Sent with every query">query parameters: <span class="mono">{{ params_text(run.query_parameters) }}</span></span>{% endif %}
@@ -16,9 +17,25 @@
   </div>
 </div>
 
-<div class="tiles">
+<div class="live-note" data-live-indicator hidden></div>
+<div id="run-progress" data-live-region>
+{% if progress.running %}
+  {% set done, total = progress.done_assets, progress.expected_assets %}
+  <div class="card progress-card">
+    {% if total %}
+    <div class="progress-head"><span><b>{{ done }}</b> of {{ total }} assets</span><span class="muted">{{ (100 * done / total)|round|int if done <= total else 100 }}%</span></div>
+    <div class="progress" role="progressbar" aria-label="Assets tested" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ [done, total]|min }}"><span style="width: {{ [100 * done / total, 100]|min }}%"></span></div>
+    {% else %}
+    <div class="progress-head"><span><b>{{ done }}</b> assets so far</span></div>
+    {% endif %}
+    <p class="sub">Results arrive as each test case finishes; this page updates by itself.</p>
+  </div>
+{% endif %}
+</div>
+
+<div class="tiles" id="run-tiles" data-live-region>
   <div class="tile hero">
-    <div class="label">Pass rate</div>
+    <div class="label">Pass rate{% if progress.running %} so far{% endif %}</div>
     <div class="value">{{ pct(rate) }}</div>
     {% if previous_rate is not none and rate is not none %}
       {% set d = (rate - previous_rate) * 100 %}
@@ -35,7 +52,7 @@
   <div class="tile">
     <div class="label">Regressions</div>
     <div class="value">{% if previous %}<a href="/runs/{{ run.id }}/diff#regression">{{ diff.count('regression') }}</a>{% else %}–{% endif %}</div>
-    <div class="delta">agent results that stopped passing</div>
+    <div class="delta">agent results that stopped passing{% if progress.running %}, so far{% endif %}</div>
   </div>
   <div class="tile">
     <div class="label">Fixed</div>
@@ -44,6 +61,7 @@
   </div>
 </div>
 
+<div id="run-agents" data-live-region>
 <div class="card">
   <div class="card-head">
     <div><h2>By agent</h2><p class="sub">Each agent's results across every asset in this run</p></div>
@@ -67,7 +85,9 @@
   </div>
   {{ m.status_legend() }}
 </div>
+</div>
 
+<div id="run-agent-expected" data-live-region>
 {% if agents %}
 <div class="card">
   <h2>By agent and expected output</h2>
@@ -98,7 +118,9 @@
   </div>
 </div>
 {% endif %}
+</div>
 
+<div id="run-performance" data-live-region>
 {% if run.performance %}
 <div class="card">
   <h2>Performance</h2>
@@ -120,6 +142,7 @@
   </div>
 </div>
 {% endif %}
+</div>
 
 <div class="card" id="matrix">
   <div class="card-head">
@@ -150,6 +173,7 @@
     <button type="submit">Filter</button>
     {% if filtered %}<a class="clear" href="/runs/{{ run.id }}#matrix">Clear</a>{% endif %}
   </form>
+  <div id="run-results" data-live-region>
   {% if assets %}
   {% set p = results_page %}
   <div class="pager-head">
@@ -193,7 +217,8 @@
     {{ m.pager(request, p, '#matrix') }}
   </div>
   {% else %}
-  <p class="empty">No assets match these filters.</p>
+  <p class="empty">{% if run.assets %}No assets match these filters.{% elif progress.running %}No results yet: they arrive as each test case finishes.{% else %}No asset results in this run.{% endif %}</p>
   {% endif %}
+  </div>
 </div>
 {% endblock %}

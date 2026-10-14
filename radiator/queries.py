@@ -582,6 +582,72 @@ def performance_series(
     return out
 
 
+# --- live updates ---------------------------------------------------------------
+
+RUNNING, STALLED, FINISHED = "running", "stalled", "finished"
+# An open run that hasn't uploaded anything for this long is taken to have
+# died (a crash, a killed pod) rather than to be still going. HelmsDeep's
+# ~70 minutes without an upload is the longest quiet stretch a live run has.
+STALE_AFTER = timedelta(hours=2)
+
+
+def run_state(run: Run, now: Optional[datetime] = None) -> str:
+    if run.ended_at is not None:
+        return FINISHED
+    now = now or datetime.now(timezone.utc)
+    if run.updated_at is not None and now - run.updated_at > STALE_AFTER:
+        return STALLED
+    return RUNNING
+
+
+def run_progress(session: Session, run: Run) -> dict:
+    """How far a run has got, cheaply: for the run page's live updates."""
+    counts = status_counts(session, [run.id])[run.id]
+    performance = session.scalar(
+        select(func.count())
+        .select_from(PerformanceResult)
+        .where(PerformanceResult.run_id == run.id)
+    )
+    done = sum(counts.values()) + performance
+    state = run_state(run)
+    return {
+        "run_id": str(run.id),
+        "state": state,
+        "running": state == RUNNING,
+        "done_assets": done,
+        "expected_assets": run.expected_assets,
+        "counts": counts,
+        "pass_rate": pass_rate(counts),
+        "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+        # changes whenever anything on the run page would
+        "version": f"{run.updated_at.isoformat() if run.updated_at else ''}"
+        f"|{run.ended_at.isoformat() if run.ended_at else ''}|{done}",
+    }
+
+
+def live_status(session: Session) -> dict:
+    """What's running now, for the runs list's and the weekly page's live
+    updates. ``version`` changes when a run starts, uploads, or finishes."""
+    since = datetime.now(timezone.utc) - STALE_AFTER
+    running = list(
+        session.execute(
+            select(Run.id, Run.updated_at)
+            .where(Run.ended_at.is_(None), Run.updated_at >= since)
+            .order_by(Run.started_at)
+        )
+    )
+    latest = session.execute(
+        select(Run.id, Run.ended_at).order_by(Run.started_at.desc()).limit(1)
+    ).first()
+    finished = session.scalar(select(func.max(Run.ended_at)))
+    parts = [str(latest.id) if latest else "", str(finished or "")]
+    parts += [f"{run_id}@{updated.isoformat()}" for run_id, updated in running]
+    return {
+        "running": [str(run_id) for run_id, _ in running],
+        "version": "|".join(parts),
+    }
+
+
 # --- JSON for the read API ---------------------------------------------------
 
 

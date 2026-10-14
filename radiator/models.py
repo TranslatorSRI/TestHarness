@@ -63,9 +63,13 @@ class Run(Base):
     origin_ref: Mapped[Optional[str]] = mapped_column(String(255))
     # the runs of one run cycle share this (see radiator_schema.RunCreate)
     cycle_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, index=True)
+    # for the progress bar while the run is going (see RunCreate)
+    expected_assets: Mapped[Optional[int]] = mapped_column(Integer)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     counts: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    # Also touched by every results upload: an open run that hasn't changed
+    # in a while is taken as one that died rather than one still going.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

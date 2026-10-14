@@ -58,6 +58,15 @@ deploy/
 - **A run cycle**: the board for one environment's cycle (each test against
   its previous run, with a step line of its last 8 runs), the flags, and the
   regressions and fixes by agent.
+- **Live updates**: while a run is going, its page fills in by itself as the
+  harness uploads each test case's results, with a progress bar (assets tested
+  out of the run's total) and "so far" on the numbers. The runs list and the
+  Weekly page pick up runs starting, uploading and finishing. Pages poll a
+  small JSON check (`/api/runs/{id}/progress`, `/api/live`) every 10 to 60
+  seconds, pause while the tab is hidden, and refetch only when something
+  changed. An open run that hasn't uploaded anything for 2 hours is marked
+  *didn't finish* and no longer polled. Performance runs have nothing to show
+  until HelmsDeep finishes.
 - **Runs**: every run, newest first, with its status breakdown, pass rate, and
   duration; filter by suite and environment.
 - **A run**: pass rate against the previous run, regressions and fixes, a
@@ -161,6 +170,8 @@ Reading, with the token or a session:
 |---|---|
 | `GET /api/runs?suite=&env=&limit=` | runs, newest first |
 | `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
+| `GET /api/runs/{run_id}/progress` | how far a run has got (assets tested of its total, counts, state); what its page polls |
+| `GET /api/live` | the runs in progress, and a version that changes when runs start, upload or finish |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
 | `GET /api/runs/{run_id}/grid.png?days=35` | the run grid for this run's suite, up to this run |
 | `GET /api/cycles?limit=20` | the latest run cycles |

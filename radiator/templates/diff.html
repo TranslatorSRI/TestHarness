@@ -14,6 +14,9 @@
     {% endif %}
   </div>
 </div>
+{% if base and running %}
+<p class="sub">This run hasn't finished: these are the changes among the assets tested so far. Reload to see more.</p>
+{% endif %}
 {% if base %}
 <div class="diff-summary">
   {% for kind, title, _ in kinds %}

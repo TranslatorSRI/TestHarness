@@ -77,6 +77,9 @@ class RunCreate(BaseModel):
     # environment. The cycle's runs share this id, and the radiator reports
     # on them together.
     cycle_id: Optional[UUID] = None
+    # How many assets the run will test, so the dashboard can show progress
+    # while it's running. None when not known (eg imported runs).
+    expected_assets: Optional[int] = None
 
 
 class AgentResult(BaseModel):

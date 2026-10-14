@@ -285,6 +285,7 @@ def main(args):
             query_type=query_type,
             query_parameters=args.get("query_parameters"),
             cycle_id=args.get("cycle_id"),
+            expected_assets=sum(len(test.test_assets) for test in tests.values()),
             harness_version=harness_version(),
             tests_source=args.get("tests_url") or args.get("tests_dir"),
             started_at=datetime.now().astimezone(),

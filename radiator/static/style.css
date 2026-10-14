@@ -421,3 +421,16 @@ table.weekly .who { font-weight: 600; margin-right: 4px; }
 table.weekly .change { color: var(--ink-2); margin-left: 6px; }
 ul.flags { margin: 0; padding-left: 18px; }
 ul.flags li { margin: 4px 0; }
+
+/* --- live updates ------------------------------------------------------------ */
+
+.live-note { color: var(--ink-muted); font-size: 12px; margin: -12px 0 12px; }
+.badge.live { display: inline-flex; align-items: center; gap: 5px; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--status-passed); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.progress-card { padding-top: 14px; padding-bottom: 12px; }
+.progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.progress { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
+.progress span { display: block; height: 100%; border-radius: 5px; background: var(--accent); transition: width 0.4s ease; }
+.progress-card .sub { margin: 8px 0 0; }

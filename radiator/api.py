@@ -103,6 +103,18 @@ def get_run_summary(run_id: uuid.UUID, session: Session = Depends(get_session)):
     return queries.run_summary(session, _run_or_404(session, run_id))
 
 
+@read_router.get("/runs/{run_id}/progress")
+def get_run_progress(run_id: uuid.UUID, session: Session = Depends(get_session)):
+    """How far a run has got: what the run page polls while it's running."""
+    return queries.run_progress(session, _run_or_404(session, run_id))
+
+
+@read_router.get("/live")
+def get_live(session: Session = Depends(get_session)):
+    """The runs in progress: what the runs list and the weekly page poll."""
+    return queries.live_status(session)
+
+
 @read_router.get("/runs/{run_id}/history.png")
 def get_run_history_png(
     run_id: uuid.UUID, runs: int = 30, session: Session = Depends(get_session)

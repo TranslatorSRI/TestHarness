@@ -192,6 +192,30 @@ def duration(run) -> str:
     return f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
 
 
+def elapsed(run) -> str:
+    """How long a run has been going (or went, if finished)."""
+    end = run.ended_at or datetime.now(timezone.utc)
+    minutes = int((end - run.started_at).total_seconds() // 60)
+    return f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+
+
+def run_badge(run) -> Markup:
+    """A running or didn't-finish badge for an open run; nothing once done."""
+    state = queries.run_state(run)
+    if state == queries.RUNNING:
+        return Markup(
+            '<span class="badge live"><span class="pulse" aria-hidden="true"></span>'
+            "running</span>"
+        )
+    if state == queries.STALLED:
+        return Markup(
+            '<span class="badge" title="No results for over '
+            f"{int(queries.STALE_AFTER.total_seconds() // 3600)} hours: the run "
+            "probably died before it finished\">didn't finish</span>"
+        )
+    return Markup("")
+
+
 def pk_url(pk: Optional[str], env: Optional[str] = None) -> Optional[str]:
     return PK_VIEWER.format(pk=pk) if pk else None
 
@@ -237,6 +261,9 @@ def register_template_helpers(templates) -> None:
         when=when,
         ago=ago,
         duration=duration,
+        elapsed=elapsed,
+        run_badge=run_badge,
+        run_state=queries.run_state,
         pk_url=pk_url,
         cell_tip=cell_tip,
         agent_color=charts.agent_color,
@@ -278,6 +305,7 @@ def runs_page(
         request,
         "runs.html",
         nav="runs",
+        live_version=queries.live_status(session)["version"],
         runs=runs,
         counts=queries.status_counts(session, run_ids),
         perf_counts=queries.performance_counts(session, run_ids),
@@ -373,6 +401,7 @@ def run_page(
         filters=dict(status=status, agent=agent, expected=expected, q=q),
         filtered=any([status, expected, q]),
         pass_rate=queries.pass_rate,
+        progress=queries.run_progress(session, run),
     )
 
 
@@ -389,14 +418,20 @@ def diff_page(
     else:
         previous = queries.previous_run(session, run)
         base_run = queries.get_run(session, previous.id) if previous else None
+    diff = queries.diff_runs(base_run, run)
+    running = run.ended_at is None
+    if running:
+        # assets not tested yet aren't dropped, just not reached
+        diff.changes["removed"] = []
     return render(
         request,
         "diff.html",
         nav="runs",
         run=run,
         base=base_run,
-        diff=queries.diff_runs(base_run, run),
+        diff=diff,
         kinds=queries.DIFF_KINDS,
+        running=running,
     )
 
 
@@ -730,6 +765,7 @@ def weekly_page(
         request,
         "weekly.html",
         nav="weekly",
+        live_version=queries.live_status(session)["version"],
         digest=digest,
         kinds=cycles.KINDS,
         kind_labels=cycles.KIND_LABELS,
