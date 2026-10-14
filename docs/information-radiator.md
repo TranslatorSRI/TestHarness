@@ -281,6 +281,33 @@ and check `alembic -c radiator/alembic.ini check` is clean (CI runs it).
 To point a local harness run at it: `RADIATOR_URL=http://localhost:8000
 RADIATOR_TOKEN=dev-token test-harness load local_acceptance`.
 
+## When a run, or part of one, is missing from the dashboard
+
+Every run's log says where its results went and what arrived:
+
+- At the start: `Reporting to the Information Radiator at <url>: <run link>`,
+  or `Not reporting to the Information Radiator (--local / RADIATOR_URL and
+  RADIATOR_TOKEN aren't set)`.
+- At the end: `Information Radiator: <run link> has 612 of the 640 assets in
+  the suite`, then, if any are missing, a warning naming them
+  (`TestCase_12/Asset_3, ...`). Search the log for one of those ids: every
+  place an asset can be left out logs it with its test case and asset id
+  and why: a test case with no assets or objective, an expected output the
+  harness doesn't test, a query that couldn't be built (`couldn't build the
+  query for asset ...`), no answer from a service (`No answer from <agent> at
+  <url>: ConnectError ...`, recorded with the harness's 418), or a record the
+  schema rejected (`couldn't record asset ... for the Information Radiator`).
+- If an upload failed: `Upload to the Information Radiator failed (POST <url>,
+  N asset results ...)` with the radiator's answer (eg the field a 422
+  rejected) or the connection error. Nothing more is sent for that run; the
+  whole run is saved as `radiator_<run id>.json`, to replay with
+  `test-harness-radiator push`.
+
+The radiator's own log has a line for each run opened, each batch of results
+and each run finished, and, for a rejected upload, which fields were wrong
+(`Rejected upload POST ...: body.results.0.status: ...`). Set
+`RADIATOR_LOG_LEVEL` (the chart's `config.logLevel`) to change how much it says.
+
 ## Known gaps
 
 - ARA response times under the ARS aren't recorded: the harness only sees

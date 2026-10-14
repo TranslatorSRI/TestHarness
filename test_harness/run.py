@@ -89,7 +89,11 @@ def run_tests(
     for test in tqdm(list(tests.values())):
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
-            logger.warning(f"Test has missing required fields: {test.id}")
+            missing = "test_assets" if not test.test_assets else "test_case_objective"
+            logger.warning(
+                f"[{test.id}] skipped, and not sent to the Information Radiator: "
+                f"the test case has no {missing}"
+            )
             continue
 
         query_responses = {}
@@ -101,7 +105,10 @@ def run_tests(
                 # throw out any assets with unsupported expected outputs, i.e. OverlyGeneric
                 if asset.expected_output not in collector.query_types:
                     logger.warning(
-                        f"Asset id {asset.id} has unsupported expected output."
+                        f"[{test.id}] asset {asset.id} skipped, and not sent to "
+                        "the Information Radiator: its expected output "
+                        f"{asset.expected_output!r} isn't one the harness tests "
+                        f"({', '.join(collector.query_types)})"
                     )
                     continue
                 # create test in Test Dashboard
@@ -305,6 +312,11 @@ def run_tests(
                     # failed). Record it as skipped across every agent so it
                     # still appears in the per-agent stats, CSV, and radiator
                     # labels as SKIPPED instead of being dropped entirely.
+                    logger.warning(
+                        f"[{test.id}] asset {asset.id}: no query response (its "
+                        "query couldn't be built or sent; see the errors above), "
+                        "so it's recorded as SKIPPED"
+                    )
                     status = AgentStatus.SKIPPED
                     collector.collect_acceptance_result(
                         test,
@@ -341,6 +353,12 @@ def run_tests(
                     logger.error(f"Failed to create test: {test.id}: {e}")
                     asset_reporter = LocalReporter(logger=logger)
 
+                if not isinstance(test, PerformanceTestCase):
+                    logger.warning(
+                        f"[{test.id}] asset {asset.id} skipped, and not sent to "
+                        "the Information Radiator: only performance tests are "
+                        "run as QuantitativeTests"
+                    )
                 if isinstance(test, PerformanceTestCase):
                     if target_url is not None:
                         host = query_runner.target_url
@@ -407,7 +425,8 @@ def run_tests(
                             status = AgentStatus.FAILED
                     except Exception as e:
                         logger.error(
-                            f"Failed to run performance test for {test.id}: {e}"
+                            f"[{test.id}] performance test against {host} failed: "
+                            f"{type(e).__name__}: {e}"
                         )
                         status = AgentStatus.FAILED
                         collector.record_performance_error(test, asset, host, str(e))
@@ -448,7 +467,10 @@ def run_tests(
         else:
             try:
                 test_id = reporter.create_test(test, test.test_assets[0])
-                logger.error(f"Unsupported test type: {test.id}")
+                logger.error(
+                    f"[{test.id}] not run, and not sent to the Information "
+                    f"Radiator: unsupported test type {test.test_case_objective!r}"
+                )
                 reporter.upload_log(
                     test_id, f"Unsupported test type in test: {test.id}"
                 )

@@ -104,8 +104,16 @@ class QueryRunner:
                 status_code = res.status_code
                 res.raise_for_status()
                 response = res.json()
+            except httpx.HTTPStatusError as e:
+                self.logger.error(
+                    f"{infores} at {url} answered {status_code}: "
+                    f"{e.response.text[:500]}"
+                )
             except Exception as e:
-                self.logger.error(f"Something went wrong: {e}")
+                # status_code stays 418, the harness's "no HTTP answer at all"
+                self.logger.error(
+                    f"No answer from {infores} at {url}: {type(e).__name__}: {e}"
+                )
 
         if infores == "infores:ars":
             parent_pk = response.get("pk", "")
@@ -173,7 +181,7 @@ class QueryRunner:
                         # query errored, need to capture
                         break
                     elif status == "Running":
-                        self.logger.info(f"{infores} is still Running...")
+                        self.logger.debug(f"{infores} is still Running...")
                         current_time = time.time()
                         time.sleep(10)
                     else:
@@ -348,7 +356,10 @@ class QueryRunner:
                         "pks": {},
                     }
                 except Exception as e:
-                    self.logger.warning(e)
+                    self.logger.error(
+                        f"[{test_case.id}] couldn't build the query for asset "
+                        f"{test_asset.id}: {type(e).__name__}: {e}"
+                    )
 
         if self.target_url is not None:
             # ignore the components specified in the test case and send every
@@ -393,4 +404,7 @@ class QueryRunner:
                     queries[query_hash]["responses"].update(responses)
                     queries[query_hash]["pks"].update(pks)
         except Exception as e:
-            self.logger.error(f"Something went wrong with the queries: {e}")
+            self.logger.error(
+                "Sending the queries failed partway, so some have no response: "
+                f"{type(e).__name__}: {e}"
+            )

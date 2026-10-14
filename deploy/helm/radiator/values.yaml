@@ -32,6 +32,8 @@ config:
   secureCookies: true
   # Environments the run grid greys out (comma-separated).
   excludedEnvs: dev
+  # The radiator's own log lines: each upload, and why one was rejected.
+  logLevel: INFO
 
 service:
   type: ClusterIP

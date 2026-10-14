@@ -5,11 +5,15 @@ ingress, the login throttle reads each client's address from the
 X-Forwarded-For entry the ingress adds (see ``auth.client_address``).
 """
 
+import logging
+import os
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, Form, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,6 +31,21 @@ from radiator.config import Settings
 from radiator.db import make_sessionmaker
 
 HERE = Path(__file__).parent
+logger = logging.getLogger("radiator")
+
+
+def configure_logging() -> None:
+    """Send the radiator's own log lines (uploads, rejected uploads) to
+    stderr next to uvicorn's, at RADIATOR_LOG_LEVEL (default INFO)."""
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(os.getenv("RADIATOR_LOG_LEVEL", "INFO").upper())
+    logger.propagate = False
+
+
 SESSION_MAX_AGE_S = 30 * 24 * 3600
 
 
@@ -44,6 +63,7 @@ def _safe_next(next_url: Optional[str]) -> str:
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
+    configure_logging()
     settings = settings or Settings.from_env()
     app = FastAPI(title="Information Radiator", docs_url=None, redoc_url=None)
     app.state.settings = settings
@@ -65,6 +85,23 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.include_router(api.ingest_router)
     app.include_router(api.read_router)
     app.include_router(web.router)
+
+    @app.exception_handler(RequestValidationError)
+    async def rejected(request: Request, exc: RequestValidationError):
+        """An upload the schema rejects is lost to the dashboard: say exactly
+        what was wrong, here as well as in the harness's log."""
+        if request.url.path.startswith(api.schema.INGEST_PREFIX):
+            errors = exc.errors()
+            details = "; ".join(
+                f"{'.'.join(str(p) for p in e.get('loc', ()))}: {e.get('msg')}"
+                for e in errors[:10]
+            )
+            more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
+            logger.warning(
+                f"Rejected upload {request.method} {request.url.path}: "
+                f"{details}{more}"
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(web.LoginRequired)
     async def login_required(request: Request, exc: web.LoginRequired):

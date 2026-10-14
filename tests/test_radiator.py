@@ -6,6 +6,8 @@ client's batching, auth, failure handling, and save/replay.
 """
 
 import json
+
+import httpx
 import os
 from uuid import uuid4
 
@@ -784,3 +786,71 @@ def test_without_zebrunner_the_radiator_has_slack_channel(
     )
     assert all("View in the new Information Radiator" in m for m in slacker.messages)
     assert "Pass rate 50%" in slacker.messages[-1]
+
+
+# --- what the logs say about the dashboard ---------------------------------
+
+
+def test_a_rejected_upload_logs_the_radiators_reason(httpx_mock: HTTPXMock, caplog):
+    run = _run()
+    httpx_mock.add_response(method="POST", url=f"{INGEST}/runs")
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{INGEST}/runs/{run.run_id}/results",
+        status_code=422,
+        json={"detail": [{"loc": ["body", "results", 0, "status"], "msg": "bad"}]},
+    )
+    client = RadiatorClient(base_url=BASE, token="tok", batch_size=1)
+    client.start_run(run)
+    client.add_result(_asset_result("asset-1"))
+    assert client.upload_failed
+    error = caplog.records[-1].getMessage()
+    assert "answered 422" in error and '"status"' in error and "bad" in error
+    assert "1 asset results and 0 performance results" in error
+    assert str(run.run_id) in error
+
+
+def test_an_unreachable_radiator_logs_the_connection_error(
+    httpx_mock: HTTPXMock, caplog
+):
+    httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+    client = RadiatorClient(base_url=BASE, token="tok")
+    client.start_run(_run())
+    assert "opening the run): ConnectError: Connection refused" in caplog.text
+
+
+def test_the_outcome_names_assets_the_dashboard_is_missing(httpx_mock: HTTPXMock):
+    run = _run()
+    httpx_mock.add_response(method="POST", url=f"{INGEST}/runs")
+    httpx_mock.add_response(method="POST", url=f"{INGEST}/runs/{run.run_id}/results")
+    client = RadiatorClient(base_url=BASE, token="tok", batch_size=1)
+    client.start_run(run)
+    client.add_result(_asset_result("asset-1"))
+    expected = [("case-1", "asset-1"), ("case-1", "asset-2")]
+    summary, missing = client.outcome(expected)
+    assert f"{BASE}/runs/{run.run_id} has 1 of the 2 assets" in summary
+    assert "sent in 1 batches" in summary
+    assert "1 assets in the suite have no result" in missing
+    assert "case-1/asset-2" in missing
+
+    offline = RadiatorClient(enabled=False)
+    offline.start_run(run)
+    offline.add_result(_asset_result("asset-1"))
+    [line, _] = offline.outcome(expected)
+    assert "not uploaded; 1 of the 2 assets were recorded" in line
+
+
+def test_main_logs_where_the_run_went(mocker, monkeypatch, tmp_path, caplog):
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    caplog.set_level("INFO")
+    _main_with_slack(
+        mocker, monkeypatch, tmp_path, radiator=False, args={"log_level": "INFO"}
+    )
+    assert (
+        "Not reporting to the Information Radiator (RADIATOR_URL and "
+        "RADIATOR_TOKEN aren't set)" in caplog.text
+    )
+    # run_tests is mocked out here, so nothing was recorded: every asset is named
+    assert "Information Radiator: not uploaded; 0 of the" in caplog.text
+    assert "have no result for the Information Radiator" in caplog.text

@@ -1,5 +1,6 @@
 """The JSON API: ingest for the harness, and a small read API for scripts."""
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -11,6 +12,8 @@ from radiator import grid as run_grid
 from radiator import board_png, cycles, history_png, ingest, queries
 from radiator.auth import require_token, require_token_or_login
 from radiator.models import Run
+
+logger = logging.getLogger("radiator")
 
 ingest_router = APIRouter(
     prefix=schema.INGEST_PREFIX, dependencies=[Depends(require_token)]
@@ -28,6 +31,7 @@ def _commit_or_404(session: Session, run_id: uuid.UUID, write):
         write()
     except ingest.RunNotFound:
         session.rollback()
+        logger.warning(f"Upload for unknown run {run_id}: it was never opened")
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             f"No run {run_id}: open it with POST {schema.INGEST_PREFIX}/runs first",
@@ -39,6 +43,15 @@ def _commit_or_404(session: Session, run_id: uuid.UUID, write):
 def create_run(run: schema.RunCreate, session: Session = Depends(get_session)):
     ingest.upsert_run(session, run)
     session.commit()
+    logger.info(
+        f"Run {run.run_id} opened: {run.suite} in {run.env or 'no environment'}"
+        + (f", target {run.target}" if run.target else "")
+        + (
+            f", {run.expected_assets} assets expected"
+            if run.expected_assets is not None
+            else ""
+        )
+    )
     return {"run_id": str(run.run_id)}
 
 
@@ -51,6 +64,10 @@ def add_results(
     _commit_or_404(
         session, run_id, lambda: ingest.upsert_results(session, run_id, batch)
     )
+    logger.info(
+        f"Run {run_id}: {len(batch.results)} asset results, "
+        f"{len(batch.performance)} performance results"
+    )
     return {"results": len(batch.results), "performance": len(batch.performance)}
 
 
@@ -61,6 +78,7 @@ def finish_run(
     session: Session = Depends(get_session),
 ):
     _commit_or_404(session, run_id, lambda: ingest.finish_run(session, run_id, finish))
+    logger.info(f"Run {run_id} finished")
     return {"run_id": str(run_id)}
 
 

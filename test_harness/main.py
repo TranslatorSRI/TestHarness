@@ -69,6 +69,16 @@ def harness_version():
         return None
 
 
+def log_radiator_outcome(radiator, tests, logger):
+    """What reached the radiator against what the suite had, naming any assets
+    that never got a result, so a gap in the dashboard can be traced."""
+    expected = [
+        (test.id, asset.id) for test in tests.values() for asset in test.test_assets
+    ]
+    for i, line in enumerate(radiator.outcome(expected)):
+        (logger.warning if i else logger.info)(line)
+
+
 def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
     """Save the run for `test-harness-radiator push` if it wasn't uploaded."""
     if force or not radiator.enabled or radiator.upload_failed:
@@ -341,6 +351,18 @@ def main(args):
             started_at=datetime.now().astimezone(),
         )
     )
+    if radiator.enabled and not radiator.upload_failed:
+        logger.info(
+            f"Reporting to the Information Radiator at {radiator.base_url}: "
+            f"{radiator.run_url}"
+        )
+    elif not radiator.enabled:
+        logger.info(
+            "Not reporting to the Information Radiator ("
+            + ("--local" if local else "RADIATOR_URL and RADIATOR_TOKEN aren't set")
+            + f"); the run will be saved to {output_dir} for "
+            "`test-harness-radiator push`."
+        )
     params_note = (
         f"\nQuery parameters: `{json.dumps(args['query_parameters'])}`"
         if args.get("query_parameters")
@@ -416,11 +438,14 @@ def main(args):
         # Keep what was collected, but leave the run open: a run that died
         # halfway must not read as finished.
         radiator.flush()
+        logger.error("The run crashed; the Information Radiator has it as unfinished.")
+        log_radiator_outcome(radiator, tests, logger)
         save_radiator_run(radiator, output_dir, target_prefix, logger, force=True)
         raise
     # Close out the radiator before Zebrunner and Slack, whose failures below
     # would otherwise cost it the run.
     radiator.finish_run(counts=collector.acceptance_report)
+    log_radiator_outcome(radiator, tests, logger)
     save_radiator_run(radiator, output_dir, target_prefix, logger)
 
     duration = round(time.time() - start_time, 2)

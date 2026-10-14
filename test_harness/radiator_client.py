@@ -17,7 +17,7 @@ import os
 import sys
 from argparse import ArgumentParser
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 import httpx
 
@@ -69,6 +69,10 @@ class RadiatorClient:
         self.upload_failed = False
         self._pending = ResultBatch()
         self._client: Optional[httpx.Client] = None
+        # what actually reached the radiator, for the end-of-run log
+        self.sent_results = 0
+        self.sent_performance = 0
+        self.sent_batches = 0
 
     @staticmethod
     def is_configured(base_url=None, token=None) -> bool:
@@ -88,7 +92,7 @@ class RadiatorClient:
     def start_run(self, run: RunCreate):
         """Open a run."""
         self.payload = RunPayload(run=run)
-        self._send("POST", "/runs", run.model_dump(mode="json"))
+        self._send("POST", "/runs", run.model_dump(mode="json"), what="opening the run")
 
     def add_result(self, result: AssetResult):
         """Record one asset's result, uploading once a batch has built up."""
@@ -111,11 +115,16 @@ class RadiatorClient:
         if not (self._pending.results or self._pending.performance):
             return
         batch, self._pending = self._pending, ResultBatch()
-        self._send(
+        if self._send(
             "POST",
             f"/runs/{self.payload.run.run_id}/results",
             batch.model_dump(mode="json"),
-        )
+            what=f"{len(batch.results)} asset results and "
+            f"{len(batch.performance)} performance results",
+        ):
+            self.sent_results += len(batch.results)
+            self.sent_performance += len(batch.performance)
+            self.sent_batches += 1
 
     def finish_run(
         self, counts: Optional[dict] = None, finish: Optional[RunFinish] = None
@@ -132,6 +141,7 @@ class RadiatorClient:
             "PATCH",
             f"/runs/{self.payload.run.run_id}",
             self.payload.finish.model_dump(mode="json"),
+            what="closing the run",
         )
         if self._client is not None:
             self._client.close()
@@ -233,19 +243,78 @@ class RadiatorClient:
             )
         return self._client
 
-    def _send(self, method: str, path: str, body: dict):
+    def _send(self, method: str, path: str, body: dict, what: str = "") -> bool:
+        """Send one write. Returns True if the radiator took it.
+
+        The first failure stops the rest of the run's uploads (see
+        ``upload_failed``), so it logs everything needed to see why: the
+        radiator's own answer (eg which field a 422 rejected), or the
+        connection error.
+        """
         if not self.enabled or self.upload_failed:
-            return
+            return False
         try:
             res = self._http().request(method, path, json=body)
             res.raise_for_status()
-        except Exception as e:
-            self.upload_failed = True
-            self.logger.error(
-                f"Upload to the Information Radiator failed ({method} {path}): "
-                f"{e}. Not sending the rest of this run; it will be saved "
-                "locally for `test-harness-radiator push`."
+            return True
+        except httpx.HTTPStatusError as e:
+            reason = (
+                f"the radiator answered {e.response.status_code}: "
+                f"{e.response.text[:2000]}"
             )
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+        self.upload_failed = True
+        run_id = self.payload.run.run_id if self.payload else "?"
+        self.logger.error(
+            f"Upload to the Information Radiator failed ({method} "
+            f"{self.base_url}{INGEST_PREFIX}{path}"
+            f"{', ' + what if what else ''}): {reason}. Not sending the rest of "
+            f"run {run_id}; the whole run will be saved locally for "
+            "`test-harness-radiator push`."
+        )
+        return False
+
+    def outcome(self, expected: list) -> List[str]:
+        """Log lines on what the radiator got, against ``expected``
+        (test case id, asset id) pairs: for the end of a run."""
+        lines = []
+        if self.payload is None:
+            return lines
+        recorded = {(r.test_case_id, r.asset_id) for r in self.payload.results}
+        recorded |= {(r.test_case_id, r.asset_id) for r in self.payload.performance}
+        have = len(recorded & set(expected))
+        perf = len(self.payload.performance)
+        perf_note = f" ({perf} performance results)" if perf else ""
+        if self.enabled and not self.upload_failed:
+            lines.append(
+                f"Information Radiator: {self.run_url} has {have} of the "
+                f"{len(expected)} assets in the suite{perf_note}, sent in "
+                f"{self.sent_batches} batches."
+            )
+        elif self.enabled:
+            lines.append(
+                "Information Radiator: the upload failed partway (see the error "
+                f"above); it got {self.sent_results} asset results and "
+                f"{self.sent_performance} performance results before that. "
+                f"{have} of the {len(expected)} assets were recorded and saved "
+                "locally (below)."
+            )
+        else:
+            lines.append(
+                f"Information Radiator: not uploaded; {have} of the "
+                f"{len(expected)} assets were recorded and saved locally (below)."
+            )
+        missing = [pair for pair in expected if pair not in recorded]
+        if missing:
+            shown = ", ".join(f"{t}/{a}" for t, a in missing[:25])
+            more = f" and {len(missing) - 25} more" if len(missing) > 25 else ""
+            lines.append(
+                f"{len(missing)} assets in the suite have no result for the "
+                f"Information Radiator: {shown}{more}. Search this log for an "
+                "asset id to see why."
+            )
+        return lines
 
 
 def push(payload: RunPayload, client: RadiatorClient) -> bool:
