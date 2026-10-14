@@ -145,7 +145,6 @@ class Reporter:
                 ]
             )
         else:
-            print("made it to the error section")
             raise Exception
         res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",

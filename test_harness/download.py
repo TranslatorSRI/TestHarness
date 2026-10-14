@@ -161,5 +161,3 @@ if __name__ == "__main__":
         "https://github.com/NCATSTranslator/Tests/archive/refs/heads/performance_tests.zip",
         logging.Logger("tester"),
     )
-    for test_case_id, test in tests.items():
-        print(type(test))

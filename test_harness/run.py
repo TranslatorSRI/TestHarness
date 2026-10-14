@@ -297,7 +297,6 @@ def run_tests(
                         asset_reporter.upload_labels(test_id, labels)
                     except Exception as e:
                         logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                    logger.info(f"Full report: {json.dumps(asdict(report), indent=4)}")
                     asset_reporter.upload_log(
                         test_id, json.dumps(asdict(report), indent=4)
                     )

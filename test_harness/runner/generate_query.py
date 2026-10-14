@@ -235,4 +235,3 @@ if __name__ == "__main__":
         }
     )
     query = generate_query(test_asset)
-    print(query)
