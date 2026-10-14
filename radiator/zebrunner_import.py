@@ -12,8 +12,10 @@ by default it tries the newer one and falls back):
 * v1 (reporting-service 1.4x and later): ``GET /api/reporting/v1/launches``
   (needs ``--project-id``), ``GET .../v1/launches/{id}/tests``, and a test's
   logs from ``GET .../v1/test-runs/{id}/tests/{testId}/logs-and-screenshots``.
-* legacy (eg 1.28): ``GET /api/reporting/api/tests/runs/search`` and
-  ``POST /api/reporting/api/tests/search``, as Zebrunner's own UI calls them.
+* legacy (eg 1.28): ``GET /api/reporting/api/tests/runs/search``,
+  ``POST /api/reporting/api/tests/search``, and a test's logs from
+  ``GET .../v1/test-runs/{id}/tests/{testId}/logs?page=&pageSize=``, as
+  Zebrunner's own UI calls them.
 
 and posts each run to the radiator's ingest API, exactly as the harness does.
 
@@ -96,6 +98,7 @@ LOGS_PATH = (
 # legacy, as Zebrunner 1.28's UI calls it
 LEGACY_LAUNCHES_PATH = "/api/reporting/api/tests/runs/search"
 LEGACY_TESTS_PATH = "/api/reporting/api/tests/search"
+LEGACY_LOGS_PATH = "/api/reporting/v1/test-runs/{launch_id}/tests/{test_id}/logs"
 V1, LEGACY, AUTO = "v1", "legacy", "auto"
 
 
@@ -295,12 +298,32 @@ class Zebrunner:
             self._show_fields("legacy test", tests[0])
         return tests
 
+    def _legacy_logs(self, launch_id, test_id, page_size: int = 1000) -> list[dict]:
+        """Paged by number (``page``, ``totalPages``); entries have no id."""
+        logs, page = [], 1
+        while True:
+            payload = self._get(
+                LEGACY_LOGS_PATH.format(launch_id=launch_id, test_id=test_id),
+                page=page,
+                pageSize=page_size,
+            )
+            items = _page_items(payload)
+            logs.extend(items)
+            pages = payload.get("totalPages")
+            if not items or (pages is not None and page >= pages):
+                return logs
+            if pages is None and len(items) < page_size:
+                return logs
+            page += 1
+
     def logs(self, launch_id, test_id, page_size: int = 100) -> list[dict]:
         """A test's log lines; [] once Zebrunner turns out not to serve them."""
         if not self.logs_available:
             return []
         logs, token = [], None
         try:
+            if self.api == LEGACY:
+                return self._legacy_logs(launch_id, test_id)
             while True:
                 payload = self._get(
                     LOGS_PATH.format(launch_id=launch_id, test_id=test_id),

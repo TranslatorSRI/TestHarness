@@ -320,7 +320,7 @@ def _epoch_ms(text):
     return int(datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp() * 1000)
 
 
-def fake_legacy_zebrunner(calls):
+def fake_legacy_zebrunner(calls, logs=True):
     """An older Zebrunner (eg 1.28): no /v1 read API; launches and tests come
     from the legacy search endpoints, in `results`, with the suite nested and
     times in epoch millis; and test logs aren't where the import looks."""
@@ -351,6 +351,22 @@ def fake_legacy_zebrunner(calls):
             return httpx.Response(
                 200, json={"results": runs[(page - 1) * size : page * size]}
             )
+        if path.endswith("/logs") and "/v1/test-runs/" in path and logs:
+            test_id = int(path.split("/")[7])
+            entries = [
+                {"level": "INFO", "message": log["message"], "timestamp": 1791954010}
+                for log in LOGS.get(test_id, [])
+            ]
+            # one entry per page, to exercise the paging (no ids to go by)
+            page = int(request.url.params["page"])
+            return httpx.Response(
+                200,
+                json={
+                    "page": page,
+                    "totalPages": max(len(entries), 1),
+                    "results": entries[page - 1 : page],
+                },
+            )
         if path == "/api/reporting/api/tests/search" and request.method == "POST":
             body = json.loads(request.content)
             page, size = body["page"], body["pageSize"]
@@ -369,9 +385,9 @@ def test_import_from_an_older_zebrunner(app, caplog):
 
     assert zebrunner.api == "legacy"
     assert stats.imported == 2 and not stats.failed
-    # no logs on this Zebrunner: imported without reports, with one warning
-    assert stats.with_report == 0
-    assert caplog.text.count("doesn't serve test logs") == 1
+    # the reports come from the legacy logs, paged by number
+    assert stats.with_report == 1  # the one test with a logged report
+    assert "doesn't serve test logs" not in caplog.text
     assert "Zebrunner legacy launch fields: elapsed, id, startedAt, testSuite" in (
         caplog.text
     )
@@ -384,6 +400,19 @@ def test_import_from_an_older_zebrunner(app, caplog):
         # elapsed (seconds) gives the end
         assert (latest.ended_at - latest.started_at).total_seconds() == 3000
         assert {a.asset_id for a in latest.assets} == {"Asset_1", "Asset_2"}
+        one = next(a for a in latest.assets if a.asset_id == "Asset_1")
+        ars = next(a for a in one.agents if a.agent == "ars")
+        assert (ars.rank, ars.pk) == (3, "merged-1")
+
+
+def test_an_older_zebrunner_without_logs_imports_without_reports(app, caplog):
+    zebrunner = Zebrunner(
+        ZE, "refresh", transport=fake_legacy_zebrunner([], logs=False)
+    )
+    stats = import_runs(zebrunner, _radiator(app), env="ci", workers=1)
+    assert stats.imported == 2 and not stats.failed
+    assert stats.with_report == 0
+    assert caplog.text.count("doesn't serve test logs") == 1
 
 
 def test_the_api_can_be_chosen():
