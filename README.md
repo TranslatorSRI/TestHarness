@@ -62,8 +62,10 @@ finishes, the harness container exits; the radiator keeps running at
 
 The suite queries the real Translator services (the ARS on ci), so the run
 needs internet access and takes a few minutes. It reports to the new radiator
-only: the harness gets no Zebrunner settings, even if they're in your
-environment.
+only, unless you put `ZE_BASE_URL` and `ZE_REFRESH_TOKEN` in `.env` to report
+to Zebrunner as well (see
+[A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)
+for where Slack posts go then).
 
 Everything is configurable from a `.env` file next to `compose.yml`; copy
 `.env.example` to `.env` to start from the Slack settings:
@@ -76,6 +78,7 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 | `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
 | `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
 | `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
+| `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets Zebrunner's report |
 | `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)) |
 
 Then:
@@ -135,8 +138,8 @@ Which channel gets what depends on whether Zebrunner is still configured
   report it got before the new radiator (the Zebrunner link, the result summary
   and the result files) and nothing of the new radiator's. The new radiator's
   report goes to a channel of its own, if you give it one (below).
-- **No Zebrunner** (after the cutover, or in Docker Compose): `SLACK_CHANNEL`
-  is the new radiator's and gets its report.
+- **No Zebrunner** (after the cutover, or in Docker Compose without `ZE_*` in
+  `.env`): `SLACK_CHANNEL` is the new radiator's and gets its report.
 
 This keys off whether Zebrunner is *configured*, not whether it answered, so a
 Zebrunner outage never switches the old channel over to the new dashboard.

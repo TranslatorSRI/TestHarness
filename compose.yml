@@ -7,9 +7,9 @@
 # harness exits; the radiator keeps running. Log in with RADIATOR_USERNAME /
 # RADIATOR_PASSWORD (translator / radiator unless set in .env).
 #
-# This reports to the new radiator only, never to Zebrunner: the harness gets
-# no ZE_* settings, whatever is in your environment. Slack is off unless the
-# SLACK_* settings are in .env. The defaults below are for local use only.
+# This reports to the new radiator, and also to Zebrunner if ZE_BASE_URL and
+# ZE_REFRESH_TOKEN are in .env. Slack is off unless the SLACK_* settings are in
+# .env. The defaults below are for local use only.
 
 x-radiator-env: &radiator-env
   RADIATOR_DATABASE_URL: postgresql+psycopg://radiator:radiator@radiator-db:5432/radiator
@@ -90,6 +90,10 @@ services:
       RADIATOR_SLACK_WEBHOOK_URL: ${RADIATOR_SLACK_WEBHOOK_URL:-}
       RADIATOR_SLACK_CHANNEL: ${RADIATOR_SLACK_CHANNEL:-}
       RADIATOR_SLACK_TOKEN: ${RADIATOR_SLACK_TOKEN:-}
+      # Zebrunner, alongside the new radiator: unset, the run reports to the
+      # new radiator only, and SLACK_CHANNEL gets its report
+      ZE_BASE_URL: ${ZE_BASE_URL:-}
+      ZE_REFRESH_TOKEN: ${ZE_REFRESH_TOKEN:-}
       PYTHONUNBUFFERED: "1"
     depends_on:
       radiator:
