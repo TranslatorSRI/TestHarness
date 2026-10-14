@@ -3,15 +3,17 @@
     python -m radiator.zebrunner_import \\
         --zebrunner-url https://zebrunner.example.org --refresh-token ... \\
         --radiator-url https://radiator.example.org --radiator-token ... \\
-        --project-id 1 [--env ci] [--since 2025-01-01] [--dry-run]
+        [--project-id 1] [--env ci] [--since 2025-01-01] [--dry-run]
 
-Reads Zebrunner's own read API (the same service the harness reports to):
+Reads Zebrunner's own read API (the same service the harness reports to).
+Zebrunner changed it between versions, so the import speaks both (``--api``;
+by default it tries the newer one and falls back):
 
-* ``GET /api/reporting/v1/launches?projectId=`` - runs ("launches"), paged.
-  Needs the project: without ``--project-id`` Zebrunner answers 404.
-* ``GET /api/reporting/v1/launches/{id}/tests`` - a run's tests, with labels
-* ``GET /api/reporting/v1/test-runs/{id}/tests/{testId}/logs-and-screenshots``
-  - a test's logs, paged (``.../logs`` there is a file download)
+* v1 (reporting-service 1.4x and later): ``GET /api/reporting/v1/launches``
+  (needs ``--project-id``), ``GET .../v1/launches/{id}/tests``, and a test's
+  logs from ``GET .../v1/test-runs/{id}/tests/{testId}/logs-and-screenshots``.
+* legacy (eg 1.28): ``GET /api/reporting/api/tests/runs/search`` and
+  ``POST /api/reporting/api/tests/search``, as Zebrunner's own UI calls them.
 
 and posts each run to the radiator's ingest API, exactly as the harness does.
 
@@ -84,16 +86,25 @@ PROD_AGENTS = {
 IMPORT_NAMESPACE = uuid.UUID("6f1c8a52-1d7e-4a8f-9a55-0b7c3f6d2e11")
 
 
-# Read from Zebrunner's images (reporting-service 1.54.1 LaunchController,
-# test-execution-logs-service 1.6.1 LogController).
+# v1, read from Zebrunner's images (reporting-service 1.54.1
+# LaunchController, test-execution-logs-service 1.6.1 LogController)
 LAUNCHES_PATH = "/api/reporting/v1/launches"
+TESTS_PATH = "/api/reporting/v1/launches/{launch_id}/tests"
 LOGS_PATH = (
     "/api/reporting/v1/test-runs/{launch_id}/tests/{test_id}/logs-and-screenshots"
 )
+# legacy, as Zebrunner 1.28's UI calls it
+LEGACY_LAUNCHES_PATH = "/api/reporting/api/tests/runs/search"
+LEGACY_TESTS_PATH = "/api/reporting/api/tests/search"
+V1, LEGACY, AUTO = "v1", "legacy", "auto"
 
 
 class ZebrunnerError(RuntimeError):
     """Zebrunner answered with an error; the message has its answer."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def run_id_for(zebrunner_url: str, launch_id) -> uuid.UUID:
@@ -121,8 +132,36 @@ def suite_from_name(name: str) -> str:
 # --- Zebrunner client --------------------------------------------------------
 
 
+def _page_items(payload: dict) -> list:
+    """A page's items: ``items`` in v1, ``results`` in the legacy API."""
+    if not isinstance(payload, dict):
+        return []
+    items = payload.get("items")
+    if items is None:
+        items = payload.get("results")
+    return items or []
+
+
+def legacy_launch(item: dict) -> dict:
+    """A legacy test run, with the fields the import reads under their v1
+    names. The legacy API names and nests some of them differently."""
+    suite = item.get("testSuite") or {}
+    started = item.get("startedAt") or item.get("startTime") or item.get("createdAt")
+    ended = item.get("endedAt") or item.get("finishTime")
+    if ended is None and isinstance(started, (int, float)) and item.get("elapsed"):
+        ended = started + item["elapsed"] * 1000  # elapsed is in seconds
+    return {
+        **item,
+        "name": item.get("name") or suite.get("name") or item.get("testSuiteName"),
+        "startedAt": started,
+        "endedAt": ended,
+        "build": item.get("build") or (item.get("config") or {}).get("build"),
+    }
+
+
 class Zebrunner:
-    """The handful of Zebrunner read calls the import needs."""
+    """The handful of Zebrunner read calls the import needs, in either of its
+    API generations."""
 
     def __init__(
         self,
@@ -130,13 +169,19 @@ class Zebrunner:
         refresh_token: str,
         project_id: Optional[int] = None,
         transport: Optional[httpx.BaseTransport] = None,
+        api: str = AUTO,
     ):
         self.base_url = base_url.rstrip("/")
         self.refresh_token = refresh_token
         self.project_id = project_id
+        self.api = api
         self.client = httpx.Client(
             base_url=self.base_url, timeout=60, transport=transport
         )
+        # turned off for the rest of the import by the first logs request
+        # Zebrunner can't answer, so that's one warning, not one per test
+        self.logs_available = True
+        self._shown_fields = set()
         self._authenticate()
 
     def _authenticate(self):
@@ -146,34 +191,47 @@ class Zebrunner:
         res.raise_for_status()
         self.client.headers["Authorization"] = f"Bearer {res.json()['authToken']}"
 
-    def _get(self, path: str, **params) -> dict:
-        params = {k: v for k, v in params.items() if v is not None}
+    def _request(self, method: str, path: str, params=None, body=None) -> dict:
+        params = {k: v for k, v in (params or {}).items() if v is not None}
         if self.project_id is not None:
             params.setdefault("projectId", self.project_id)
-        res = self.client.get(path, params=params)
+        res = self.client.request(method, path, params=params, json=body)
         if res.status_code == 401:
             # access tokens are short-lived; an import can outlast one
             self._authenticate()
-            res = self.client.get(path, params=params)
+            res = self.client.request(method, path, params=params, json=body)
         if res.is_error:
             # say what Zebrunner said, not just the status: a 400 names the
             # parameter it wanted
             hint = ""
-            if res.status_code in (400, 404) and self.project_id is None:
-                hint = " (Zebrunner needs the project: pass --project-id)"
+            if (
+                res.status_code in (400, 404)
+                and self.project_id is None
+                and "/v1/launches" in path
+            ):
+                hint = " (Zebrunner's v1 API needs the project: pass --project-id)"
             raise ZebrunnerError(
-                f"GET {res.request.url} answered {res.status_code}: "
-                f"{res.text[:500]}{hint}"
+                f"{method} {res.request.url} answered {res.status_code}: "
+                f"{res.text[:500]}{hint}",
+                res.status_code,
             )
         return res.json()
 
-    def launches(self, page_size: int = 50) -> Iterator[dict]:
+    def _get(self, path: str, **params) -> dict:
+        return self._request("GET", path, params)
+
+    def _show_fields(self, what: str, item: dict):
+        """Log the fields of the first item of each kind, once: if the
+        legacy API names something differently, the dry run shows it."""
+        if what not in self._shown_fields and isinstance(item, dict):
+            self._shown_fields.add(what)
+            logger.info(f"Zebrunner {what} fields: {', '.join(sorted(item))}")
+
+    def _paged(self, fetch, page_size: int) -> Iterator[dict]:
         page = 1
         seen = set()
         while True:
-            items = self._get(LAUNCHES_PATH, page=page, pageSize=page_size).get(
-                "items", []
-            )
+            items = fetch(page, page_size)
             fresh = [item for item in items if item.get("id") not in seen]
             if not fresh:
                 return
@@ -184,23 +242,85 @@ class Zebrunner:
                 return
             page += 1
 
-    def tests(self, launch_id) -> list[dict]:
-        return self._get(f"/api/reporting/v1/launches/{launch_id}/tests").get(
-            "items", []
+    def launches(self, page_size: int = 50) -> Iterator[dict]:
+        if self.api in (V1, AUTO):
+            try:
+                first = self._get(LAUNCHES_PATH, page=1, pageSize=page_size)
+            except ZebrunnerError as e:
+                if self.api == V1 or e.status_code != 404:
+                    raise
+                logger.info(
+                    "Zebrunner has no /v1/launches (an older Zebrunner, or a "
+                    "newer one without --project-id); using its legacy API"
+                )
+                self.api = LEGACY
+            else:
+                self.api = V1
+                yield from self._paged(
+                    lambda page, size: (
+                        _page_items(first)
+                        if page == 1
+                        else _page_items(
+                            self._get(LAUNCHES_PATH, page=page, pageSize=size)
+                        )
+                    ),
+                    page_size,
+                )
+                return
+        for item in self._paged(
+            lambda page, size: _page_items(
+                self._get(LEGACY_LAUNCHES_PATH, page=page, pageSize=size)
+            ),
+            page_size,
+        ):
+            self._show_fields("legacy launch", item)
+            yield legacy_launch(item)
+
+    def tests(self, launch_id, page_size: int = 500) -> list[dict]:
+        if self.api == V1:
+            return _page_items(self._get(TESTS_PATH.format(launch_id=launch_id)))
+        tests = list(
+            self._paged(
+                lambda page, size: _page_items(
+                    self._request(
+                        "POST",
+                        LEGACY_TESTS_PATH,
+                        body={"testRunId": launch_id, "page": page, "pageSize": size},
+                    )
+                ),
+                page_size,
+            )
         )
+        if tests:
+            self._show_fields("legacy test", tests[0])
+        return tests
 
     def logs(self, launch_id, test_id, page_size: int = 100) -> list[dict]:
+        """A test's log lines; [] once Zebrunner turns out not to serve them."""
+        if not self.logs_available:
+            return []
         logs, token = [], None
-        while True:
-            payload = self._get(
-                LOGS_PATH.format(launch_id=launch_id, test_id=test_id),
-                maxPageSize=page_size,
-                pageToken=token,
+        try:
+            while True:
+                payload = self._get(
+                    LOGS_PATH.format(launch_id=launch_id, test_id=test_id),
+                    maxPageSize=page_size,
+                    pageToken=token,
+                )
+                logs.extend(_page_items(payload))
+                token = (payload.get("_meta") or {}).get("nextPageToken")
+                if not token or not _page_items(payload):
+                    return logs
+        except ZebrunnerError as e:
+            if e.status_code not in (404, 405):
+                raise
+            self.logs_available = False
+            logger.warning(
+                f"This Zebrunner doesn't serve test logs where the import looks "
+                f"({str(e)[:300]}); importing without ranks, scores and pks "
+                "(as with --no-logs)."
             )
-            logs.extend(payload.get("items", []))
-            token = (payload.get("_meta") or {}).get("nextPageToken")
-            if not token or not payload.get("items"):
-                return logs
+            return []
 
 
 # --- conversion ----------------------------------------------------------------
@@ -517,10 +637,19 @@ def cli(argv=None) -> int:
     parser.add_argument(
         "--project-id",
         type=int,
-        required=True,
         help=(
-            "Zebrunner project id; Zebrunner won't list launches without one "
-            "(it's the projectId in the API calls the launches page makes)"
+            "Zebrunner project id, which newer Zebrunners (the v1 API) need to "
+            "list launches: the projectId in the API calls its launches page "
+            "makes"
+        ),
+    )
+    parser.add_argument(
+        "--api",
+        choices=[AUTO, V1, LEGACY],
+        default=AUTO,
+        help=(
+            "Which Zebrunner API to read: v1 (reporting-service 1.4x and "
+            "later), legacy (eg 1.28), or auto (try v1, fall back to legacy)"
         ),
     )
     parser.add_argument(
@@ -565,7 +694,9 @@ def cli(argv=None) -> int:
             "--radiator-url and --radiator-token are required unless --dry-run"
         )
 
-    zebrunner = Zebrunner(args.zebrunner_url, args.refresh_token, args.project_id)
+    zebrunner = Zebrunner(
+        args.zebrunner_url, args.refresh_token, args.project_id, api=args.api
+    )
     radiator = (
         None if args.dry_run else Radiator(args.radiator_url, args.radiator_token)
     )

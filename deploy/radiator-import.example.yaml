@@ -24,7 +24,7 @@ spec:
             - --refresh-token=$(ZE_REFRESH_TOKEN)
             - --radiator-url=http://radiator
             - --radiator-token=$(RADIATOR_TOKEN)
-            - --project-id=1   # your Zebrunner project's id
+            # - --project-id=1   # newer Zebrunners (the v1 API) need it
             - --env=ci
           env:
             - name: ZE_BASE_URL

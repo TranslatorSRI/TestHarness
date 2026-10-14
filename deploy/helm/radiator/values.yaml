@@ -89,7 +89,7 @@ zebrunnerImport:
   # test-harness-secrets has them).
   existingSecret: test-harness-secrets
   # Zebrunner's project id (the projectId in the API calls its launches page
-  # makes); it won't list launches without one.
+  # makes): newer Zebrunners need it; older ones (eg 1.28) don't.
   projectId: ""
   # Zebrunner never recorded the environment: say which one these runs were.
   env: ci

@@ -1,6 +1,7 @@
 """The Zebrunner import, against a fake Zebrunner speaking its read API."""
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -313,3 +314,83 @@ def test_zebrunner_errors_say_what_zebrunner_said():
     message = str(error.value)
     assert "/api/reporting/v1/launches" in message and "answered 400" in message
     assert "projectId" in message and "pass --project-id" in message
+
+
+def _epoch_ms(text):
+    return int(datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp() * 1000)
+
+
+def fake_legacy_zebrunner(calls):
+    """An older Zebrunner (eg 1.28): no /v1 read API; launches and tests come
+    from the legacy search endpoints, in `results`, with the suite nested and
+    times in epoch millis; and test logs aren't where the import looks."""
+
+    def handler(request: httpx.Request):
+        calls.append((request.method, request.url.path, dict(request.url.params)))
+        path = request.url.path
+        if path == "/api/iam/v1/auth/refresh":
+            return httpx.Response(200, json={"authToken": "access"})
+        if path == "/api/reporting/v1/launches":
+            return httpx.Response(
+                404,
+                json={"status": 404, "error": "Not Found", "path": "/v1/launches"},
+            )
+        if path == "/api/reporting/api/tests/runs/search":
+            page, size = int(request.url.params["page"]), int(
+                request.url.params["pageSize"]
+            )
+            runs = [
+                {
+                    "id": launch["id"],
+                    "testSuite": {"name": launch["name"]},
+                    "startedAt": _epoch_ms(launch["startedAt"]),
+                    "elapsed": 3000,
+                }
+                for launch in LAUNCHES
+            ]
+            return httpx.Response(
+                200, json={"results": runs[(page - 1) * size : page * size]}
+            )
+        if path == "/api/reporting/api/tests/search" and request.method == "POST":
+            body = json.loads(request.content)
+            page, size = body["page"], body["pageSize"]
+            tests = TESTS[body["testRunId"]][(page - 1) * size : page * size]
+            return httpx.Response(200, json={"results": tests})
+        return httpx.Response(404, json={"status": 404, "error": "Not Found"})
+
+    return httpx.MockTransport(handler)
+
+
+def test_import_from_an_older_zebrunner(app, caplog):
+    calls = []
+    zebrunner = Zebrunner(ZE, "refresh", transport=fake_legacy_zebrunner(calls))
+    caplog.set_level("INFO", logger="zebrunner-import")
+    stats = import_runs(zebrunner, _radiator(app), env="ci", workers=1)
+
+    assert zebrunner.api == "legacy"
+    assert stats.imported == 2 and not stats.failed
+    # no logs on this Zebrunner: imported without reports, with one warning
+    assert stats.with_report == 0
+    assert caplog.text.count("doesn't serve test logs") == 1
+    assert "Zebrunner legacy launch fields: elapsed, id, startedAt, testSuite" in (
+        caplog.text
+    )
+    assert any(path == "/api/reporting/api/tests/search" for _, path, _ in calls)
+
+    with app.state.sessionmaker() as session:
+        latest = queries.get_run(session, run_id_for(ZE, 101))
+        assert latest.suite == "sprint_4_tests"
+        assert latest.started_at == datetime(2025, 3, 2, 6, tzinfo=timezone.utc)
+        # elapsed (seconds) gives the end
+        assert (latest.ended_at - latest.started_at).total_seconds() == 3000
+        assert {a.asset_id for a in latest.assets} == {"Asset_1", "Asset_2"}
+
+
+def test_the_api_can_be_chosen():
+    calls = []
+    zebrunner = Zebrunner(
+        ZE, "refresh", transport=fake_legacy_zebrunner(calls), api="legacy"
+    )
+    assert [launch["id"] for launch in zebrunner.launches()] == [101, 100, 99]
+    # straight to the legacy API, never trying v1
+    assert all("/v1/launches" not in path for _, path, _ in calls)
