@@ -7,7 +7,9 @@
 
 Reads Zebrunner's own read API (the same service the harness reports to):
 
-* ``GET /api/reporting/v1/launches`` - runs ("launches"), paged
+* ``GET /api/reporting/api/tests/runs`` - runs ("launches"), paged. The
+  newer ``/api/reporting/v1/launches`` has no list endpoint (only
+  ``/v1/launches/{id}`` and below), so listing goes through the legacy one.
 * ``GET /api/reporting/v1/launches/{id}/tests`` - a run's tests, with labels
 * ``GET /api/reporting/v1/test-runs/{id}/tests/{testId}/logs`` - a test's logs
 
@@ -82,6 +84,14 @@ PROD_AGENTS = {
 IMPORT_NAMESPACE = uuid.UUID("6f1c8a52-1d7e-4a8f-9a55-0b7c3f6d2e11")
 
 
+# Zebrunner's list of launches (LegacyLaunchController in reporting-service).
+LAUNCHES_PATH = "/api/reporting/api/tests/runs"
+
+
+class ZebrunnerError(RuntimeError):
+    """Zebrunner answered with an error; the message has its answer."""
+
+
 def run_id_for(zebrunner_url: str, launch_id) -> uuid.UUID:
     """Stable per launch, so re-importing updates rather than duplicates."""
     return uuid.uuid5(IMPORT_NAMESPACE, f"{zebrunner_url.rstrip('/')}/{launch_id}")
@@ -141,16 +151,25 @@ class Zebrunner:
             # access tokens are short-lived; an import can outlast one
             self._authenticate()
             res = self.client.get(path, params=params)
-        res.raise_for_status()
+        if res.is_error:
+            # say what Zebrunner said, not just the status: a 400 names the
+            # parameter it wanted
+            hint = ""
+            if res.status_code == 400 and self.project_id is None:
+                hint = " (if it wants a project, pass --project-id)"
+            raise ZebrunnerError(
+                f"GET {res.request.url} answered {res.status_code}: "
+                f"{res.text[:500]}{hint}"
+            )
         return res.json()
 
     def launches(self, page_size: int = 50) -> Iterator[dict]:
         page = 1
         seen = set()
         while True:
-            items = self._get(
-                "/api/reporting/v1/launches", page=page, pageSize=page_size
-            ).get("items", [])
+            items = self._get(LAUNCHES_PATH, page=page, pageSize=page_size).get(
+                "items", []
+            )
             fresh = [item for item in items if item.get("id") not in seen]
             if not fresh:
                 return
@@ -542,18 +561,23 @@ def cli(argv=None) -> int:
     radiator = (
         None if args.dry_run else Radiator(args.radiator_url, args.radiator_token)
     )
-    stats = import_runs(
-        zebrunner,
-        radiator,
-        env=args.env,
-        since=args.since,
-        until=args.until,
-        suite=args.suite,
-        fetch_logs=not args.no_logs,
-        force=args.force,
-        workers=args.workers,
-        limit=args.limit,
-    )
+    try:
+        stats = import_runs(
+            zebrunner,
+            radiator,
+            env=args.env,
+            since=args.since,
+            until=args.until,
+            suite=args.suite,
+            fetch_logs=not args.no_logs,
+            force=args.force,
+            workers=args.workers,
+            limit=args.limit,
+        )
+    except (ZebrunnerError, httpx.HTTPError) as e:
+        # eg the login or the list of launches: nothing was imported
+        logger.error(f"Couldn't read from Zebrunner: {e}")
+        return 1
     logger.info(
         f"Done: {stats.imported} of {stats.launches} runs "
         f"{'would be ' if args.dry_run else ''}imported, {stats.assets} assets "

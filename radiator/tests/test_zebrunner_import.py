@@ -3,12 +3,14 @@
 import json
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from radiator import queries
 from radiator.zebrunner_import import (
     Radiator,
     Zebrunner,
+    ZebrunnerError,
     convert_test,
     infer_env,
     import_runs,
@@ -131,7 +133,7 @@ def fake_zebrunner(calls):
             assert json.loads(request.content) == {"refreshToken": "refresh"}
             return httpx.Response(200, json={"authToken": "access"})
         assert request.headers["Authorization"] == "Bearer access"
-        if path == "/api/reporting/v1/launches":
+        if path == "/api/reporting/api/tests/runs":
             if not state["expired_once"]:
                 state["expired_once"] = True
                 return httpx.Response(401)
@@ -295,3 +297,19 @@ def test_a_partly_imported_run_is_imported_again(app, api):
     with app.state.sessionmaker() as session:
         run = queries.get_run(session, run_id)
         assert run.ended_at is not None and len(run.assets) == 2
+
+
+def test_zebrunner_errors_say_what_zebrunner_said():
+    def handler(request: httpx.Request):
+        if request.url.path == "/api/iam/v1/auth/refresh":
+            return httpx.Response(200, json={"authToken": "access"})
+        return httpx.Response(
+            400, json={"message": "Required parameter 'projectId' is not present"}
+        )
+
+    zebrunner = Zebrunner(ZE, "refresh", transport=httpx.MockTransport(handler))
+    with pytest.raises(ZebrunnerError) as error:
+        next(zebrunner.launches())
+    message = str(error.value)
+    assert "/api/reporting/api/tests/runs" in message and "answered 400" in message
+    assert "projectId" in message and "pass --project-id" in message
