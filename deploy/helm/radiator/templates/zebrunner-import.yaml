@@ -29,7 +29,9 @@ spec:
             {{- with $ze.projectId }}
             - --project-id={{ . }}
             {{- end }}
-            - --env={{ $ze.env }}
+            {{- with $ze.env }}
+            - --env={{ . }}
+            {{- end }}
             {{- range $ze.args }}
             - {{ . | quote }}
             {{- end }}

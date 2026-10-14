@@ -91,9 +91,12 @@ zebrunnerImport:
   # Zebrunner's project id (the projectId in the API calls its launches page
   # makes): newer Zebrunners need it; older ones (eg 1.28) don't.
   projectId: ""
-  # Zebrunner never recorded the environment: say which one these runs were.
-  env: ci
-  # Extra arguments, eg ["--dry-run", "--limit", "5"] or ["--suite", "x"].
+  # Zebrunner never recorded the environment. Empty: each run's is looked up
+  # from its pks on each environment's ARS. Set it to record every imported
+  # run under one environment instead.
+  env: ""
+  # Extra arguments, eg ["--dry-run", "--limit", "5"], ["--since",
+  # "2026-09-15"] or ["--ars", "ci=https://..."].
   args: []
   resources:
     requests: {cpu: 100m, memory: 256Mi}

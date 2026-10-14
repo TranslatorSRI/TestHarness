@@ -46,6 +46,4 @@ postgres:
 # To bring over Zebrunner's history once the radiator is up:
 # zebrunnerImport:
 #   enabled: true
-#   projectId: 1
-#   env: ci
-#   args: ["--dry-run", "--limit", "5"]
+#   args: ["--since", "2026-09-15", "--dry-run"]

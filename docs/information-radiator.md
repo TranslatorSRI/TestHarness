@@ -228,7 +228,7 @@ To build it by hand, from the repo root:
 python -m radiator.zebrunner_import \
   --zebrunner-url "$ZE_BASE_URL" --refresh-token "$ZE_REFRESH_TOKEN" \
   --radiator-url https://radiator.example.org --radiator-token "$RADIATOR_TOKEN" \
-  --env ci --dry-run --limit 5
+  --since 2026-09-15 --dry-run --limit 5
 ```
 
 Drop `--dry-run`/`--limit` once that looks right; `deploy/radiator-import.example.yaml`
@@ -239,11 +239,16 @@ labels, and each test's logs) and posts runs like the harness does.
   agent's status (from the labels the harness set), and from the logged report,
   each agent's found/rank/score and the pks. `--no-logs` skips the logs: much
   faster, but no ranks, scores or pks.
+- **The environment** was never sent to Zebrunner, so it's worked out per
+  run: a pk only exists on the ARS that made it (and the harness asked the
+  ARS to retain each response), so the import asks each environment's ARS
+  (from the SmartAPI registry; `--ars ENV=URL` to override) for one of the
+  run's pks, and the one that has it is the run's environment. A run whose
+  pks no ARS has falls back to prod if it has prod-only agents, else no
+  environment. The log says which for each run, and the summary counts them.
+  `--env` records every run under one environment instead (no lookups).
 - **What can't:** result counts, HTTP status and response times were never
-  recorded, so those show as "not recorded", never zero. The environment was
-  never sent to Zebrunner: pass `--env`, or runs with prod-only agents are
-  marked prod and the rest get no environment. To import several environments,
-  run once per environment, narrowing with `--suite`, `--since`, `--until`.
+  recorded, so those show as "not recorded", never zero.
 - **Skipped:** performance tests (pre-HelmsDeep, no summary).
 - **Re-runnable:** imported runs get ids derived from the Zebrunner launch, so
   a second run skips them, or updates them with `--force`.

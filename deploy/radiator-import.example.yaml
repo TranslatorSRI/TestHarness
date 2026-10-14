@@ -25,7 +25,9 @@ spec:
             - --radiator-url=http://radiator
             - --radiator-token=$(RADIATOR_TOKEN)
             # - --project-id=1   # newer Zebrunners (the v1 API) need it
-            - --env=ci
+            # without --env, each run's environment is looked up from its pks
+            # on each environment's ARS
+            - --since=2026-09-15
           env:
             - name: ZE_BASE_URL
               valueFrom: {secretKeyRef: {name: test-harness-secrets, key: ze-base-url}}

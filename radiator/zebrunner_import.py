@@ -346,6 +346,102 @@ class Zebrunner:
             return []
 
 
+# --- environments, from the ARS ----------------------------------------------
+
+SMARTAPI_URL = "https://smart-api.info/api/query?limit=1000&q=TRAPI"
+# SmartAPI's x-maturity for each environment, as the harness maps them
+MATURITY_ENV = {
+    "development": "dev",
+    "staging": "ci",
+    "testing": "test",
+    "production": "prod",
+}
+
+
+def ars_hosts_from_smartapi(client: httpx.Client) -> dict[str, str]:
+    """Each environment's ARS, from the SmartAPI registry (as the harness
+    finds it)."""
+    res = client.get(SMARTAPI_URL)
+    res.raise_for_status()
+    hosts: dict[str, str] = {}
+    for hit in res.json().get("hits", []):
+        infores = (hit.get("info") or {}).get("x-translator", {}).get("infores")
+        if infores != "infores:ars":
+            continue
+        for server in hit.get("servers") or []:
+            env = MATURITY_ENV.get(server.get("x-maturity"))
+            if env and server.get("url"):
+                hosts.setdefault(env, server["url"].rstrip("/"))
+    return hosts
+
+
+def report_pks(reports: dict, limit: int = 3) -> list[str]:
+    """A few distinct pks from a launch's reports, parent pks first."""
+    parents, others = [], []
+    for report in reports.values():
+        pks = report.get("pks") or {}
+        for key, pk in pks.items():
+            if not isinstance(pk, str) or not pk:
+                continue
+            (parents if key == "parent_pk" else others).append(pk)
+    seen, out = set(), []
+    for pk in parents + others:
+        if pk not in seen:
+            seen.add(pk)
+            out.append(pk)
+        if len(out) == limit:
+            break
+    return out
+
+
+class ArsEnvResolver:
+    """Which environment a launch ran in, from where its pks live: a pk only
+    exists on the ARS that made it, and the harness asked the ARS to retain
+    every response."""
+
+    def __init__(
+        self,
+        hosts: dict[str, str],
+        transport: Optional[httpx.BaseTransport] = None,
+        timeout: float = 30,
+    ):
+        self.hosts = dict(hosts)
+        self.client = httpx.Client(
+            timeout=timeout, transport=transport, follow_redirects=True
+        )
+        self.unreachable: set[str] = set()
+        self._last: Optional[str] = None
+
+    def _has(self, env: str, pk: str) -> bool:
+        url = f"{self.hosts[env]}/ars/api/messages/{pk}"
+        try:
+            res = self.client.get(url, params={"trace": "y"})
+        except httpx.HTTPError as e:
+            self.unreachable.add(env)
+            logger.warning(
+                f"Can't reach the {env} ARS at {self.hosts[env]} ({e}); not "
+                "looking pks up there for the rest of the import."
+            )
+            return False
+        if res.status_code != 200:
+            return False
+        try:
+            return isinstance(res.json(), dict)
+        except ValueError:
+            return False
+
+    def env_for(self, reports: dict) -> tuple[Optional[str], Optional[str]]:
+        """(environment, the pk that showed it), or (None, None)."""
+        for pk in report_pks(reports):
+            # runs come in order, and neighbours mostly share an environment
+            order = sorted(self.hosts, key=lambda env: env != self._last)
+            for env in order:
+                if env not in self.unreachable and self._has(env, pk):
+                    self._last = env
+                    return env, pk
+        return None, None
+
+
 # --- conversion ----------------------------------------------------------------
 
 
@@ -359,6 +455,8 @@ class ImportStats:
     with_report: int = 0
     performance_tests_skipped: int = 0
     unknown_env: int = 0
+    env_from_pk: int = 0
+    envs: dict = field(default_factory=dict)
     failed: list = field(default_factory=list)
 
 
@@ -580,6 +678,7 @@ def import_runs(
     force: bool = False,
     workers: int = 8,
     limit: Optional[int] = None,
+    env_resolver: Optional[ArsEnvResolver] = None,
 ) -> ImportStats:
     """Import every matching launch. ``radiator=None`` is a dry run."""
     stats = ImportStats()
@@ -620,13 +719,23 @@ def import_runs(
                         tests,
                     )
                     reports = {test_id: report for test_id, report in found if report}
+            run_env = env
+            if run_env is None and env_resolver is not None and reports:
+                run_env, pk = env_resolver.env_for(reports)
+                if run_env:
+                    stats.env_from_pk += 1
+                    logger.info(f"{name}: pk {pk} is on the {run_env} ARS")
+                else:
+                    logger.info(f"{name}: none of its pks are on any ARS")
             payload = convert_launch(
-                zebrunner.base_url, launch, tests, reports, env, stats
+                zebrunner.base_url, launch, tests, reports, run_env, stats
             )
             if payload is None:
                 stats.skipped_empty += 1
                 logger.info(f"{name}: no acceptance results, skipping")
                 continue
+            run_env_name = payload.run.env or "unknown"
+            stats.envs[run_env_name] = stats.envs.get(run_env_name, 0) + 1
             stats.assets += len(payload.results)
             stats.with_report += sum(1 for t in tests if t.get("id") in reports)
             if radiator is not None:
@@ -641,6 +750,31 @@ def import_runs(
             stats.failed.append((launch.get("id"), str(e)))
             logger.error(f"{name}: failed: {e}")
     return stats
+
+
+def make_env_resolver(overrides: list[str]) -> ArsEnvResolver:
+    """An ArsEnvResolver for every environment: SmartAPI's ARS hosts, with
+    ``ENV=URL`` overrides on top."""
+    hosts: dict[str, str] = {}
+    try:
+        with httpx.Client(timeout=30) as client:
+            hosts = ars_hosts_from_smartapi(client)
+    except httpx.HTTPError as e:
+        if not overrides:
+            raise
+        logger.warning(f"Couldn't read the SmartAPI registry ({e}); using --ars")
+    for spec in overrides:
+        env, sep, url = spec.partition("=")
+        if not sep or not env.strip() or not url.strip():
+            raise ValueError(f"--ars wants ENV=URL, got {spec!r}")
+        hosts[env.strip()] = url.strip().rstrip("/")
+    if not hosts:
+        raise ValueError("no ARS found in the SmartAPI registry; pass --ars")
+    logger.info(
+        "Looking runs' environments up on: "
+        + ", ".join(f"{env} {url}" for env, url in sorted(hosts.items()))
+    )
+    return ArsEnvResolver(hosts)
 
 
 def _date(text: str) -> datetime:
@@ -682,10 +816,27 @@ def cli(argv=None) -> int:
     parser.add_argument(
         "--env",
         help=(
-            "Environment to record the imported runs under. Zebrunner never "
-            "stored it; without this, runs with prod agents are marked prod "
-            "and the rest have no environment."
+            "Environment to record every imported run under. Zebrunner never "
+            "stored it; without this, each run's is looked up from its pks "
+            "(see --ars), and failing that, runs with prod-only agents are "
+            "marked prod and the rest have no environment."
         ),
+    )
+    parser.add_argument(
+        "--ars",
+        action="append",
+        default=[],
+        metavar="ENV=URL",
+        help=(
+            "An environment's ARS, for looking runs' pks up, eg "
+            "ci=https://ars.ci.transltr.io. Repeatable. Defaults to the ARS "
+            "of each environment in the SmartAPI registry."
+        ),
+    )
+    parser.add_argument(
+        "--no-env-lookup",
+        action="store_true",
+        help="Don't look runs' pks up on the ARSs to find their environment",
     )
     parser.add_argument("--suite", help="Only import runs of this suite")
     parser.add_argument(
@@ -723,6 +874,14 @@ def cli(argv=None) -> int:
     radiator = (
         None if args.dry_run else Radiator(args.radiator_url, args.radiator_token)
     )
+    env_resolver = None
+    if args.env is None and not args.no_env_lookup and not args.no_logs:
+        # the pks come from the logged reports, so no logs, no lookup
+        try:
+            env_resolver = make_env_resolver(args.ars)
+        except (ValueError, httpx.HTTPError) as e:
+            logger.error(f"Can't look environments up: {e}")
+            return 1
     try:
         stats = import_runs(
             zebrunner,
@@ -735,6 +894,7 @@ def cli(argv=None) -> int:
             force=args.force,
             workers=args.workers,
             limit=args.limit,
+            env_resolver=env_resolver,
         )
     except (ZebrunnerError, httpx.HTTPError) as e:
         # eg the login or the list of launches: nothing was imported
@@ -748,6 +908,14 @@ def cli(argv=None) -> int:
         f"without acceptance results, {stats.performance_tests_skipped} "
         f"performance tests. {stats.unknown_env} runs have no environment."
     )
+    if stats.envs:
+        envs = ", ".join(f"{env} {n}" for env, n in sorted(stats.envs.items()))
+        how = (
+            f" ({stats.env_from_pk} found from their pks on the ARS)"
+            if env_resolver is not None
+            else ""
+        )
+        logger.info(f"Environments: {envs}{how}")
     for launch_id, error in stats.failed:
         logger.error(f"Failed: launch {launch_id}: {error}")
     return 1 if stats.failed else 0

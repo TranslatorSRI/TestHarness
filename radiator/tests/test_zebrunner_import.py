@@ -9,12 +9,15 @@ from fastapi.testclient import TestClient
 
 from radiator import queries
 from radiator.zebrunner_import import (
+    ArsEnvResolver,
     Radiator,
     Zebrunner,
     ZebrunnerError,
+    ars_hosts_from_smartapi,
     convert_test,
     infer_env,
     import_runs,
+    report_pks,
     run_id_for,
     suite_from_name,
 )
@@ -423,3 +426,113 @@ def test_the_api_can_be_chosen():
     assert [launch["id"] for launch in zebrunner.launches()] == [101, 100, 99]
     # straight to the legacy API, never trying v1
     assert all("/v1/launches" not in path for _, path, _ in calls)
+
+
+# --- environments from the ARS -------------------------------------------------
+
+
+def fake_ars(known: dict, down=()):
+    """ARSs by host: `known` maps a host to the pks it has; hosts in `down`
+    can't be reached."""
+
+    def handler(request: httpx.Request):
+        host = request.url.host
+        if host in down:
+            raise httpx.ConnectError("Connection refused", request=request)
+        pk = request.url.path.rsplit("/", 1)[-1]
+        if pk in known.get(host, ()):
+            return httpx.Response(200, json={"message": pk, "status": "Done"})
+        return httpx.Response(404, json={"error": "not found"})
+
+    return httpx.MockTransport(handler)
+
+
+HOSTS = {
+    "dev": "https://ars.dev.example",
+    "ci": "https://ars.ci.example",
+    "test": "https://ars.test.example",
+}
+
+
+def test_report_pks_prefer_the_parent():
+    reports = {
+        1: {"pks": {"ars": "merged-1", "parent_pk": "parent-1"}},
+        2: {"pks": {"parent_pk": "parent-2", "aragorn": "child-2"}},
+        3: {"pks": {}},
+    }
+    assert report_pks(reports) == ["parent-1", "parent-2", "merged-1"]
+
+
+def test_a_runs_environment_comes_from_the_ars_that_has_its_pk(app, caplog):
+    caplog.set_level("INFO", logger="zebrunner-import")
+    resolver = ArsEnvResolver(
+        HOSTS, transport=fake_ars({"ars.ci.example": {"parent-1"}})
+    )
+    stats = import_runs(
+        _zebrunner([]), _radiator(app), workers=1, env_resolver=resolver
+    )
+    assert stats.env_from_pk == 1
+    assert (
+        "launch 101 (sprint_4_tests: 2025_03_02_06_00): pk parent-1 is on the ci ARS"
+        in (caplog.text)
+    )
+    with app.state.sessionmaker() as session:
+        assert queries.get_run(session, run_id_for(ZE, 101)).env == "ci"
+        # no logged report, so no pk: back to the agents (aragorn is prod-only)
+        assert queries.get_run(session, run_id_for(ZE, 100)).env == "prod"
+    assert stats.envs == {"ci": 1, "prod": 1}
+
+
+def test_pks_no_ars_has_fall_back(app, caplog):
+    caplog.set_level("INFO", logger="zebrunner-import")
+    resolver = ArsEnvResolver(HOSTS, transport=fake_ars({}))
+    stats = import_runs(
+        _zebrunner([]), _radiator(app), workers=1, env_resolver=resolver
+    )
+    assert stats.env_from_pk == 0
+    assert "none of its pks are on any ARS" in caplog.text
+    with app.state.sessionmaker() as session:
+        assert queries.get_run(session, run_id_for(ZE, 101)).env == "prod"
+
+
+def test_an_unreachable_ars_is_skipped_after_one_warning(caplog):
+    resolver = ArsEnvResolver(
+        HOSTS,
+        transport=fake_ars(
+            {"ars.test.example": {"p1", "p2"}}, down={"ars.dev.example"}
+        ),
+    )
+    assert resolver.env_for({1: {"pks": {"parent_pk": "p1"}}}) == ("test", "p1")
+    assert resolver.env_for({1: {"pks": {"parent_pk": "p2"}}}) == ("test", "p2")
+    assert caplog.text.count("Can't reach the dev ARS") == 1
+
+
+def test_ars_hosts_come_from_smartapi():
+    registry = {
+        "hits": [
+            {
+                "info": {"x-translator": {"infores": "infores:ars"}},
+                "servers": [
+                    {"url": "https://ars-dev.example/", "x-maturity": "development"},
+                    {"url": "https://ars.ci.example", "x-maturity": "staging"},
+                    {"url": "https://ars.test.example", "x-maturity": "testing"},
+                    {"url": "https://ars-prod.example", "x-maturity": "production"},
+                ],
+            },
+            {
+                "info": {"x-translator": {"infores": "infores:aragorn"}},
+                "servers": [
+                    {"url": "https://aragorn.example", "x-maturity": "staging"}
+                ],
+            },
+        ]
+    }
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=registry))
+    )
+    assert ars_hosts_from_smartapi(client) == {
+        "dev": "https://ars-dev.example",
+        "ci": "https://ars.ci.example",
+        "test": "https://ars.test.example",
+        "prod": "https://ars-prod.example",
+    }
