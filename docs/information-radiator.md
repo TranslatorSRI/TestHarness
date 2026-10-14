@@ -98,6 +98,12 @@ deploy/
 
 ## In the Slack report
 
+With `RADIATOR_SLACK_WEBHOOK_URL` and `RADIATOR_SLACK_CHANNEL` set, everything
+below goes to that channel instead, and `SLACK_CHANNEL` keeps the report it got
+before the radiator (with the Zebrunner link), so the two can run side by side
+(see the README's
+[A Slack channel for the new radiator](../README.md#a-slack-channel-for-the-new-radiator)).
+
 When the radiator has the run, the harness's Slack report gains a headline
 against the previous run of the same series, and a chart of the series up to
 this run is posted under it:
@@ -207,7 +213,9 @@ manifests are:
    The harness then reports to both Zebrunner and the radiator.
 5. **History.** Run the Zebrunner import (below).
 6. **Cutover**, after a couple of weeks of both: point people at the new UI,
-   then remove the Zebrunner `Reporter` and the `ZE_*` secrets.
+   then remove the Zebrunner `Reporter` and the `ZE_*` secrets. If the new
+   radiator had its own Slack channel meanwhile (`RADIATOR_SLACK_*`), point
+   `SLACK_*` at it and drop `RADIATOR_SLACK_*`.
 
 The image is built and pushed by the release workflow alongside the harness's.
 To build it by hand, from the repo root:

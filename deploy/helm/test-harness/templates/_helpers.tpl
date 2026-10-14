@@ -43,7 +43,7 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end }}
 - name: RADIATOR_TOKEN
   valueFrom: {secretKeyRef: {name: {{ include "harness.secretName" . }}, key: radiator-token}}
-{{- range $env, $key := dict "SLACK_WEBHOOK_URL" "slack-webhook-url" "SLACK_TOKEN" "slack-token" "SLACK_CHANNEL" "slack-channel" "ZE_BASE_URL" "ze-base-url" "ZE_REFRESH_TOKEN" "ze-refresh-token" }}
+{{- range $env, $key := dict "SLACK_WEBHOOK_URL" "slack-webhook-url" "SLACK_TOKEN" "slack-token" "SLACK_CHANNEL" "slack-channel" "RADIATOR_SLACK_WEBHOOK_URL" "radiator-slack-webhook-url" "RADIATOR_SLACK_CHANNEL" "radiator-slack-channel" "RADIATOR_SLACK_TOKEN" "radiator-slack-token" "ZE_BASE_URL" "ze-base-url" "ZE_REFRESH_TOKEN" "ze-refresh-token" }}
 - name: {{ $env }}
   valueFrom: {secretKeyRef: {name: {{ include "harness.secretName" $ }}, key: {{ $key }}, optional: true}}
 {{- end }}

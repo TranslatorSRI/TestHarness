@@ -18,6 +18,11 @@ timeZone: America/New_York
 #   radiator-token                                  the radiator's api-token
 #   slack-webhook-url, slack-token, slack-channel   optional: without them,
 #                                                   reports are saved to files
+#   radiator-slack-webhook-url, radiator-slack-channel
+#                                                   optional: a channel of the
+#                                                   radiator's own (below)
+#   radiator-slack-token                            optional: defaults to
+#                                                   slack-token
 #   ze-base-url, ze-refresh-token                   optional: Zebrunner, until
 #                                                   the radiator takes over
 existingSecret: ""
@@ -27,6 +32,13 @@ secrets:
   slackToken: ""
   # The channel ID (eg C0123ABCD), not its #name.
   slackChannel: ""
+  # The new radiator's own channel, while it runs alongside Zebrunner: with
+  # these, SLACK_CHANNEL keeps getting the report it always did (with the
+  # Zebrunner link), and the radiator's reports, the cycle boards and the
+  # digest go here. Its own incoming webhook; the same bot by default.
+  radiatorSlackWebhookUrl: ""
+  radiatorSlackChannel: ""
+  radiatorSlackToken: ""
   zeBaseUrl: ""
   zeRefreshToken: ""
 

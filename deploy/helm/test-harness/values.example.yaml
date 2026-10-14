@@ -17,6 +17,14 @@ image:
 #     --from-literal=slack-webhook-url='https://hooks.slack.com/services/...' \
 #     --from-literal=slack-token='xoxb-...' \
 #     --from-literal=slack-channel='C0123ABCD'
+#
+# Alongside Zebrunner, to give the new radiator a channel of its own (the
+# report with the Zebrunner link stays in slack-channel), add:
+#     --from-literal=radiator-slack-webhook-url='https://hooks.slack.com/services/...' \
+#     --from-literal=radiator-slack-channel='C0456EFGH'
+# and, for Zebrunner itself:
+#     --from-literal=ze-base-url='https://zebrunner.example.org' \
+#     --from-literal=ze-refresh-token='...'
 existingSecret: test-harness-secrets
 
 # ...or let the chart create it (then leave existingSecret empty):
@@ -25,6 +33,8 @@ existingSecret: test-harness-secrets
 #   slackWebhookUrl: https://hooks.slack.com/services/your-webhook-path
 #   slackToken: xoxb-your-bot-token
 #   slackChannel: C0123ABCD
+#   radiatorSlackWebhookUrl: https://hooks.slack.com/services/another-webhook-path
+#   radiatorSlackChannel: C0456EFGH
 
 radiator:
   # The radiator chart's service, in the same namespace.

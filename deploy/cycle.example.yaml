@@ -79,6 +79,15 @@ spec:
                 - name: SLACK_CHANNEL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: slack-channel}
+                # Optional: a channel of the new radiator's own, alongside
+                # Zebrunner (see the README's "A Slack channel for the new
+                # radiator"). The token defaults to slack-token.
+                - name: RADIATOR_SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-webhook-url, optional: true}
+                - name: RADIATOR_SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-channel, optional: true}
                 # The board comes from the radiator: without it, each step
                 # still reports, but there's no board at the end.
                 - name: RADIATOR_URL

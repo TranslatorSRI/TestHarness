@@ -24,7 +24,7 @@ from test_harness.radiator_client import RadiatorClient
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
-from test_harness.slacker import LocalSlacker, Slacker
+from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
 from test_harness.trapi import (
     DEFAULT_TRAPI_VERSION,
     parse_query_parameters,
@@ -128,6 +128,53 @@ def _performance_line(perf: dict) -> str:
             else " · checkpoints missed"
         )
     return line
+
+
+def post_report(
+    slacker,
+    suite,
+    duration,
+    queried_envs,
+    links,
+    result_summary,
+    radiator,
+    collector,
+    reporter,
+    prefix,
+    logger,
+):
+    """A finished run's report in one channel: the summary, the radiator's
+    charts (with ``radiator``), and the result files."""
+    slacker.post_notification(
+        messages=[
+            f"Test Suite: {suite}\nDuration: {duration} | Environment(s): "
+            f"{','.join(list(queried_envs))}{links}\n{result_summary}"
+        ]
+    )
+    if radiator is not None:
+        post_history_charts(radiator, slacker, collector, suite, prefix, logger)
+    if collector.has_acceptance_results:
+        slacker.upload_test_results_file(
+            f"{prefix}{reporter.test_name}",
+            "json",
+            collector.acceptance_stats,
+        )
+        slacker.upload_test_results_file(
+            f"{prefix}{reporter.test_name}",
+            "csv",
+            collector.acceptance_csv,
+        )
+    if collector.has_performance_results:
+        # HelmsDeep's own summary.json is the authoritative result, so it is
+        # uploaded verbatim alongside its HTML report rather than being
+        # reformatted into a second, divergent JSON. Each carries the run's
+        # checkpoint pass/fail as its comment.
+        for filename, content, comment in collector.render_performance_artifacts():
+            filename = f"{prefix}{filename}"
+            try:
+                slacker.upload_binary_file(filename, content, initial_comment=comment)
+            except Exception as e:
+                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
 
 def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
@@ -266,6 +313,9 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
+    # With RADIATOR_SLACK_* set, the new radiator's reports go to their own
+    # channel, and SLACK_CHANNEL keeps getting the report it always did.
+    new_slacker = None if local else radiator_slacker(logger)
     # The new Information Radiator runs alongside Zebrunner until it takes
     # over. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
     # --local, it only records, and the run is saved to --output_dir instead.
@@ -309,17 +359,41 @@ def main(args):
         else ""
     )
 
+    # Where the reports go: (slacker, links, with the radiator's headline and
+    # charts, best effort). One channel with everything; or, alongside
+    # Zebrunner, the old report in the old channel and the radiator's in its own.
+    if new_slacker is None:
+        channels = [(slacker, zebrunner_link + radiator_link, True, False)]
+    else:
+        channels = [
+            (slacker, zebrunner_link, False, False),
+            (new_slacker, radiator_link, True, True),
+        ]
+
+    def post(action, best_effort):
+        if not best_effort:
+            return action()
+        # the new channel never costs the old one its report
+        try:
+            action()
+        except Exception as e:
+            logger.warning(f"Couldn't post to the Information Radiator's channel: {e}")
+
     collector = ResultCollector(
         test_env, logger, target=args.get("target"), radiator=radiator
     )
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
-    slacker.post_notification(
-        messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{params_note}{zebrunner_link}{radiator_link}"
-        ]
-    )
+    for channel, links, _, best_effort in channels:
+        post(
+            lambda: channel.post_notification(
+                messages=[
+                    f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...{params_note}{links}"
+                ]
+            ),
+            best_effort,
+        )
     start_time = time.time()
     try:
         run_tests(tests, reporter, collector, logger, args)
@@ -334,44 +408,26 @@ def main(args):
     radiator.finish_run(counts=collector.acceptance_report)
     save_radiator_run(radiator, output_dir, target_prefix, logger)
 
-    slacker.post_notification(
-        messages=[
-            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}{zebrunner_link}{radiator_link}\n{result_summary}""".format(
-                test_suite=args["suite"],
-                duration=round(time.time() - start_time, 2),
-                envs=(",").join(list(queried_envs)),
-                zebrunner_link=zebrunner_link,
-                radiator_link=radiator_link,
-                result_summary=radiator_headline(radiator, collector)
-                + collector.dump_result_summary(),
-            )
-        ]
-    )
-    post_history_charts(
-        radiator, slacker, collector, args["suite"], target_prefix, logger
-    )
-    if collector.has_acceptance_results:
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "json",
-            collector.acceptance_stats,
+    duration = round(time.time() - start_time, 2)
+    summary = collector.dump_result_summary()
+    headline = radiator_headline(radiator, collector)
+    for channel, links, with_radiator, best_effort in channels:
+        post(
+            lambda: post_report(
+                channel,
+                args["suite"],
+                duration,
+                queried_envs,
+                links,
+                (headline if with_radiator else "") + summary,
+                radiator if with_radiator else None,
+                collector,
+                reporter,
+                target_prefix,
+                logger,
+            ),
+            best_effort,
         )
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "csv",
-            collector.acceptance_csv,
-        )
-    if collector.has_performance_results:
-        # HelmsDeep's own summary.json is the authoritative result, so it is
-        # uploaded verbatim alongside its HTML report rather than being
-        # reformatted into a second, divergent JSON. Each carries the run's
-        # checkpoint pass/fail as its comment.
-        for filename, content, comment in collector.render_performance_artifacts():
-            filename = f"{target_prefix}{filename}"
-            try:
-                slacker.upload_binary_file(filename, content, initial_comment=comment)
-            except Exception as e:
-                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()

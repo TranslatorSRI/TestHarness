@@ -459,12 +459,16 @@ class _RecordingSlacker(MockSlacker):
     def __init__(self):
         self.messages = []
         self.files = []
+        self.results = []
 
     def post_notification(self, messages=[]):
         self.messages.extend(messages)
 
     def upload_binary_file(self, filename, content, initial_comment=None, title=None):
         self.files.append((filename, content, initial_comment))
+
+    def upload_test_results_file(self, filename, extension, results):
+        self.results.append(extension)
 
 
 def _main_with_slack(
@@ -477,6 +481,7 @@ def _main_with_slack(
     acceptance=True,
     performance=False,
     args=None,
+    new_slacker=None,
 ):
     def fake_run_tests(tests, reporter, collector, logger, args):
         collector.has_acceptance_results = acceptance
@@ -486,6 +491,7 @@ def _main_with_slack(
     slacker = _RecordingSlacker()
     mocker.patch("test_harness.main.Slacker", return_value=slacker)
     mocker.patch("test_harness.main.Slacker.is_configured", return_value=True)
+    mocker.patch("test_harness.main.radiator_slacker", return_value=new_slacker)
     if radiator:
         monkeypatch.setenv("RADIATOR_URL", "http://radiator")
         monkeypatch.setenv("RADIATOR_TOKEN", "tok")
@@ -659,3 +665,68 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
     # one flush per test case, each carrying that case's assets
     assert len(sent) == len(example_test_cases)
     assert sum(sent) == len(client.payload.results) > 0
+
+
+def test_the_radiator_can_have_its_own_slack_channel(mocker, monkeypatch, tmp_path):
+    """Alongside Zebrunner: the old channel keeps the report it always got, and
+    the radiator's report, with its headline and charts, goes to its own."""
+    new = _RecordingSlacker()
+    old = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={
+            "pass_rate": 0.86,
+            "previous_pass_rate": 0.9,
+            "regressions": 3,
+            "fixed": 1,
+        },
+        new_slacker=new,
+    )
+    for message in old.messages:
+        assert "new Information Radiator" not in message
+        assert "Pass rate" not in message
+    assert old.files == []  # no radiator charts
+    # both channels get the result files
+    assert old.results == new.results == ["json", "csv"]
+
+    assert all("View in the new Information Radiator" in m for m in new.messages)
+    assert "Pass rate 86% (-4.0 pts vs the previous run)" in new.messages[-1]
+    assert [f for f, _, _ in new.files] == ["pass_rate_history.png"]
+
+
+def test_a_failing_radiator_channel_never_costs_the_old_one(
+    mocker, monkeypatch, tmp_path
+):
+    class Broken(_RecordingSlacker):
+        def post_notification(self, messages=[]):
+            raise RuntimeError("channel_not_found")
+
+    old = _main_with_slack(
+        mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}, new_slacker=Broken()
+    )
+    assert len(old.messages) == 2  # started, and the report
+
+
+def test_radiator_slack_settings(monkeypatch, caplog):
+    from test_harness.slacker import radiator_slacker
+
+    for var in (
+        "RADIATOR_SLACK_WEBHOOK_URL",
+        "RADIATOR_SLACK_CHANNEL",
+        "RADIATOR_SLACK_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("SLACK_TOKEN", "xoxb-shared")
+    assert radiator_slacker() is None
+
+    monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/x")
+    assert radiator_slacker() is None
+    assert "only partly set" in caplog.text
+
+    monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
+    slacker = radiator_slacker()
+    assert (slacker.url, slacker.channel) == ("https://hooks.slack.com/x", "C0NEW")
+    assert slacker.client.token == "xoxb-shared"  # the same bot by default
+    monkeypatch.setenv("RADIATOR_SLACK_TOKEN", "xoxb-other")
+    assert radiator_slacker().client.token == "xoxb-other"

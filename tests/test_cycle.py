@@ -220,3 +220,16 @@ def test_posting_the_digest():
     assert slack.files == ["weekly_status.png"]
     radiator.digest.return_value = None
     assert not cycle.post_digest(radiator, _Slack(), mock.Mock())
+
+
+def test_the_board_and_digest_go_to_the_radiators_own_channel(monkeypatch):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/old")
+    monkeypatch.setenv("SLACK_TOKEN", "xoxb")
+    monkeypatch.setenv("SLACK_CHANNEL", "C0OLD")
+    monkeypatch.delenv("RADIATOR_SLACK_TOKEN", raising=False)
+    monkeypatch.delenv("RADIATOR_SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_SLACK_CHANNEL", raising=False)
+    assert cycle._slacker("out", mock.Mock()).channel == "C0OLD"
+    monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/new")
+    monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
+    assert cycle._slacker("out", mock.Mock()).channel == "C0NEW"

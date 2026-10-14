@@ -86,6 +86,10 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_TOKEN: ${SLACK_TOKEN:-}
       SLACK_CHANNEL: ${SLACK_CHANNEL:-}
+      # a channel of the new radiator's own (see .env.example)
+      RADIATOR_SLACK_WEBHOOK_URL: ${RADIATOR_SLACK_WEBHOOK_URL:-}
+      RADIATOR_SLACK_CHANNEL: ${RADIATOR_SLACK_CHANNEL:-}
+      RADIATOR_SLACK_TOKEN: ${RADIATOR_SLACK_TOKEN:-}
       PYTHONUNBUFFERED: "1"
     depends_on:
       radiator:

@@ -35,7 +35,7 @@ from typing import List, Optional, Sequence
 from uuid import uuid4
 
 from test_harness.radiator_client import RadiatorClient
-from test_harness.slacker import LocalSlacker, Slacker
+from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
 from test_harness.sweep import (
     DEFAULT_OUTPUT_DIR,
     HARNESS,
@@ -250,6 +250,11 @@ def digest_message(digest: dict, url: Optional[str]) -> str:
 
 
 def _slacker(output_dir: str, logger):
+    """The radiator's own channel (RADIATOR_SLACK_*) if it has one, else
+    SLACK_CHANNEL: the board and the digest are the radiator's."""
+    own = radiator_slacker(logger)
+    if own is not None:
+        return own
     if Slacker.is_configured():
         return Slacker()
     logger.info(f"Slack isn't configured; saving the reports to '{output_dir}'.")
