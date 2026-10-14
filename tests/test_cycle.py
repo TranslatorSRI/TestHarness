@@ -240,3 +240,37 @@ def test_the_board_and_digest_go_to_the_radiators_own_channel(monkeypatch):
     monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/new")
     monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
     assert cycle._slacker("out", mock.Mock()).channel == "C0NEW"
+
+
+def test_the_board_comes_from_the_radiator_the_steps_reported_to(monkeypatch):
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    with mock.patch("test_harness.cycle.subprocess.run") as run, mock.patch(
+        "test_harness.cycle._slacker", return_value=mock.Mock()
+    ), mock.patch("test_harness.cycle.post_cycle_report") as post:
+        run.return_value = mock.Mock(returncode=0)
+        cli(
+            [
+                "--acceptance",
+                "a",
+                "--",
+                "--radiator_url=http://r",
+                "--radiator_token",
+                "t",
+            ]
+        )
+    radiator = post.call_args.args[2]
+    assert (radiator.base_url, radiator.token) == ("http://r", "t")
+
+
+def test_a_slack_failure_after_the_cycle_is_a_warning(monkeypatch, caplog):
+    monkeypatch.setenv("RADIATOR_URL", "http://radiator")
+    monkeypatch.setenv("RADIATOR_TOKEN", "tok")
+    with mock.patch("test_harness.cycle.subprocess.run") as run, mock.patch(
+        "test_harness.cycle._slacker", return_value=mock.Mock()
+    ), mock.patch(
+        "test_harness.cycle.post_cycle_report", side_effect=RuntimeError("slack down")
+    ):
+        run.return_value = mock.Mock(returncode=0)
+        assert cli(["--acceptance", "a"]) == 0
+    assert "Couldn't post the cycle board: RuntimeError: slack down" in caplog.text

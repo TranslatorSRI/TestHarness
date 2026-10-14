@@ -883,3 +883,18 @@ def test_slack_headline_flags_a_trapi_change(mocker, monkeypatch, tmp_path):
         },
     )
     assert "TRAPI 1.6 → 2.0 since the previous run" in slacker.messages[-1]
+
+
+def test_radiator_cli_takes_its_flags_after_the_subcommand(mocker, monkeypatch):
+    from test_harness import radiator_client
+
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    digest = mocker.patch("test_harness.cycle.digest_cli", return_value=0)
+    with pytest.raises(SystemExit) as exit_:
+        radiator_client.cli(
+            ["digest", "--radiator_url", "http://r", "--radiator_token", "t"]
+        )
+    assert exit_.value.code == 0
+    client = digest.call_args.args[0]
+    assert (client.base_url, client.token) == ("http://r", "t")

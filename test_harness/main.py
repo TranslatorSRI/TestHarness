@@ -537,7 +537,8 @@ def resolve_trapi_version(args, test_env, logger) -> str:
             except ValueError:
                 continue
             versions.append(registered)
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, ValueError) as e:
+        # ValueError: an answer that isn't JSON (eg a proxy's error page)
         versions, why = [], f"couldn't read the SmartAPI registry ({e})"
     if versions:
         others = (

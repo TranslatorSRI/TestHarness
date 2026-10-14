@@ -216,7 +216,7 @@ def run_badge(run) -> Markup:
     return Markup("")
 
 
-def pk_url(pk: Optional[str], env: Optional[str] = None) -> Optional[str]:
+def pk_url(pk: Optional[str]) -> Optional[str]:
     return PK_VIEWER.format(pk=pk) if pk else None
 
 
@@ -671,7 +671,6 @@ def grid_page(
         request,
         "grid.html",
         nav="grid",
-        grid=grid,
         grid_svg=run_grid.to_svg(grid) if grid and not grid.empty else None,
         options=options,
         suite=suite,

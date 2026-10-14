@@ -1,3 +1,6 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
 # Example CronJob for the weekly digest: every Monday morning, one Slack post
 # with each environment's latest runs of acceptance, pathfinder and
 # performance over the past week, each against the run before, and the flags.

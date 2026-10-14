@@ -78,7 +78,7 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 | `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
 | `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
 | `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
-| `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets Zebrunner's report |
+| `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets only Zebrunner's report, and the radiator's go to `RADIATOR_SLACK_*` (or nowhere, if that isn't set) |
 | `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)) |
 
 Then:
@@ -263,11 +263,11 @@ or keep them in a file and pass `--query_parameters @params.json`. The
 `.env` for Docker Compose or in a CronJob; the flag wins if both are set.
 
 Where they go depends on the TRAPI version:
-- **TRAPI 2.0** (the default): in the query's `parameters` object. The
+- **TRAPI 2.0**: in the query's `parameters` object. The
   standard ones are `timeout` (seconds), `log_level` (`ERROR`, `WARNING`,
   `INFO` or `DEBUG`) and `bypass_cache`; a service can define its own as well,
   and those are passed through as given.
-- **TRAPI 1.6** (`--trapi_version 1.6.0`): as top-level fields of the query.
+- **TRAPI 1.6**: as top-level fields of the query.
   1.6 only has `log_level` and `bypass_cache`, so anything else is refused.
 
 They're checked before the run starts: a value of the wrong type, an unknown

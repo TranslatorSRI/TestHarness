@@ -1,3 +1,6 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
 # A small Postgres for the Information Radiator, for when the namespace has no
 # database to use. Skip this if you have a managed one.
 #

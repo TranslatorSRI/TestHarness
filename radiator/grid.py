@@ -7,12 +7,10 @@ BASE for the first one shown. Excluded environments (dev, by default) are drawn
 greyed out, without a trend. Runs too close in time to sit side by side stack
 downward, and each run is joined to the one before it in its lane.
 
-The layout is computed once here and drawn twice: as SVG for the dashboard
-(cards link to their runs, colors follow the page's theme), and as a PNG for
-the harness's Slack report.
+The layout is computed here and drawn as SVG for the dashboard (cards link
+to their runs, colors follow the page's theme).
 """
 
-import io
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional
@@ -56,7 +54,6 @@ class GridRun:
     rate: Optional[float]
     trend: str = BASE
     delta: Optional[float] = None  # percentage points vs the previous run
-    new: bool = False
 
 
 @dataclass
@@ -114,7 +111,6 @@ def grid_runs(
     since: datetime,
     until: datetime,
     excluded_envs: Iterable[str] = ("dev",),
-    new_run_id=None,
 ) -> list[GridRun]:
     """The suite's finished, full acceptance runs in the window, oldest first,
     each with its trend against the previous run in its environment.
@@ -170,7 +166,7 @@ def grid_runs(
         failed = sum(c.get(s, 0) for s in NOT_PASSING)
         skipped = c.get("SKIPPED", 0)
         rate = passed / (passed + failed) if passed + failed else None
-        item = GridRun(run, passed, failed, skipped, rate, new=run.id == new_run_id)
+        item = GridRun(run, passed, failed, skipped, rate)
         prev = previous_rate.get(run.env)
         if (run.env or "").lower() in excluded:
             item.trend = EXCLUDED
@@ -282,24 +278,6 @@ def layout(
     return Grid(suite, since, until, width, y + AXIS_H, lanes, links, ticks)
 
 
-def fit_window(
-    items: list[GridRun], since: datetime, until: datetime, max_per_lane: int
-) -> datetime:
-    """Move ``since`` forward until no environment has more than
-    ``max_per_lane`` runs in the window, but keep at least a week: an
-    environment run daily would otherwise stack its cards into a wall."""
-    floor = until - timedelta(days=7)
-    by_env: dict = {}
-    for item in items:
-        by_env.setdefault(item.run.env, []).append(item.run.started_at)
-    for starts in by_env.values():
-        starts.sort()
-        if len(starts) > max_per_lane:
-            # just before the oldest run that still fits
-            since = max(since, starts[-max_per_lane] - timedelta(hours=6))
-    return min(since, floor)
-
-
 def build(
     session: Session,
     suite: str,
@@ -307,25 +285,15 @@ def build(
     days: int = 35,
     width: float = 1180,
     excluded_envs: Iterable[str] = ("dev",),
-    new_run_id=None,
-    max_per_lane: Optional[int] = None,
 ) -> Grid:
-    """The grid for ``suite`` over the ``days`` before ``until`` (now).
-
-    With ``max_per_lane``, the window narrows to fit (see ``fit_window``).
-    Trends come from the full history either way, so a narrowed window's
-    first card still compares with the run before it.
-    """
+    """The grid for ``suite`` over the ``days`` before ``until`` (now)."""
     until = until or datetime.now(timezone.utc)
     since = until - timedelta(days=days)
-    items = grid_runs(session, suite, since, until, excluded_envs, new_run_id)
-    if max_per_lane:
-        since = fit_window(items, since, until, max_per_lane)
-        items = [item for item in items if item.run.started_at >= since]
+    items = grid_runs(session, suite, since, until, excluded_envs)
     return layout(suite, items, since, until, width, excluded_envs)
 
 
-# --- card text (shared by both drawings) ----------------------------------------
+# --- card text -----------------------------------------------------------------
 
 
 def card_lines(item: GridRun) -> tuple[str, str, str, str]:
@@ -354,7 +322,7 @@ def card_tip(item: GridRun) -> str:
     return "\n".join(lines)
 
 
-# --- SVG (dashboard) ----------------------------------------------------------------
+# --- SVG ---------------------------------------------------------------------------
 
 
 def to_svg(grid: Grid) -> Markup:
@@ -401,12 +369,6 @@ def _svg_card(card: Card) -> str:
     trend = item.trend
     label = TREND_LABELS[trend]
     chip_w = 10 + 7.5 * len(label)
-    new = ""
-    if item.new:
-        new = (
-            f'<rect class="new" x="{x + CARD_W - 46:.1f}" y="{y - 9:.1f}" width="40" height="16" rx="8"/>'
-            f'<text class="new-label" x="{x + CARD_W - 26:.1f}" y="{y + 3:.1f}" text-anchor="middle">NEW</text>'
-        )
     return (
         f'<a href="/runs/{item.run.id}" data-tip="{escape(card_tip(item))}">'
         f'<g class="card t-{trend}">'
@@ -417,202 +379,5 @@ def _svg_card(card: Card) -> str:
         f'<text class="when" x="{x + 12:.1f}" y="{y + 43:.1f}">{escape(when)} UTC</text>'
         f'<text class="rate" x="{x + 12:.1f}" y="{y + 63:.1f}">{escape(rate)}</text>'
         f'<text class="counts" x="{x + 12:.1f}" y="{y + 82:.1f}">{escape(counts)}</text>'
-        f"{new}</g></a>"
+        "</g></a>"
     )
-
-
-# --- PNG (Slack) --------------------------------------------------------------------
-
-# Light-mode values of the page's tokens (static/style.css).
-_INK, _INK_2, _MUTED = "#0b0b0b", "#52514e", "#6f6d68"
-_SURFACE, _BAND, _BAND_ALT = "#fcfcfb", "#fcfcfb", "#f3f2ef"
-_GRID, _AXIS = "#e1e0d9", "#c3c2b7"
-_TREND = {
-    UP: "#0ca30c",
-    DOWN: "#d03b3b",
-    FLAT: "#fab219",
-    BASE: "#898781",
-    EXCLUDED: "#b5b3ab",
-    NO_DATA: "#b5b3ab",
-}
-_HEADER_BG = "#17202b"
-TITLE_H, FOOTER_H = 92, 44
-
-
-def _tint(hex_color: str, amount: float, base: str = _SURFACE) -> str:
-    """``hex_color`` mixed into ``base`` (amount 0..1)."""
-    a = [int(hex_color[i : i + 2], 16) for i in (1, 3, 5)]
-    b = [int(base[i : i + 2], 16) for i in (1, 3, 5)]
-    return "#" + "".join(
-        f"{round(bb + (aa - bb) * amount):02x}" for aa, bb in zip(a, b)
-    )
-
-
-def to_png(grid: Grid, title: str, subtitle: str) -> bytes:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyBboxPatch, Rectangle
-
-    plt.rcParams["font.family"] = "DejaVu Sans"
-    W = grid.width
-    H = TITLE_H + max(grid.height, 120) + FOOTER_H
-    dpi = 100
-    fig = plt.figure(figsize=(W / dpi, H / dpi), dpi=dpi)
-    fig.patch.set_facecolor(_SURFACE)
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, W)
-    ax.set_ylim(H, 0)
-    ax.axis("off")
-
-    def text(x, y, s, size, color=_INK, weight="normal", ha="left", va="baseline"):
-        # above every patch, so a card's text is never under its box
-        ax.text(
-            x,
-            y,
-            s,
-            fontsize=size * 72 / dpi,
-            color=color,
-            fontweight=weight,
-            ha=ha,
-            va=va,
-            zorder=6,
-        )
-
-    # title bar, with a legend that names every color (labels, not color alone)
-    ax.add_patch(
-        FancyBboxPatch(
-            (12, 10),
-            W - 24,
-            TITLE_H - 22,
-            boxstyle="round,pad=0,rounding_size=14",
-            facecolor=_HEADER_BG,
-            edgecolor="none",
-        )
-    )
-    text(36, 46, title, 26, "#ffffff", "bold")
-    text(36, 72, subtitle, 14, "#c3c2b7")
-    lx = W - 520
-    for trend in (UP, DOWN, FLAT, BASE, EXCLUDED):
-        ax.add_patch(
-            Rectangle((lx, 41), 26, 5, facecolor=_TREND[trend], edgecolor="none")
-        )
-        text(lx + 34, 48, TREND_LABELS[trend], 13, "#ffffff", "bold")
-        lx += 100
-
-    oy = TITLE_H
-    if grid.empty:
-        text(
-            W / 2,
-            oy + 60,
-            "No finished full runs of this suite in this window",
-            15,
-            _MUTED,
-            ha="center",
-        )
-    for i, lane in enumerate(grid.lanes):
-        ax.add_patch(
-            Rectangle(
-                (0, oy + lane.y),
-                W,
-                lane.height,
-                facecolor=_BAND_ALT if i % 2 else _BAND,
-                edgecolor="none",
-            )
-        )
-        cy = oy + lane.y + lane.height / 2
-        text(20, cy + 6, lane.label, 18, _INK, "bold")
-        if lane.excluded:
-            text(20, cy + 26, "excluded", 12, _MUTED)
-    lanes_bottom = oy + grid.height - AXIS_H
-    for x, label in grid.ticks:
-        ax.plot([x, x], [oy, lanes_bottom], color=_GRID, linewidth=1, zorder=1)
-        text(x, lanes_bottom + 26, label, 13, _MUTED, ha="center")
-    for link in grid.links:
-        dashed = link.trend in (EXCLUDED, NO_DATA)
-        ax.plot(
-            [link.x1, link.x2],
-            [oy + link.y1, oy + link.y2],
-            color=_TREND[link.trend],
-            linewidth=4 if not dashed else 3,
-            linestyle=(0, (2, 2)) if dashed else "solid",
-            zorder=2,
-            solid_capstyle="butt",
-        )
-    for lane in grid.lanes:
-        for card in lane.cards:
-            _png_card(ax, text, card, oy, FancyBboxPatch)
-    text(
-        LABEL_W,
-        H - 16,
-        "Trend compares each run's pass rate (skips left out) with the previous run "
-        "in the same environment; FLAT is within 0.1 pts.",
-        12,
-        _MUTED,
-    )
-
-    out = io.BytesIO()
-    fig.savefig(out, format="png", dpi=dpi, facecolor=_SURFACE)
-    plt.close(fig)
-    return out.getvalue()
-
-
-def _png_card(ax, text, card: Card, oy: float, FancyBboxPatch) -> None:
-    item = card.item
-    x, y = card.x, oy + card.y
-    color = _TREND[item.trend]
-    muted = item.trend in (EXCLUDED, NO_DATA)
-    ax.add_patch(
-        FancyBboxPatch(
-            (x, y),
-            CARD_W,
-            CARD_H,
-            boxstyle="round,pad=0,rounding_size=10",
-            facecolor=_tint(color, 0.08 if muted else 0.12),
-            edgecolor=color,
-            linewidth=2.2,
-            linestyle=(0, (4, 3)) if muted else "solid",
-            zorder=3,
-        )
-    )
-    number, when, rate, counts = card_lines(item)
-    label = TREND_LABELS[item.trend]
-    chip_w = 10 + 8 * len(label)
-    ax.add_patch(
-        FancyBboxPatch(
-            (x + 10, y + 9),
-            chip_w,
-            18,
-            boxstyle="round,pad=0,rounding_size=4",
-            facecolor=color,
-            edgecolor="none",
-            zorder=4,
-        )
-    )
-    text(
-        x + 10 + chip_w / 2,
-        y + 22.5,
-        label,
-        11.5,
-        "#ffffff" if item.trend == DOWN else _INK,
-        "bold",
-        ha="center",
-    )
-    text(x + CARD_W - 12, y + 23, number, 14, _INK, "bold", ha="right")
-    text(x + 12, y + 44, f"{when} UTC", 12.5, _INK_2)
-    text(x + 12, y + 64, rate, 13.5, _INK, "bold")
-    text(x + 12, y + 83, counts, 12, _INK_2)
-    if item.new:
-        ax.add_patch(
-            FancyBboxPatch(
-                (x + CARD_W - 50, y - 10),
-                42,
-                18,
-                boxstyle="round,pad=0,rounding_size=9",
-                facecolor=_HEADER_BG,
-                edgecolor="none",
-                zorder=5,
-            )
-        )
-        text(x + CARD_W - 29, y + 3.5, "NEW", 11, "#ffffff", "bold", ha="center")

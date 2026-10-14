@@ -130,23 +130,10 @@ def test_layout_stacks_runs_too_close_to_sit_side_by_side():
     assert g.lanes[1].y == g.lanes[0].height > g.lanes[1].height
 
 
-def test_window_narrows_to_fit_a_busy_environment():
-    until = T0 + timedelta(days=30)
-    daily = [_item(T0 + timedelta(days=d)) for d in range(30)]
-    since = grid.fit_window(daily, T0, until, max_per_lane=10)
-    assert sum(1 for i in daily if i.run.started_at >= since) == 10
-    # but never narrower than a week
-    hourly = [_item(until - timedelta(hours=h)) for h in range(100)]
-    assert grid.fit_window(hourly, T0, until, 10) == until - timedelta(days=7)
-
-
-def test_grid_png_and_page(app, api, browser):
+def test_grid_page(app, browser):
     payloads = [_run(T0 + timedelta(days=d)) for d in range(3)]
     _load(app, *payloads)
     last = payloads[-1].run.run_id
-
-    res = api.get(f"/api/runs/{last}/grid.png")
-    assert res.status_code == 200 and res.content.startswith(b"\x89PNG")
 
     page = browser.get("/grid", params={"days": 90}).text
     assert "Acceptance run grid" in page

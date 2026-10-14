@@ -1,3 +1,6 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
 # Example CronJobs for weekly run cycles: one environment a day, Monday to
 # Thursday (dev, ci, test, prod), so a regression shows up in dev before it
 # reaches prod and Friday is free for re-runs.

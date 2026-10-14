@@ -29,15 +29,18 @@ runs and how assets and agents trend over time.
 ```
 radiator_schema/          the API contract (Pydantic), shared by both sides
 test_harness/
-  radiator_client.py      harness side: batched uploads, save + `test-harness-radiator push`
+  radiator_client.py      harness side: batched uploads, save + `test-harness-radiator push`,
+                          and `test-harness-radiator digest`
+  cycle.py                `test-harness-cycle`: a run cycle and its Slack board
 radiator/
   app.py, auth.py         FastAPI app, login, token auth
   api.py, ingest.py       ingest + read API; upserts
   models.py, migrations/  Postgres schema (SQLAlchemy, Alembic)
   queries.py, web.py      the dashboard's queries and pages
   templates/, static/     server-rendered HTML, CSS, a small hover script
-  charts.py               server-side SVG charts
-  cycles.py, board_png.py run cycles: the board, flags, the weekly digest
+  charts.py, grid.py      server-side SVG charts, the run grid
+  history_png.py          the pass-rate and concurrency PNGs for Slack
+  cycles.py, board_png.py run cycles: the board, flags, the weekly digest (and its PNGs)
   zebrunner_import.py     the history import
   demo.py                 made-up data for development
 deploy/
@@ -70,13 +73,19 @@ deploy/
 - **Runs**: every run, newest first, with its status breakdown, pass rate, and
   duration; filter by suite and environment.
 - **A run**: pass rate against the previous run, regressions and fixes, a
-  per-agent breakdown (also split by expected output), and the results grid: every asset against every agent,
-  with the rank the expected answer came back at. Filter by status (overall or
+  per-agent breakdown (also split by expected output), and the results grid:
+  every asset against every agent, with the rank the expected answer came back
+  at. Filter by status (overall or
   per agent), expected output, or search by name/id/CURIE. Each cell opens its
   pk in ARAX.
 - **What changed**: against the previous run *of the same series* (same suite,
   env, target override, and query type): regressions, fixes, other status
   changes, skips, rank moves of 5+ places, and assets added or dropped.
+- **TRAPI version**: each run records the TRAPI version it spoke (shown on the
+  run and in the runs list). A run whose version differs from its previous
+  run's says so on its page, in What changed, in the cycle board's flags and
+  in the Slack headline, since the change may be the upgrade, not the services.
+  Runs from before it was recorded (and imported ones) show none.
 - **An asset**: its status per agent across the last 60 runs, the rank of the
   expected answer and the number of results over time, and a table of runs.
 - **Trends**: each agent's pass rate over full runs of a suite, overall and by
@@ -180,7 +189,6 @@ Reading, with the token or a session:
 | `GET /api/runs/{run_id}/progress` | how far a run has got (assets tested of its total, counts, state); what its page polls |
 | `GET /api/live` | the runs in progress, and a version that changes when runs start, upload or finish |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
-| `GET /api/runs/{run_id}/grid.png?days=35` | the run grid for this run's suite, up to this run |
 | `GET /api/cycles?limit=20` | the latest run cycles |
 | `GET /api/cycles/{cycle_id}` | a cycle's board: each test against its previous run, changes by agent, flags |
 | `GET /api/cycles/{cycle_id}/board.png` | the board posted to Slack |
@@ -260,10 +268,10 @@ labels, and each test's logs) and posts runs like the harness does.
   On the legacy API it logs the fields of the first launch and test it
   reads, so a dry run shows if anything is named differently.
 
-The endpoints were read from Zebrunner's published images
+The v1 endpoints were read from Zebrunner's published images
 (`zebrunner/reporting-service` 1.54.1, `zebrunner/test-execution-logs-service`
-1.6.1). An older instance may differ; `--dry-run --limit 5` shows quickly
-whether it works against yours.
+1.6.1); the legacy ones were checked against a 1.28 instance. Another version
+may differ; `--dry-run --limit 5` shows quickly whether it works against yours.
 
 ## Developing
 

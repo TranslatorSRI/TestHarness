@@ -8,7 +8,7 @@ is the whole truth about that asset in that run.
 
 import uuid
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -103,7 +103,3 @@ def ingest_payload(session: Session, payload: schema.RunPayload) -> None:
     )
     if payload.finish is not None:
         finish_run(session, payload.run.run_id, payload.finish)
-
-
-def run_exists(session: Session, run_id: uuid.UUID) -> bool:
-    return session.scalar(select(Run.id).where(Run.id == run_id)) is not None

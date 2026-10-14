@@ -210,7 +210,7 @@
         <td class="nowrap">{{ asset.expected_output or '–' }}</td>
         <td>{{ status_badge(asset.status) }}</td>
         {% for a in agents %}{% set r = by_agent.get(a) %}
-          <td class="agent-cell">{{ m.cell(asset, r, run.env, pk_url(r.pk, run.env) if r else None) }}</td>
+          <td class="agent-cell">{{ m.cell(asset, r, run.env, pk_url(r.pk) if r else None) }}</td>
         {% endfor %}
       </tr>
     {% endfor %}

@@ -50,8 +50,6 @@ VERDICT_LABELS = {
     FIRST: "First run",
     NO_DATA: "No result",
 }
-# Worst first: the order a row list or a digest cell sorts its verdicts in.
-VERDICT_ORDER = [NO_DATA, REGRESSED, MIXED, IMPROVED, STEADY, FIRST]
 
 # A concurrency change smaller than this is noise between runs.
 PERF_STEADY_BAND = 0.10

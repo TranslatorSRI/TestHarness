@@ -1,11 +1,14 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
 # One-off Job: import past runs from Zebrunner into the Information Radiator.
 # Run it once the radiator is up; it's safe to re-run (already-imported runs
 # are skipped). Try `--dry-run` and `--limit 5` first to check what comes
 # across.
 #
-# Zebrunner never recorded the environment. Pass --env for the environment
-# these runs were against; to import runs from several environments, run the
-# Job once per environment with --since/--until/--suite narrowing each.
+# Zebrunner never recorded the environment, so each run's is looked up from its
+# pks on each environment's ARS (see --ars, --no-env-lookup); --env records
+# every run under one environment instead.
 apiVersion: batch/v1
 kind: Job
 metadata:

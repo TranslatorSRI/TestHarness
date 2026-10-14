@@ -135,16 +135,11 @@ def _slugify_filename(name):
 # The new Information Radiator's own Slack channel, while it runs alongside
 # Zebrunner. An incoming webhook posts to one channel only, so it needs its own;
 # the bot token can be the same one (invite the bot to both channels).
-RADIATOR_SLACK_VARS = (
-    "RADIATOR_SLACK_WEBHOOK_URL",
-    "RADIATOR_SLACK_CHANNEL",
-    "RADIATOR_SLACK_TOKEN",
-)
-
-
 def radiator_slacker(logger=None) -> "Slacker | None":
     """A Slacker for the new radiator's own channel, from RADIATOR_SLACK_*, or
-    None when that isn't set up (then everything goes to SLACK_CHANNEL).
+    None when that isn't set up. Then SLACK_CHANNEL carries the radiator's
+    messages too, unless Zebrunner (ZE_*) is configured: that channel stays
+    Zebrunner's, and the radiator's messages aren't posted.
 
     RADIATOR_SLACK_TOKEN defaults to SLACK_TOKEN.
     """
@@ -156,8 +151,8 @@ def radiator_slacker(logger=None) -> "Slacker | None":
     if url or channel or os.getenv("RADIATOR_SLACK_TOKEN"):
         (logger or logging.getLogger(__name__)).warning(
             "RADIATOR_SLACK_* is only partly set (it needs a webhook URL, a "
-            "channel, and a token or SLACK_TOKEN); posting everything to "
-            "SLACK_CHANNEL instead."
+            "channel, and a token or SLACK_TOKEN); ignoring it and falling "
+            "back to the default Slack routing."
         )
     return None
 

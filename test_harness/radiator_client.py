@@ -333,20 +333,27 @@ def push(payload: RunPayload, client: RadiatorClient) -> bool:
     return not client.upload_failed
 
 
-def cli():
+def cli(argv=None):
     """Entrypoint for ``test-harness-radiator``."""
+    # where the radiator is: on each subcommand, so they go after it
+    common = ArgumentParser(add_help=False)
+    common.add_argument("--radiator_url", help="Defaults to $RADIATOR_URL")
+    common.add_argument("--radiator_token", help="Defaults to $RADIATOR_TOKEN")
     parser = ArgumentParser(description="Information Radiator tools")
     subparsers = parser.add_subparsers(dest="command", required=True)
     push_parser = subparsers.add_parser(
         "push",
+        parents=[common],
         help="Upload a run saved by the harness (radiator_<run id>.json)",
     )
     push_parser.add_argument("files", nargs="+", help="Saved run payload(s)")
     digest_parser = subparsers.add_parser(
         "digest",
+        parents=[common],
         help=(
             "Post the weekly digest to Slack: every environment's latest runs "
-            "of each test, with flags (needs the SLACK_* settings)"
+            "of each test, with flags (to RADIATOR_SLACK_*, or SLACK_* when "
+            "Zebrunner isn't configured)"
         ),
     )
     digest_parser.add_argument(
@@ -357,9 +364,7 @@ def cli():
         default="test_results",
         help="Where to save the digest if Slack isn't configured",
     )
-    parser.add_argument("--radiator_url", help="Defaults to $RADIATOR_URL")
-    parser.add_argument("--radiator_token", help="Defaults to $RADIATOR_TOKEN")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger("test-harness-radiator")

@@ -108,3 +108,13 @@ def test_trapi_change():
     assert _trapi_change("1.6.0", "2.0.0") == ("1.6", "2.0")
     assert _trapi_change("2.0.0", "2.0.1") is None
     assert _trapi_change(None, "2.0.0") is None
+
+
+def test_auto_falls_back_when_smartapi_answers_garbage(monkeypatch, caplog):
+    def html(*args, **kwargs):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr("test_harness.main.registered_trapi_versions", html)
+    args = {"trapi_version": "auto"}
+    assert resolve_trapi_version(args, "ci", logging.getLogger("t")) == "2.0.0"
+    assert "couldn't read the SmartAPI registry" in caplog.text

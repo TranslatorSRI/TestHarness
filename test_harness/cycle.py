@@ -429,13 +429,33 @@ def cli(argv: Sequence[str] = None) -> int:
         status = "ok" if step.code == 0 else f"FAILED (exit {step.code})"
         print(f"  {step.name:<40} {status:<20} {step.minutes:>6.1f} min", flush=True)
 
-    radiator = RadiatorClient(logger=logger)
+    # the radiator the steps reported to: from after the `--`, or the env
+    radiator = RadiatorClient(
+        base_url=_passthrough_value(harness_args, "--radiator_url"),
+        token=_passthrough_value(harness_args, "--radiator_token"),
+        logger=logger,
+    )
     slacker = _slacker(args.output_dir, logger) if radiator.enabled else None
     if slacker is not None:
-        post_cycle_report(cycle_id, steps, radiator, slacker, logger)
+        # the cycle ran; a Slack failure now is worth a warning, not a crash
+        try:
+            post_cycle_report(cycle_id, steps, radiator, slacker, logger)
+        except Exception as e:
+            logger.warning(f"Couldn't post the cycle board: {type(e).__name__}: {e}")
     elif not radiator.enabled:
         logger.info("No Information Radiator configured, so no cycle board.")
     return 1 if any(step.code != 0 for step in steps) else 0
+
+
+def _passthrough_value(harness_args: Sequence[str], flag: str) -> Optional[str]:
+    """The value of ``flag`` among the harness arguments (``--flag value`` or
+    ``--flag=value``), or None."""
+    for i, arg in enumerate(harness_args):
+        if arg == flag and i + 1 < len(harness_args):
+            return harness_args[i + 1]
+        if arg.startswith(f"{flag}="):
+            return arg.split("=", 1)[1]
+    return None
 
 
 def digest_cli(radiator: RadiatorClient, days: int, output_dir: str, logger) -> int:
