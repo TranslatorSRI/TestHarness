@@ -128,9 +128,20 @@ environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
 on the radiator (comma-separated) to change which.
 
 #### A Slack channel for the new radiator
-While the new radiator runs alongside Zebrunner, its Slack posts can go to a
-channel of their own, so the current channel doesn't change until you switch
-over. Set:
+Which channel gets what depends on whether Zebrunner is still configured
+(`ZE_BASE_URL` and `ZE_REFRESH_TOKEN`):
+
+- **Zebrunner configured:** `SLACK_CHANNEL` is still Zebrunner's. It gets the
+  report it got before the new radiator (the Zebrunner link, the result summary
+  and the result files) and nothing of the new radiator's. The new radiator's
+  report goes to a channel of its own, if you give it one (below).
+- **No Zebrunner** (after the cutover, or in Docker Compose): `SLACK_CHANNEL`
+  is the new radiator's and gets its report.
+
+This keys off whether Zebrunner is *configured*, not whether it answered, so a
+Zebrunner outage never switches the old channel over to the new dashboard.
+
+To give the new radiator its own channel while both run, set:
 
 | Setting | |
 |---|---|
@@ -138,19 +149,16 @@ over. Set:
 | `RADIATOR_SLACK_CHANNEL` | The new channel's ID, eg `C0456EFGH` |
 | `RADIATOR_SLACK_TOKEN` | Optional: defaults to `SLACK_TOKEN`. Invite that bot to the new channel too |
 
-Then each run still runs once and reports to both dashboards, but posts twice:
+That channel then gets the new radiator's report for each run (its link, the
+headline against the previous run, the history charts and the result files),
+the [run cycle boards and the weekly digest](#run-cycles-and-the-weekly-digest).
+Each run still runs once and reports to both dashboards. A failure posting to
+the new channel (eg the bot isn't in it) is logged and never costs the old
+channel its report. Without it, the new radiator still records every run; it
+just posts nothing to Slack while Zebrunner is configured.
 
-- **`SLACK_CHANNEL`** gets the report it got before the new radiator: the
-  Zebrunner link, the result summary and the result files.
-- **`RADIATOR_SLACK_CHANNEL`** gets the new radiator's report: its link, the
-  headline against the previous run, the history charts and the result files.
-  The [run cycle boards and the weekly digest](#run-cycles-and-the-weekly-digest)
-  go here too.
-
-A failure posting to the new channel (eg the bot isn't in it) is logged and
-never costs the old channel its report. Without these settings, everything goes
-to `SLACK_CHANNEL`, as before. When you retire Zebrunner, point `SLACK_*` at
-the new channel and drop `RADIATOR_SLACK_*` (and the `ZE_*` settings).
+When you retire Zebrunner, drop the `ZE_*` settings, point `SLACK_*` at the
+new channel, and drop `RADIATOR_SLACK_*`.
 
 #### Deploying it
 To run it for real, in the same Kubernetes namespace as the harness, use the

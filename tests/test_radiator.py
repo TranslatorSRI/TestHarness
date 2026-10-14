@@ -482,6 +482,7 @@ def _main_with_slack(
     performance=False,
     args=None,
     new_slacker=None,
+    zebrunner=False,
 ):
     def fake_run_tests(tests, reporter, collector, logger, args):
         collector.has_acceptance_results = acceptance
@@ -492,6 +493,14 @@ def _main_with_slack(
     mocker.patch("test_harness.main.Slacker", return_value=slacker)
     mocker.patch("test_harness.main.Slacker.is_configured", return_value=True)
     mocker.patch("test_harness.main.radiator_slacker", return_value=new_slacker)
+    if zebrunner:
+        # configured and reachable: a run with a Zebrunner link
+        reporter = mocker.patch("test_harness.main.Reporter").return_value
+        mocker.patch("test_harness.main.Reporter.is_configured", return_value=True)
+        reporter.is_local = False
+        reporter.base_path = "https://zebrunner.example.org"
+        reporter.test_run_id = 42
+        reporter.test_name = "zebrunner_run"
     if radiator:
         monkeypatch.setenv("RADIATOR_URL", "http://radiator")
         monkeypatch.setenv("RADIATOR_TOKEN", "tok")
@@ -682,6 +691,7 @@ def test_the_radiator_can_have_its_own_slack_channel(mocker, monkeypatch, tmp_pa
             "fixed": 1,
         },
         new_slacker=new,
+        zebrunner=True,
     )
     for message in old.messages:
         assert "new Information Radiator" not in message
@@ -703,7 +713,12 @@ def test_a_failing_radiator_channel_never_costs_the_old_one(
             raise RuntimeError("channel_not_found")
 
     old = _main_with_slack(
-        mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}, new_slacker=Broken()
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={"pass_rate": 1.0},
+        new_slacker=Broken(),
+        zebrunner=True,
     )
     assert len(old.messages) == 2  # started, and the report
 
@@ -730,3 +745,42 @@ def test_radiator_slack_settings(monkeypatch, caplog):
     assert slacker.client.token == "xoxb-shared"  # the same bot by default
     monkeypatch.setenv("RADIATOR_SLACK_TOKEN", "xoxb-other")
     assert radiator_slacker().client.token == "xoxb-other"
+
+
+def test_alongside_zebrunner_the_old_channel_keeps_its_report(
+    mocker, monkeypatch, tmp_path
+):
+    """No channel of the radiator's own: SLACK_CHANNEL is still Zebrunner's,
+    and gets nothing of the new radiator's."""
+    old = _main_with_slack(
+        mocker,
+        monkeypatch,
+        tmp_path,
+        summary={
+            "pass_rate": 0.86,
+            "previous_pass_rate": 0.9,
+            "regressions": 3,
+            "fixed": 1,
+        },
+        zebrunner=True,
+    )
+    for message in old.messages:
+        assert (
+            "zebrunner.example.org/test-runs/42|View in the Information Radiator"
+            in message
+        )
+        assert "new Information Radiator" not in message
+        assert "Pass rate" not in message
+    assert old.files == []
+    assert old.results == ["json", "csv"]
+
+
+def test_without_zebrunner_the_radiator_has_slack_channel(
+    mocker, monkeypatch, tmp_path
+):
+    """After the cutover (or in docker compose), SLACK_CHANNEL is the radiator's."""
+    slacker = _main_with_slack(
+        mocker, monkeypatch, tmp_path, summary={"pass_rate": 0.5}
+    )
+    assert all("View in the new Information Radiator" in m for m in slacker.messages)
+    assert "Pass rate 50%" in slacker.messages[-1]

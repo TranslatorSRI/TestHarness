@@ -360,15 +360,30 @@ def main(args):
     )
 
     # Where the reports go: (slacker, links, with the radiator's headline and
-    # charts, best effort). One channel with everything; or, alongside
-    # Zebrunner, the old report in the old channel and the radiator's in its own.
-    if new_slacker is None:
-        channels = [(slacker, zebrunner_link + radiator_link, True, False)]
-    else:
-        channels = [
-            (slacker, zebrunner_link, False, False),
-            (new_slacker, radiator_link, True, True),
-        ]
+    # charts, best effort). While Zebrunner is configured, SLACK_CHANNEL is its
+    # channel and keeps the report it always got; the new radiator's report
+    # goes only to a channel of its own (RADIATOR_SLACK_*). Without Zebrunner,
+    # SLACK_CHANNEL is the radiator's. Configured, not reachable: a Zebrunner
+    # outage mustn't switch the old channel over to the new dashboard.
+    zebrunner_configured = not use_local_reporter
+    channels = []
+    if zebrunner_configured or new_slacker is None:
+        channels.append(
+            (
+                slacker,
+                zebrunner_link if zebrunner_configured else radiator_link,
+                not zebrunner_configured,
+                False,
+            )
+        )
+    if new_slacker is not None:
+        channels.append((new_slacker, radiator_link, True, True))
+    if zebrunner_configured and new_slacker is None and radiator.enabled:
+        logger.info(
+            "Reporting to Zebrunner, so SLACK_CHANNEL gets its report only; set "
+            "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
+            "new Information Radiator's report to a channel of its own."
+        )
 
     def post(action, best_effort):
         if not best_effort:

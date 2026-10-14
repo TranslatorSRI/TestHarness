@@ -35,6 +35,7 @@ from typing import List, Optional, Sequence
 from uuid import uuid4
 
 from test_harness.radiator_client import RadiatorClient
+from test_harness.reporter import Reporter
 from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
 from test_harness.sweep import (
     DEFAULT_OUTPUT_DIR,
@@ -250,11 +251,20 @@ def digest_message(digest: dict, url: Optional[str]) -> str:
 
 
 def _slacker(output_dir: str, logger):
-    """The radiator's own channel (RADIATOR_SLACK_*) if it has one, else
-    SLACK_CHANNEL: the board and the digest are the radiator's."""
+    """Where the radiator's board and digest go: its own channel
+    (RADIATOR_SLACK_*) if it has one; else SLACK_CHANNEL, unless that is
+    still Zebrunner's (ZE_* set), which gets nothing of the new radiator's;
+    then None."""
     own = radiator_slacker(logger)
     if own is not None:
         return own
+    if Reporter.is_configured():
+        logger.info(
+            "SLACK_CHANNEL is Zebrunner's while ZE_* is set; set "
+            "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
+            "new Information Radiator's board and digest to a channel of its own."
+        )
+        return None
     if Slacker.is_configured():
         return Slacker()
     logger.info(f"Slack isn't configured; saving the reports to '{output_dir}'.")
@@ -420,18 +430,20 @@ def cli(argv: Sequence[str] = None) -> int:
         print(f"  {step.name:<40} {status:<20} {step.minutes:>6.1f} min", flush=True)
 
     radiator = RadiatorClient(logger=logger)
-    if radiator.enabled:
-        post_cycle_report(
-            cycle_id, steps, radiator, _slacker(args.output_dir, logger), logger
-        )
-    else:
+    slacker = _slacker(args.output_dir, logger) if radiator.enabled else None
+    if slacker is not None:
+        post_cycle_report(cycle_id, steps, radiator, slacker, logger)
+    elif not radiator.enabled:
         logger.info("No Information Radiator configured, so no cycle board.")
     return 1 if any(step.code != 0 for step in steps) else 0
 
 
 def digest_cli(radiator: RadiatorClient, days: int, output_dir: str, logger) -> int:
     """``test-harness-radiator digest``: post the weekly digest to Slack."""
-    return 0 if post_digest(radiator, _slacker(output_dir, logger), logger, days) else 1
+    slacker = _slacker(output_dir, logger)
+    if slacker is None:
+        return 0
+    return 0 if post_digest(radiator, slacker, logger, days) else 1
 
 
 if __name__ == "__main__":

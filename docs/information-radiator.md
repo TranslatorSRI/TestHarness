@@ -98,10 +98,11 @@ deploy/
 
 ## In the Slack report
 
-With `RADIATOR_SLACK_WEBHOOK_URL` and `RADIATOR_SLACK_CHANNEL` set, everything
-below goes to that channel instead, and `SLACK_CHANNEL` keeps the report it got
-before the radiator (with the Zebrunner link), so the two can run side by side
-(see the README's
+Everything below goes to `SLACK_CHANNEL` once Zebrunner is gone. While
+Zebrunner is configured (`ZE_*`), `SLACK_CHANNEL` stays Zebrunner's, with the
+report it always got, and everything below goes to the radiator's own channel
+(`RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL`), or isn't posted
+without one (see the README's
 [A Slack channel for the new radiator](../README.md#a-slack-channel-for-the-new-radiator)).
 
 When the radiator has the run, the harness's Slack report gains a headline

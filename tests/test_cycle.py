@@ -65,9 +65,10 @@ def _ran(*codes):
     return [Step(f"step {i}", [], code, 30.0) for i, code in enumerate(codes)]
 
 
+@mock.patch("test_harness.cycle._slacker", return_value=mock.Mock())
 @mock.patch("test_harness.cycle.post_cycle_report")
 @mock.patch("test_harness.cycle.subprocess.run")
-def test_every_step_runs_even_when_one_fails(run, post, monkeypatch):
+def test_every_step_runs_even_when_one_fails(run, post, _slacker, monkeypatch):
     monkeypatch.setenv("RADIATOR_URL", "http://radiator")
     monkeypatch.setenv("RADIATOR_TOKEN", "tok")
     run.side_effect = [mock.Mock(returncode=2), mock.Mock(returncode=0)]
@@ -229,7 +230,13 @@ def test_the_board_and_digest_go_to_the_radiators_own_channel(monkeypatch):
     monkeypatch.delenv("RADIATOR_SLACK_TOKEN", raising=False)
     monkeypatch.delenv("RADIATOR_SLACK_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("RADIATOR_SLACK_CHANNEL", raising=False)
+    monkeypatch.delenv("ZE_BASE_URL", raising=False)
+    monkeypatch.delenv("ZE_REFRESH_TOKEN", raising=False)
     assert cycle._slacker("out", mock.Mock()).channel == "C0OLD"
+    # while SLACK_CHANNEL is Zebrunner's, the radiator's posts don't go there
+    monkeypatch.setenv("ZE_BASE_URL", "https://zebrunner.example.org")
+    monkeypatch.setenv("ZE_REFRESH_TOKEN", "tok")
+    assert cycle._slacker("out", mock.Mock()) is None
     monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/new")
     monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
     assert cycle._slacker("out", mock.Mock()).channel == "C0NEW"
