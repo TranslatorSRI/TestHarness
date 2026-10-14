@@ -228,7 +228,7 @@ To build it by hand, from the repo root:
 python -m radiator.zebrunner_import \
   --zebrunner-url "$ZE_BASE_URL" --refresh-token "$ZE_REFRESH_TOKEN" \
   --radiator-url https://radiator.example.org --radiator-token "$RADIATOR_TOKEN" \
-  --env ci --dry-run --limit 5
+  --project-id 1 --env ci --dry-run --limit 5
 ```
 
 Drop `--dry-run`/`--limit` once that looks right; `deploy/radiator-import.example.yaml`
@@ -247,7 +247,9 @@ labels, and each test's logs) and posts runs like the harness does.
 - **Skipped:** performance tests (pre-HelmsDeep, no summary).
 - **Re-runnable:** imported runs get ids derived from the Zebrunner launch, so
   a second run skips them, or updates them with `--force`.
-- **If your Zebrunner needs it**, pass `--project-id`.
+- **`--project-id` is required:** Zebrunner won't list launches without it.
+  It's the `projectId` in the API calls the Zebrunner launches page makes
+  (your browser's network tab shows them).
 
 The endpoints were read from Zebrunner's published images
 (`zebrunner/reporting-service` 1.54.1, `zebrunner/test-execution-logs-service`

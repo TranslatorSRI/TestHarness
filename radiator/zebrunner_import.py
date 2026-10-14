@@ -3,15 +3,15 @@
     python -m radiator.zebrunner_import \\
         --zebrunner-url https://zebrunner.example.org --refresh-token ... \\
         --radiator-url https://radiator.example.org --radiator-token ... \\
-        [--project-id 1] [--env ci] [--since 2025-01-01] [--dry-run]
+        --project-id 1 [--env ci] [--since 2025-01-01] [--dry-run]
 
 Reads Zebrunner's own read API (the same service the harness reports to):
 
-* ``GET /api/reporting/api/tests/runs`` - runs ("launches"), paged. The
-  newer ``/api/reporting/v1/launches`` has no list endpoint (only
-  ``/v1/launches/{id}`` and below), so listing goes through the legacy one.
+* ``GET /api/reporting/v1/launches?projectId=`` - runs ("launches"), paged.
+  Needs the project: without ``--project-id`` Zebrunner answers 404.
 * ``GET /api/reporting/v1/launches/{id}/tests`` - a run's tests, with labels
-* ``GET /api/reporting/v1/test-runs/{id}/tests/{testId}/logs`` - a test's logs
+* ``GET /api/reporting/v1/test-runs/{id}/tests/{testId}/logs-and-screenshots``
+  - a test's logs, paged (``.../logs`` there is a file download)
 
 and posts each run to the radiator's ingest API, exactly as the harness does.
 
@@ -84,8 +84,12 @@ PROD_AGENTS = {
 IMPORT_NAMESPACE = uuid.UUID("6f1c8a52-1d7e-4a8f-9a55-0b7c3f6d2e11")
 
 
-# Zebrunner's list of launches (LegacyLaunchController in reporting-service).
-LAUNCHES_PATH = "/api/reporting/api/tests/runs"
+# Read from Zebrunner's images (reporting-service 1.54.1 LaunchController,
+# test-execution-logs-service 1.6.1 LogController).
+LAUNCHES_PATH = "/api/reporting/v1/launches"
+LOGS_PATH = (
+    "/api/reporting/v1/test-runs/{launch_id}/tests/{test_id}/logs-and-screenshots"
+)
 
 
 class ZebrunnerError(RuntimeError):
@@ -155,8 +159,8 @@ class Zebrunner:
             # say what Zebrunner said, not just the status: a 400 names the
             # parameter it wanted
             hint = ""
-            if res.status_code == 400 and self.project_id is None:
-                hint = " (if it wants a project, pass --project-id)"
+            if res.status_code in (400, 404) and self.project_id is None:
+                hint = " (Zebrunner needs the project: pass --project-id)"
             raise ZebrunnerError(
                 f"GET {res.request.url} answered {res.status_code}: "
                 f"{res.text[:500]}{hint}"
@@ -189,7 +193,7 @@ class Zebrunner:
         logs, token = [], None
         while True:
             payload = self._get(
-                f"/api/reporting/v1/test-runs/{launch_id}/tests/{test_id}/logs",
+                LOGS_PATH.format(launch_id=launch_id, test_id=test_id),
                 maxPageSize=page_size,
                 pageToken=token,
             )
@@ -513,7 +517,11 @@ def cli(argv=None) -> int:
     parser.add_argument(
         "--project-id",
         type=int,
-        help="Zebrunner project id, if your instance needs one",
+        required=True,
+        help=(
+            "Zebrunner project id; Zebrunner won't list launches without one "
+            "(it's the projectId in the API calls the launches page makes)"
+        ),
     )
     parser.add_argument(
         "--radiator-url", help="Where to import to (omit with --dry-run)"

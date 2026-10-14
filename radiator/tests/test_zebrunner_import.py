@@ -133,7 +133,7 @@ def fake_zebrunner(calls):
             assert json.loads(request.content) == {"refreshToken": "refresh"}
             return httpx.Response(200, json={"authToken": "access"})
         assert request.headers["Authorization"] == "Bearer access"
-        if path == "/api/reporting/api/tests/runs":
+        if path == "/api/reporting/v1/launches":
             if not state["expired_once"]:
                 state["expired_once"] = True
                 return httpx.Response(401)
@@ -145,7 +145,7 @@ def fake_zebrunner(calls):
         if path.startswith("/api/reporting/v1/launches/") and path.endswith("/tests"):
             launch_id = int(path.split("/")[5])
             return httpx.Response(200, json={"items": TESTS[launch_id]})
-        if path.endswith("/logs"):
+        if path.endswith("/logs-and-screenshots"):
             test_id = int(path.split("/")[7])
             logs = LOGS.get(test_id, [])
             # one log per page, to exercise the page token
@@ -311,5 +311,5 @@ def test_zebrunner_errors_say_what_zebrunner_said():
     with pytest.raises(ZebrunnerError) as error:
         next(zebrunner.launches())
     message = str(error.value)
-    assert "/api/reporting/api/tests/runs" in message and "answered 400" in message
+    assert "/api/reporting/v1/launches" in message and "answered 400" in message
     assert "projectId" in message and "pass --project-id" in message

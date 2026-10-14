@@ -26,6 +26,7 @@ spec:
             - --refresh-token=$(ZE_REFRESH_TOKEN)
             - --radiator-url=http://{{ include "radiator.fullname" . }}:{{ .Values.service.port }}
             - --radiator-token=$(RADIATOR_TOKEN)
+            - --project-id={{ required "zebrunnerImport.projectId is required (Zebrunner won't list launches without it)" $ze.projectId }}
             - --env={{ $ze.env }}
             {{- range $ze.args }}
             - {{ . | quote }}

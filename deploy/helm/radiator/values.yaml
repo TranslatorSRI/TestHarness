@@ -88,6 +88,9 @@ zebrunnerImport:
   # A Secret with the keys ze-base-url and ze-refresh-token (the harness's
   # test-harness-secrets has them).
   existingSecret: test-harness-secrets
+  # Zebrunner's project id (the projectId in the API calls its launches page
+  # makes); it won't list launches without one.
+  projectId: ""
   # Zebrunner never recorded the environment: say which one these runs were.
   env: ci
   # Extra arguments, eg ["--dry-run", "--limit", "5"] or ["--suite", "x"].
