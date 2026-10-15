@@ -1,3 +1,6 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
 # Example CronJob for a sequential performance sweep.
 #
 # One Job, four harness runs, strictly in order: the ARS first, then each ARA.
@@ -109,12 +112,35 @@ spec:
                 - name: SLACK_CHANNEL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: slack-channel}
+                # Optional: a channel of the new radiator's own, alongside
+                # Zebrunner (see the README's "A Slack channel for the new
+                # radiator"). The token defaults to slack-token.
+                - name: RADIATOR_SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-webhook-url, optional: true}
+                - name: RADIATOR_SLACK_CHANNEL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-channel, optional: true}
                 - name: ZE_BASE_URL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: ze-base-url}
                 - name: ZE_REFRESH_TOKEN
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}
+                # The new Information Radiator, reported to alongside
+                # Zebrunner until it takes over. Optional: without it each run
+                # is saved to --output_dir in the pod, which is lost with the
+                # pod unless that directory is a mounted volume.
+                - name: RADIATOR_URL
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-url, optional: true}
+                - name: RADIATOR_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: test-harness-secrets, key: radiator-token, optional: true}
+                # Uploads can go to the in-cluster service; links people
+                # click (in Slack) need the radiator's public address.
+                - name: RADIATOR_PUBLIC_URL
+                  value: https://radiator.example.org
 
               resources:
                 # The load generator is the workload here: locust drives up to

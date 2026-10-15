@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Runs{% endblock %}
+{% block live %} data-live="/api/live" data-live-interval="20" data-live-version="{{ live_version }}"{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Test runs</h1>
+  <div class="meta">{{ total }} run{{ '' if total == 1 else 's' }}{% if suite or env %} matching{% endif %}</div>
+</div>
+
+<form class="filters" method="get">
+  <label>Suite
+    <select name="suite" onchange="this.form.submit()">
+      <option value="">All suites</option>
+      {% for s in options.suites %}<option {{ 'selected' if s == suite }}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Environment
+    <select name="env" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for e in options.envs %}<option {{ 'selected' if e == env }}>{{ e }}</option>{% endfor %}
+    </select>
+  </label>
+  {# a new filter starts again at page 1, at the same page size #}
+  {% if request.query_params.get('per_page') %}<input type="hidden" name="per_page" value="{{ request.query_params.get('per_page') }}">{% endif %}
+  <noscript><button type="submit">Filter</button></noscript>
+  {% if suite or env %}<a class="clear" href="/">Clear</a>{% endif %}
+</form>
+
+<div class="live-note" data-live-indicator hidden></div>
+<div class="card" id="runs-table" data-live-region>
+  {% if runs %}
+  {% set p = runs_page %}
+  <div class="pager-head">
+    <span class="muted">Showing {{ p.start }}–{{ p.end }} of {{ p.total }} run{{ '' if p.total == 1 else 's' }}, newest first</span>
+    <form method="get" class="per-page">
+      {% if suite %}<input type="hidden" name="suite" value="{{ suite }}">{% endif %}
+      {% if env %}<input type="hidden" name="env" value="{{ env }}">{% endif %}
+      <label>Per page
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in per_page_options %}<option value="{{ n }}" {{ 'selected' if p.per_page == n }}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <noscript><button type="submit">Show</button></noscript>
+    </form>
+    {{ m.pager(request, p) }}
+  </div>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr>
+      <th>Run</th><th>Started</th><th>Suite</th><th>Env</th><th>Results</th>
+      <th class="num">Pass rate</th><th class="num">Assets</th><th class="num">Duration</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for run in runs %}
+      {% set c = counts[run.id] %}{% set pc = perf_counts.get(run.id) %}
+      <tr>
+        <td class="nowrap"><a href="/runs/{{ run.id }}">#{{ run.number }}</a></td>
+        <td class="nowrap"><a href="/runs/{{ run.id }}">{{ when(run.started_at) }}</a><br><span class="muted">{{ ago(run.started_at) }}</span></td>
+        <td>{{ run.suite }}
+          {% if run.target %}<span class="badge" title="queries sent to {{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
+          {% if run.query_type %}<span class="badge">{{ run.query_type }} only</span>{% endif %}
+          {% if run.trapi_version %}<span class="badge muted" title="TRAPI version">TRAPI {{ trapi_minor(run.trapi_version) }}</span>{% endif %}
+          {% if run.query_parameters %}<span class="badge" title="Query parameters: {{ params_text(run.query_parameters) }}">parameters</span>{% endif %}
+        </td>
+        <td>{{ run.env or '–' }}</td>
+        {% if pc and not c %}
+        <td style="width:28%">{{ status_bar(pc) }}<span class="muted" style="font-size:12px">performance · {{ pc.values()|sum }} host{{ '' if pc.values()|sum == 1 else 's' }}</span></td>
+        <td class="num">{{ pct(pass_rate(pc)) }}</td>
+        <td class="num muted">–</td>
+        {% else %}
+        <td style="width:28%">{{ status_bar(c) }}</td>
+        <td class="num">{{ pct(pass_rate(c)) }}</td>
+        <td class="num">{{ c.values()|sum }}</td>
+        {% endif %}
+        <td class="num nowrap">{% if run.ended_at %}{{ duration(run) }}{% else %}{{ run_badge(run) }}{% if run_state(run) == 'running' %}<br><span class="muted">{{ elapsed(run) }}</span>{% endif %}{% endif %}</td>
+        <td>{% if run.origin == 'zebrunner_import' %}<span class="badge" title="Imported from Zebrunner: result counts, response times and some ranks weren't recorded">imported</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if p.pages > 1 %}
+  <div class="pager-foot">
+    <span></span>
+    {{ m.pager(request, p) }}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="empty">No runs yet. They appear here as soon as the harness starts one.</p>
+  {% endif %}
+</div>
+{% endblock %}

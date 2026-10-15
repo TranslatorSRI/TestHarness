@@ -1,0 +1,46 @@
+{{- if .Values.zebrunnerImport.enabled }}
+{{- $ze := .Values.zebrunnerImport }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # one Job per release revision, so enabling it again re-runs the import
+  # (already-imported runs are skipped)
+  name: {{ include "radiator.fullname" . }}-zebrunner-import-{{ .Release.Revision }}
+  labels: {{- include "radiator.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 604800
+  template:
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: import
+          image: {{ include "radiator.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "radiator.zebrunner_import"]
+          args:
+            - --zebrunner-url=$(ZE_BASE_URL)
+            - --refresh-token=$(ZE_REFRESH_TOKEN)
+            - --radiator-url=http://{{ include "radiator.fullname" . }}:{{ .Values.service.port }}
+            - --radiator-token=$(RADIATOR_TOKEN)
+            {{- with $ze.projectId }}
+            - --project-id={{ . }}
+            {{- end }}
+            {{- with $ze.env }}
+            - --env={{ . }}
+            {{- end }}
+            {{- range $ze.args }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: ZE_BASE_URL
+              valueFrom: {secretKeyRef: {name: {{ $ze.existingSecret }}, key: ze-base-url}}
+            - name: ZE_REFRESH_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $ze.existingSecret }}, key: ze-refresh-token}}
+            - name: RADIATOR_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: api-token}}
+          resources: {{- toYaml $ze.resources | nindent 12 }}
+{{- end }}

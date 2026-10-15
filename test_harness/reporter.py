@@ -18,6 +18,9 @@ from translator_testing_model.datamodel.pydanticmodel import (
 class Reporter:
     """Reports tests and statuses to the Information Radiator."""
 
+    # True for the stand-in that reports nowhere
+    is_local = False
+
     def __init__(
         self,
         base_url=None,
@@ -142,7 +145,6 @@ class Reporter:
                 ]
             )
         else:
-            print("made it to the error section")
             raise Exception
         res = self.authenticated_client.post(
             url=f"{self.base_path}/api/reporting/v1/test-runs/{self.test_run_id}/tests",
@@ -263,6 +265,8 @@ class LocalReporter(Reporter):
     the Reporter interface but hands out sequential ids and logs instead of
     uploading, so the rest of the harness is oblivious to the difference.
     """
+
+    is_local = True
 
     def __init__(
         self,

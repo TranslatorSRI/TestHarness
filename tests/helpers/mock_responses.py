@@ -1,4 +1,4 @@
-"""Mock Test Responses."""
+"""Mock Test Responses, in TRAPI 2.0."""
 
 kp_response = {
     "message": {
@@ -35,6 +35,8 @@ kp_response = {
                     "subject": "MESH:D008687",
                     "object": "MONDO:0005148",
                     "predicate": "biolink:treats",
+                    "knowledge_level": "knowledge_assertion",
+                    "agent_type": "manual_agent",
                     "sources": [
                         {
                             "resource_id": "infores:kp0",
@@ -48,30 +50,13 @@ kp_response = {
         "results": [
             {
                 "node_bindings": {
-                    "n0": [
-                        {
-                            "id": "MESH:D008687",
-                            "attributes": [],
-                        },
-                    ],
-                    "n1": [
-                        {
-                            "id": "MONDO:0005148",
-                            "attributes": [],
-                        },
-                    ],
+                    "n0": {"ids": ["MESH:D008687"]},
+                    "n1": {"ids": ["MONDO:0005148"]},
                 },
                 "analyses": [
                     {
-                        "resource_id": "kp0",
-                        "edge_bindings": {
-                            "n0n1": [
-                                {
-                                    "id": "n0n1",
-                                    "attributes": [],
-                                },
-                            ],
-                        },
+                        "resource_id": "infores:kp0",
+                        "edge_bindings": {"n0n1": {"ids": ["n0n1"]}},
                     }
                 ],
             },

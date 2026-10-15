@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Run grid{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Acceptance run grid</h1>
+  <div class="meta">Every full run of a suite, by environment over time. A card's trend compares its pass rate (skips left out) with the previous run in the same environment; FLAT is within 0.1 pts.{% if excluded %} Greyed out, and without a trend: {{ excluded|join(', ') }}.{% endif %}</div>
+</div>
+
+<form class="filters" method="get">
+  <label>Suite
+    <select name="suite" onchange="this.form.submit()">
+      {% for s in options.suites %}<option {{ 'selected' if s == suite }}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Last
+    <select name="days" onchange="this.form.submit()">
+      {% for d in windows %}<option value="{{ d }}" {{ 'selected' if d == days }}>{{ d }} days</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
+
+<div class="card">
+  {% if grid_svg %}
+  <div class="legend grid-legend">
+    {% for t in ['up', 'down', 'flat', 'base', 'excl'] %}
+      <span class="key"><span class="grid-key t-{{ t }}"></span>{{ trend_labels[t] }}</span>
+    {% endfor %}
+    <span class="muted">· click a card to open the run</span>
+  </div>
+  <div class="scroll">{{ grid_svg }}</div>
+  {% else %}
+  <p class="empty">No finished full runs of {{ suite or 'this suite' }} in the last {{ days }} days.</p>
+  {% endif %}
+</div>
+{% endblock %}

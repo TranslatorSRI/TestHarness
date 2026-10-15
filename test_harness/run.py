@@ -25,15 +25,37 @@ from test_harness.performance_test_runner import (
     resolve_profile,
     run_performance_test,
 )
-from test_harness.reporter import Reporter
+from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.query_runner import QueryRunner, env_map
+from test_harness.trapi import DEFAULT_TRAPI_VERSION
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
     TestReport,
     hash_test_asset,
 )
+
+
+def record_response_meta(agent_report: AgentReport, response: Any) -> None:
+    """Record what the response itself says, before any analysis of it.
+
+    ``n_results`` is only recorded for a successful response: the query runner
+    stands in an empty result list when an agent errors or times out, and that
+    is not an agent answering with zero results.
+    """
+    if not isinstance(response, dict):
+        return
+    status_code = response.get("status_code")
+    # after a failed ARS poll this is the ARS's status string, eg "Running"
+    agent_report.http_status = status_code if isinstance(status_code, int) else None
+    agent_report.response_time_s = response.get("elapsed_s")
+    body = response.get("response")
+    message = body.get("message") if isinstance(body, dict) else None
+    results = message.get("results") if isinstance(message, dict) else None
+    status_code = agent_report.http_status
+    if isinstance(results, list) and status_code is not None and status_code < 300:
+        agent_report.n_results = len(results)
 
 
 def run_tests(
@@ -47,9 +69,16 @@ def run_tests(
     logger.info(f"Running {len(tests)} queries...")
     target_url = args.get("target_url")
     target = args.get("target")
-    query_runner = QueryRunner(logger, target_url=target_url, target=target)
+    trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
+    query_runner = QueryRunner(
+        logger,
+        target_url=target_url,
+        target=target,
+        trapi_version=trapi_version,
+        query_parameters=args.get("query_parameters"),
+    )
     logger.info("Runner is getting service registry")
-    query_runner.retrieve_registry(trapi_version=args["trapi_version"])
+    query_runner.retrieve_registry(trapi_version=trapi_version)
     # The overall test status is normally driven by the ARS. When the target
     # service specified in the tests is overridden (eg to run against a
     # locally running ARA), it is driven by the override target instead.
@@ -60,7 +89,11 @@ def run_tests(
     for test in tqdm(list(tests.values())):
         # check if acceptance test
         if not test.test_assets or not test.test_case_objective:
-            logger.warning(f"Test has missing required fields: {test.id}")
+            missing = "test_assets" if not test.test_assets else "test_case_objective"
+            logger.warning(
+                f"[{test.id}] skipped, and not sent to the Information Radiator: "
+                f"the test case has no {missing}"
+            )
             continue
 
         query_responses = {}
@@ -72,17 +105,23 @@ def run_tests(
                 # throw out any assets with unsupported expected outputs, i.e. OverlyGeneric
                 if asset.expected_output not in collector.query_types:
                     logger.warning(
-                        f"Asset id {asset.id} has unsupported expected output."
+                        f"[{test.id}] asset {asset.id} skipped, and not sent to "
+                        "the Information Radiator: its expected output "
+                        f"{asset.expected_output!r} isn't one the harness tests "
+                        f"({', '.join(collector.query_types)})"
                     )
                     continue
                 # create test in Test Dashboard
                 test_id = ""
+                asset_reporter = reporter
                 try:
                     test_id = reporter.create_test(test, asset)
                     test_ids.append(test_id)
                 except Exception:
+                    # Zebrunner failing for this asset mustn't drop it: run
+                    # and collect it anyway, just without reporting it there.
                     logger.error(f"Failed to create test: {test.id}")
-                    continue
+                    asset_reporter = LocalReporter(logger=logger)
 
                 test_asset_hash = hash_test_asset(asset)
                 test_query = query_responses.get(test_asset_hash)
@@ -90,7 +129,7 @@ def run_tests(
                     message = json.dumps(test_query["query"], indent=4)
                 else:
                     message = "Unable to retrieve response for test asset."
-                reporter.upload_log(
+                asset_reporter.upload_log(
                     test_id,
                     message,
                 )
@@ -125,6 +164,7 @@ def run_tests(
                             actual_output=None,
                         )
                         agent_report = report.result[agent]
+                        record_response_meta(agent_report, response)
                         try:
                             if response.get("submission_failed"):
                                 # The query never made it into the component
@@ -226,6 +266,7 @@ def run_tests(
                         test_query["pks"].get("parent_pk"),
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                         force_skipped=force_skipped,
+                        status=status,
                     )
 
                     try:
@@ -260,16 +301,22 @@ def run_tests(
                                 for ara in collector.agents
                                 if ara in report.result
                             ]
-                        reporter.upload_labels(test_id, labels)
+                        asset_reporter.upload_labels(test_id, labels)
                     except Exception as e:
                         logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                    logger.info(f"Full report: {json.dumps(asdict(report), indent=4)}")
-                    reporter.upload_log(test_id, json.dumps(asdict(report), indent=4))
+                    asset_reporter.upload_log(
+                        test_id, json.dumps(asdict(report), indent=4)
+                    )
                 else:
                     # No query response for this asset (eg query generation
                     # failed). Record it as skipped across every agent so it
                     # still appears in the per-agent stats, CSV, and radiator
                     # labels as SKIPPED instead of being dropped entirely.
+                    logger.warning(
+                        f"[{test.id}] asset {asset.id}: no query response (its "
+                        "query couldn't be built or sent; see the errors above), "
+                        "so it's recorded as SKIPPED"
+                    )
                     status = AgentStatus.SKIPPED
                     collector.collect_acceptance_result(
                         test,
@@ -278,9 +325,10 @@ def run_tests(
                         None,
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                         force_skipped=True,
+                        status=status,
                     )
                     try:
-                        reporter.upload_labels(
+                        asset_reporter.upload_labels(
                             test_id,
                             [
                                 {"key": ara, "value": AgentStatus.SKIPPED.value}
@@ -290,20 +338,27 @@ def run_tests(
                     except Exception as e:
                         logger.warning(f"[{test.id}] failed to upload labels: {e}")
 
-                reporter.finish_test(test_id, status.value)
+                asset_reporter.finish_test(test_id, status.value)
                 collector.acceptance_report[status.value] += 1
         elif test.test_case_objective == "QuantitativeTest":
             # create test in Test Dashboard
             test_ids = []
             for asset in test.test_assets:
                 test_id = ""
+                asset_reporter = reporter
                 try:
                     test_id = reporter.create_test(test, asset)
                     test_ids.append(test_id)
                 except Exception as e:
-                    logger.error(f"Failed to create test: {test.id}", e)
-                    continue
+                    logger.error(f"Failed to create test: {test.id}: {e}")
+                    asset_reporter = LocalReporter(logger=logger)
 
+                if not isinstance(test, PerformanceTestCase):
+                    logger.warning(
+                        f"[{test.id}] asset {asset.id} skipped, and not sent to "
+                        "the Information Radiator: only performance tests are "
+                        "run as QuantitativeTests"
+                    )
                 if isinstance(test, PerformanceTestCase):
                     if target_url is not None:
                         host = query_runner.target_url
@@ -324,7 +379,7 @@ def run_tests(
                         run_type = helmsdeep_target(
                             perf_target or test.components[0], profile
                         )
-                        reporter.upload_log(
+                        asset_reporter.upload_log(
                             test_id,
                             describe_run(test, host, run_type, profile),
                         )
@@ -370,10 +425,12 @@ def run_tests(
                             status = AgentStatus.FAILED
                     except Exception as e:
                         logger.error(
-                            f"Failed to run performance test for {test.id}: {e}"
+                            f"[{test.id}] performance test against {host} failed: "
+                            f"{type(e).__name__}: {e}"
                         )
                         status = AgentStatus.FAILED
-                    reporter.finish_test(test_id, status.value)
+                        collector.record_performance_error(test, asset, host, str(e))
+                    asset_reporter.finish_test(test_id, status.value)
             # try:
             #     test_inputs = [
             #         assets.id,
@@ -410,7 +467,10 @@ def run_tests(
         else:
             try:
                 test_id = reporter.create_test(test, test.test_assets[0])
-                logger.error(f"Unsupported test type: {test.id}")
+                logger.error(
+                    f"[{test.id}] not run, and not sent to the Information "
+                    f"Radiator: unsupported test type {test.test_case_objective!r}"
+                )
                 reporter.upload_log(
                     test_id, f"Unsupported test type in test: {test.id}"
                 )
@@ -418,6 +478,11 @@ def run_tests(
                 reporter.finish_test(test_id, status)
             except Exception:
                 logger.error(f"Failed to report errors with: {test.id}")
+
+        # Send this test case's results to the radiator now rather than when a
+        # batch fills: each case waits minutes on its queries, so a whole run
+        # can be under one batch, and nothing would show until the end.
+        collector.flush()
 
         # delete this big object to help out the garbage collector
         del query_responses

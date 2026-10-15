@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "radiator.fullname" . }}
+  labels: {{- include "radiator.labels" . | nindent 4 }}
+spec:
+  # One replica: the login throttle is in memory, and the load is a handful
+  # of people looking at a dashboard. Recreate so a migration never runs
+  # against a database an old pod is still using.
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {{- include "radiator.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "radiator.selector" . | nindent 8 }}
+      annotations:
+        # restart when the chart-managed secret changes
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Bring the schema up to date before the app starts.
+        - name: migrate
+          image: {{ include "radiator.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "-c", "radiator/alembic.ini", "upgrade", "head"]
+          env:
+            {{- include "radiator.secretEnv" . | nindent 12 }}
+          resources: {{- toYaml .Values.migrate.resources | nindent 12 }}
+      containers:
+        - name: radiator
+          image: {{ include "radiator.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8000}
+          env:
+            {{- include "radiator.secretEnv" . | nindent 12 }}
+            - name: RADIATOR_API_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: api-token}}
+            - name: RADIATOR_USERNAME
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: username}}
+            - name: RADIATOR_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: password}}
+            - name: RADIATOR_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: session-secret}}
+            - name: RADIATOR_SECURE_COOKIES
+              value: {{ .Values.config.secureCookies | quote }}
+            - name: RADIATOR_EXCLUDED_ENVS
+              value: {{ .Values.config.excludedEnvs | quote }}
+            - name: RADIATOR_LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            # generous: a database blip shouldn't restart the app
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 30
+            failureThreshold: 6
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

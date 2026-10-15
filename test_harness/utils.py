@@ -47,13 +47,19 @@ class AgentReport:
     # Where the expected answer landed in this agent's response: a "found"
     # flag plus the ARS/ARA rank (int) and score (float) when it was found.
     actual_output: Optional[dict[str, Union[bool, int, float, None]]]
+    # About the response itself rather than the analysis of it. None when it
+    # isn't known: no response, or (for response_time_s) one fanned out by the
+    # ARS, which the harness only sees through its 10s polling.
+    http_status: Optional[int] = None
+    n_results: Optional[int] = None
+    response_time_s: Optional[float] = None
 
 
 @dataclass
 class PathfinderReport(AgentReport):
     """Dictionary for single Pathfinder agent report."""
 
-    expected_nodes_found: str
+    expected_nodes_found: Optional[str] = None
 
 
 @dataclass

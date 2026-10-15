@@ -8,19 +8,33 @@ import json
 import os
 import sys
 import time
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
+from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+import httpx
 from setproctitle import setproctitle
 
+from radiator_schema import RunCreate
 from test_harness.download import download_tests, load_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.performance_test_runner import PROFILES
+from test_harness.radiator_client import RadiatorClient
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
-from test_harness.slacker import LocalSlacker, Slacker
+from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
+from test_harness.runner.query_runner import env_map
+from test_harness.runner.smart_api_registry import registered_trapi_versions
+from test_harness.trapi import (
+    AUTO_TRAPI_VERSION,
+    DEFAULT_TRAPI_VERSION,
+    parse_query_parameters,
+    trapi_minor_version,
+    validate_query_parameters,
+)
 from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
 
 setproctitle("TestHarness")
@@ -43,6 +57,194 @@ def url_type(arg):
     if all((url.scheme, url.netloc)):
         return arg
     raise TypeError("Invalid URL")
+
+
+def uuid_type(arg):
+    try:
+        return UUID(arg)
+    except ValueError:
+        raise ArgumentTypeError(f"Not a UUID: {arg!r}")
+
+
+def harness_version():
+    try:
+        return version("sri-test-harness")
+    except PackageNotFoundError:
+        return None
+
+
+def log_radiator_outcome(radiator, tests, logger):
+    """What reached the radiator against what the suite had, naming any assets
+    that never got a result, so a gap in the dashboard can be traced."""
+    expected = [
+        (test.id, asset.id) for test in tests.values() for asset in test.test_assets
+    ]
+    for i, line in enumerate(radiator.outcome(expected)):
+        (logger.warning if i else logger.info)(line)
+
+
+def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
+    """Save the run for `test-harness-radiator push` if it wasn't uploaded."""
+    if force or not radiator.enabled or radiator.upload_failed:
+        path = radiator.save(output_dir, prefix=prefix)
+        logger.info(
+            f"Saved the run for the Information Radiator to {path}; upload it "
+            "with `test-harness-radiator push`."
+        )
+
+
+def radiator_headline(radiator, collector) -> str:
+    """Lines for Slack: this run against the previous one in its series (the
+    acceptance pass rate, each service's top concurrency), linking to what
+    changed. Empty when the radiator doesn't have the run."""
+    if not (collector.has_acceptance_results or collector.has_performance_results):
+        return ""
+    summary = radiator.summary()
+    if not summary:
+        return ""
+    lines = []
+    if collector.has_acceptance_results and summary.get("pass_rate") is not None:
+        line = f"Pass rate {summary['pass_rate']:.0%}"
+        if summary.get("previous_pass_rate") is not None:
+            delta = (summary["pass_rate"] - summary["previous_pass_rate"]) * 100
+            line += f" ({delta:+.1f} pts vs the previous run)"
+            line += (
+                f" · {summary['regressions']} regressions · {summary['fixed']} fixed"
+                f" · <{radiator.diff_url}|What changed>"
+            )
+        lines.append(line)
+    if collector.has_performance_results:
+        lines.extend(_performance_line(p) for p in summary.get("performance") or [])
+    change = _trapi_change(
+        summary.get("previous_trapi_version"), summary.get("trapi_version")
+    )
+    if lines and change:
+        lines.append(
+            f"TRAPI {change[0]} → {change[1]} since the previous run: some of "
+            "these changes may come from the version change"
+        )
+    return "".join(f"\n> {line}" for line in lines) + ("\n" if lines else "")
+
+
+def _trapi_change(before, after):
+    """(from, to) major.minor TRAPI versions when they differ, else None."""
+    if not before or not after:
+        return None
+    before, after = ".".join(before.split(".")[:2]), ".".join(after.split(".")[:2])
+    return (before, after) if before != after else None
+
+
+def _performance_line(perf: dict) -> str:
+    """One service's top concurrency against its previous run."""
+    name = perf.get("helmsdeep_target") or perf["host"]
+    if perf.get("profile"):
+        name += f" ({perf['profile']})"
+    if perf.get("error"):
+        return f"{name}: run failed: {perf['error']}"
+    current = perf.get("max_sustainable_concurrency")
+    if current is None:
+        line = f"{name}: no stage met the SLO"
+    else:
+        line = f"{name}: max sustainable concurrency {current:.1f}"
+        previous = perf.get("previous_max_sustainable_concurrency")
+        if previous is not None:
+            line += f" ({current - previous:+.1f} vs the previous run)"
+        if perf.get("knee_unsupported"):
+            line += " (unsupported, see stage warnings)"
+    if perf.get("checkpoints_passed") is not None:
+        line += (
+            " · checkpoints passed"
+            if perf["checkpoints_passed"]
+            else " · checkpoints missed"
+        )
+    return line
+
+
+def post_report(
+    slacker,
+    suite,
+    duration,
+    queried_envs,
+    links,
+    result_summary,
+    radiator,
+    collector,
+    reporter,
+    prefix,
+    logger,
+):
+    """A finished run's report in one channel: the summary, the radiator's
+    charts (with ``radiator``), and the result files."""
+    slacker.post_notification(
+        messages=[
+            f"Test Suite: {suite}\nDuration: {duration} | Environment(s): "
+            f"{','.join(list(queried_envs))}{links}\n{result_summary}"
+        ]
+    )
+    if radiator is not None:
+        post_history_charts(radiator, slacker, collector, suite, prefix, logger)
+    if collector.has_acceptance_results:
+        slacker.upload_test_results_file(
+            f"{prefix}{reporter.test_name}",
+            "json",
+            collector.acceptance_stats,
+        )
+        slacker.upload_test_results_file(
+            f"{prefix}{reporter.test_name}",
+            "csv",
+            collector.acceptance_csv,
+        )
+    if collector.has_performance_results:
+        # HelmsDeep's own summary.json is the authoritative result, so it is
+        # uploaded verbatim alongside its HTML report rather than being
+        # reformatted into a second, divergent JSON. Each carries the run's
+        # checkpoint pass/fail as its comment.
+        for filename, content, comment in collector.render_performance_artifacts():
+            filename = f"{prefix}{filename}"
+            try:
+                slacker.upload_binary_file(filename, content, initial_comment=comment)
+            except Exception as e:
+                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
+
+
+def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
+    """Post the run's history charts, from the radiator, under the report:
+    the acceptance pass rate and each service's top concurrency. Best effort:
+    the report stands without them."""
+    charts = []
+    if collector.has_acceptance_results:
+        charts.append(
+            (
+                radiator.history_png,
+                "pass_rate_history.png",
+                "Pass-rate history",
+                f"Pass-rate history for {suite} up to this run",
+            )
+        )
+    if collector.has_performance_results:
+        charts.append(
+            (
+                radiator.performance_png,
+                "concurrency_history.png",
+                "Max sustainable concurrency history",
+                "Max sustainable concurrency history up to this run",
+            )
+        )
+    for fetch, filename, title, comment in charts:
+        png = fetch()
+        if not png:
+            continue
+        try:
+            slacker.upload_binary_file(
+                f"{prefix}{filename}",
+                png,
+                initial_comment=(
+                    f"{comment} · <{radiator.run_url}|Open in the Information Radiator>"
+                ),
+                title=title,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to post the {title.lower()} chart: {e}")
 
 
 def main(args):
@@ -76,6 +278,25 @@ def main(args):
             logger.error(f"No {query_type} tests to run. Exiting.")
             return EXIT_COULD_NOT_RUN
 
+    # The TRAPI version: given, or (auto) what this environment's services are
+    # registered with, while environments are on different versions.
+    test_env = next(iter(tests.values())).test_env
+    args["trapi_version"] = resolve_trapi_version(args, test_env, logger)
+    # Check the query parameters against the TRAPI version now, so a typo
+    # stops the run before any query goes out rather than failing every one.
+    try:
+        args["query_parameters"] = validate_query_parameters(
+            args.get("query_parameters"), args["trapi_version"]
+        )
+    except ValueError as e:
+        logger.error(str(e))
+        return EXIT_COULD_NOT_RUN
+    if args["query_parameters"]:
+        logger.info(
+            f"Sending these parameters with every query: "
+            f"{json.dumps(args['query_parameters'])}"
+        )
+
     output_dir = args.get("output_dir") or "test_results"
 
     # prefix saved/uploaded result filenames with the override target and the
@@ -106,9 +327,18 @@ def main(args):
             refresh_token=args.get("reporter_access_token"),
             logger=logger,
         )
-    reporter.get_auth()
-    test_env = next(iter(tests.values())).test_env
-    reporter.create_test_run(test_env, args["suite"])
+    try:
+        reporter.get_auth()
+        reporter.create_test_run(test_env, args["suite"])
+    except Exception as e:
+        # Zebrunner being down mustn't stop the run: the tests still run and
+        # still reach Slack and the new Information Radiator.
+        logger.error(
+            f"Couldn't open a run in the Zebrunner Information Radiator ({e}); "
+            "continuing without it."
+        )
+        reporter = LocalReporter(logger=logger)
+        reporter.create_test_run(test_env, args["suite"])
 
     use_local_slacker = local or not Slacker.is_configured()
     if use_local_slacker:
@@ -116,51 +346,152 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    collector = ResultCollector(test_env, logger, target=args.get("target"))
+    # With RADIATOR_SLACK_* set, the new radiator's reports go to their own
+    # channel, and SLACK_CHANNEL keeps getting the report it always did.
+    new_slacker = None if local else radiator_slacker(logger)
+    # The new Information Radiator runs alongside Zebrunner until it takes
+    # over. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
+    # --local, it only records, and the run is saved to --output_dir instead.
+    radiator = RadiatorClient(
+        base_url=args.get("radiator_url"),
+        token=args.get("radiator_token"),
+        enabled=not local,
+        logger=logger,
+    )
+    radiator.start_run(
+        RunCreate(
+            run_id=uuid4(),
+            suite=args["suite"],
+            env=test_env,
+            target=args.get("target"),
+            target_url=args.get("target_url"),
+            query_type=query_type,
+            query_parameters=args.get("query_parameters"),
+            cycle_id=args.get("cycle_id"),
+            trapi_version=args["trapi_version"],
+            expected_assets=sum(len(test.test_assets) for test in tests.values()),
+            harness_version=harness_version(),
+            tests_source=args.get("tests_url") or args.get("tests_dir"),
+            started_at=datetime.now().astimezone(),
+        )
+    )
+    if radiator.enabled and not radiator.upload_failed:
+        logger.info(
+            f"Reporting to the Information Radiator at {radiator.base_url}: "
+            f"{radiator.run_url}"
+        )
+    elif not radiator.enabled:
+        logger.info(
+            "Not reporting to the Information Radiator ("
+            + ("--local" if local else "RADIATOR_URL and RADIATOR_TOKEN aren't set")
+            + f"); the run will be saved to {output_dir} for "
+            "`test-harness-radiator push`."
+        )
+    params_note = (
+        f"\nQuery parameters: `{json.dumps(args['query_parameters'])}`"
+        if args.get("query_parameters")
+        else ""
+    )
+    # Only link to Zebrunner when the run went there: the local stand-in's
+    # "URL" leads nowhere.
+    zebrunner_link = (
+        ""
+        if reporter.is_local
+        else f"\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+    )
+    radiator_link = (
+        f"\n<{radiator.run_url}|View in the new Information Radiator>"
+        if radiator.run_url
+        else ""
+    )
+
+    # Where the reports go: (slacker, links, with the radiator's headline and
+    # charts, best effort). While Zebrunner is configured, SLACK_CHANNEL is its
+    # channel and keeps the report it always got; the new radiator's report
+    # goes only to a channel of its own (RADIATOR_SLACK_*). Without Zebrunner,
+    # SLACK_CHANNEL is the radiator's. Configured, not reachable: a Zebrunner
+    # outage mustn't switch the old channel over to the new dashboard.
+    zebrunner_configured = not use_local_reporter
+    channels = []
+    if zebrunner_configured or new_slacker is None:
+        channels.append(
+            (
+                slacker,
+                zebrunner_link if zebrunner_configured else radiator_link,
+                not zebrunner_configured,
+                False,
+            )
+        )
+    if new_slacker is not None:
+        channels.append((new_slacker, radiator_link, True, True))
+    if zebrunner_configured and new_slacker is None and radiator.enabled:
+        logger.info(
+            "Reporting to Zebrunner, so SLACK_CHANNEL gets its report only; set "
+            "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
+            "new Information Radiator's report to a channel of its own."
+        )
+
+    def post(action, best_effort):
+        if not best_effort:
+            return action()
+        # the new channel never costs the old one its report
+        try:
+            action()
+        except Exception as e:
+            logger.warning(f"Couldn't post to the Information Radiator's channel: {e}")
+
+    collector = ResultCollector(
+        test_env, logger, target=args.get("target"), radiator=radiator
+    )
     queried_envs = set()
     for test in tests.values():
         queried_envs.add(test.test_env)
-    slacker.post_notification(
-        messages=[
-            f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries)...\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
-        ]
-    )
+    for channel, links, _, best_effort in channels:
+        post(
+            lambda: channel.post_notification(
+                messages=[
+                    f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries, TRAPI {args['trapi_version']})...{params_note}{links}"
+                ]
+            ),
+            best_effort,
+        )
     start_time = time.time()
-    run_tests(tests, reporter, collector, logger, args)
+    try:
+        run_tests(tests, reporter, collector, logger, args)
+    except BaseException:
+        # Keep what was collected, but leave the run open: a run that died
+        # halfway must not read as finished.
+        radiator.flush()
+        logger.error("The run crashed; the Information Radiator has it as unfinished.")
+        log_radiator_outcome(radiator, tests, logger)
+        save_radiator_run(radiator, output_dir, target_prefix, logger, force=True)
+        raise
+    # Close out the radiator before Zebrunner and Slack, whose failures below
+    # would otherwise cost it the run.
+    radiator.finish_run(counts=collector.acceptance_report)
+    log_radiator_outcome(radiator, tests, logger)
+    save_radiator_run(radiator, output_dir, target_prefix, logger)
 
-    slacker.post_notification(
-        messages=[
-            """Test Suite: {test_suite}\nDuration: {duration} | Environment(s): {envs}\n<{ir_url}|View in the Information Radiator>\n{result_summary}""".format(
-                test_suite=args["suite"],
-                duration=round(time.time() - start_time, 2),
-                envs=(",").join(list(queried_envs)),
-                ir_url=f"{reporter.base_path}/test-runs/{reporter.test_run_id}",
-                result_summary=collector.dump_result_summary(),
-            )
-        ]
-    )
-    if collector.has_acceptance_results:
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "json",
-            collector.acceptance_stats,
+    duration = round(time.time() - start_time, 2)
+    summary = collector.dump_result_summary()
+    headline = radiator_headline(radiator, collector)
+    for channel, links, with_radiator, best_effort in channels:
+        post(
+            lambda: post_report(
+                channel,
+                args["suite"],
+                duration,
+                queried_envs,
+                links,
+                (headline if with_radiator else "") + summary,
+                radiator if with_radiator else None,
+                collector,
+                reporter,
+                target_prefix,
+                logger,
+            ),
+            best_effort,
         )
-        slacker.upload_test_results_file(
-            f"{target_prefix}{reporter.test_name}",
-            "csv",
-            collector.acceptance_csv,
-        )
-    if collector.has_performance_results:
-        # HelmsDeep's own summary.json is the authoritative result, so it is
-        # uploaded verbatim alongside its HTML report rather than being
-        # reformatted into a second, divergent JSON. Each carries the run's
-        # checkpoint pass/fail as its comment.
-        for filename, content, comment in collector.render_performance_artifacts():
-            filename = f"{target_prefix}{filename}"
-            try:
-                slacker.upload_binary_file(filename, content, initial_comment=comment)
-            except Exception as e:
-                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
 
     logger.info("Finishing up test run...")
     reporter.finish_test_run()
@@ -174,6 +505,66 @@ def main(args):
 
     logger.info("All tests have completed!")
     return EXIT_OK
+
+
+def _query_parameters(value: str):
+    """Parse --query_parameters / QUERY_PARAMETERS: JSON, or @file."""
+    try:
+        return parse_query_parameters(value)
+    except (ValueError, OSError) as e:
+        raise ArgumentTypeError(str(e))
+
+
+def resolve_trapi_version(args, test_env, logger) -> str:
+    """The TRAPI version to run: as given, or for ``auto``, the newest one the
+    environment's ARS (or the --target service) is registered with in
+    SmartAPI that the harness speaks. Falls back to the default, saying why."""
+    requested = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
+    if requested != AUTO_TRAPI_VERSION:
+        return requested
+    target = args.get("target")
+    infores = f"infores:{target.split('infores:')[-1]}" if target else "infores:ars"
+    maturity = env_map.get(test_env)
+    why = (
+        f"{infores} isn't registered in SmartAPI for {test_env} ({maturity}) "
+        "with a TRAPI version the harness speaks"
+    )
+    try:
+        versions = []
+        for registered in registered_trapi_versions(infores, maturity):
+            try:
+                trapi_minor_version(registered)
+            except ValueError:
+                continue
+            versions.append(registered)
+    except (httpx.HTTPError, ValueError) as e:
+        # ValueError: an answer that isn't JSON (eg a proxy's error page)
+        versions, why = [], f"couldn't read the SmartAPI registry ({e})"
+    if versions:
+        others = (
+            f" (also registered: {', '.join(versions[1:])})" if versions[1:] else ""
+        )
+        logger.info(
+            f"TRAPI {versions[0]}: what {infores} is registered with for "
+            f"{test_env} in SmartAPI{others}"
+        )
+        return versions[0]
+    logger.warning(
+        f"--trapi_version auto: {why}; using {DEFAULT_TRAPI_VERSION}. Pass "
+        "--trapi_version to choose one."
+    )
+    return DEFAULT_TRAPI_VERSION
+
+
+def _trapi_version(value: str) -> str:
+    """Accept a TRAPI version only if the harness can write queries in it."""
+    if value == AUTO_TRAPI_VERSION:
+        return value
+    try:
+        trapi_minor_version(value)
+    except ValueError as e:
+        raise ArgumentTypeError(str(e))
+    return value
 
 
 def cli():
@@ -248,6 +639,18 @@ def cli():
     )
 
     parser.add_argument(
+        "--radiator_url",
+        type=url_type,
+        help="URL of the new Information Radiator (defaults to $RADIATOR_URL)",
+    )
+
+    parser.add_argument(
+        "--radiator_token",
+        type=str,
+        help="Ingest token for the new Information Radiator (defaults to $RADIATOR_TOKEN)",
+    )
+
+    parser.add_argument(
         "--save_to_dashboard",
         action="store_true",
         help="Have the Test Harness send the test results to the Testing Dashboard",
@@ -288,6 +691,16 @@ def cli():
     )
 
     parser.add_argument(
+        "--cycle_id",
+        type=uuid_type,
+        help=(
+            "Mark the run as one step of a run cycle, whose runs share this "
+            "id (a UUID). test-harness-cycle sets it; there's no need to pass "
+            "it by hand."
+        ),
+    )
+
+    parser.add_argument(
         "--performance_profile",
         type=str.lower,
         choices=list(PROFILES),
@@ -304,9 +717,29 @@ def cli():
 
     parser.add_argument(
         "--trapi_version",
-        type=str,
-        default="1.6.0",
-        help="TRAPI (SemVer) version assumed for testing (1.5.0, if not given)",
+        type=_trapi_version,
+        default=AUTO_TRAPI_VERSION,
+        help=(
+            "TRAPI (SemVer) version to test: queries are written in it and "
+            "only services registered for it are queried. 2.0.x or 1.6.x, or "
+            "auto (the default): the version the environment's ARS (or the "
+            "--target service) is registered with in SmartAPI, falling back "
+            f"to {DEFAULT_TRAPI_VERSION}."
+        ),
+    )
+
+    parser.add_argument(
+        "--query_parameters",
+        type=_query_parameters,
+        default=os.getenv("QUERY_PARAMETERS"),
+        help=(
+            "Parameters sent with every query, as a JSON object or @file, eg "
+            '\'{"timeout": 300, "bypass_cache": true}\'. TRAPI 2.0 queries carry '
+            "them in their parameters object (timeout, log_level, bypass_cache, "
+            "and any a service defines); TRAPI 1.6 queries take only log_level "
+            "and bypass_cache. Defaults to $QUERY_PARAMETERS. Not used by "
+            "performance tests, which send HelmsDeep's own queries."
+        ),
     )
 
     parser.add_argument(

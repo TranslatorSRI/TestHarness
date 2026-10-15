@@ -41,6 +41,139 @@ saved to `--output_dir` automatically. Likewise, if the Information Radiator
 isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
 back to a local reporter.
 
+### The new Information Radiator
+A replacement for the Zebrunner-based Information Radiator lives in this repo,
+in `radiator/` (full details in
+[`docs/information-radiator.md`](docs/information-radiator.md)). It gets
+structured results instead of labels and log lines: for each test asset, every
+agent's status, whether the expected answer was found and its rank/score, the
+number of results, the HTTP status, and (for direct queries) the response
+time. Its dashboard shows each run, what changed since the previous one, each
+asset's history, agent pass-rate trends, and performance trends.
+
+#### Trying it out with Docker Compose
+With Docker installed, from the repo root:
+- `docker compose up --build`
+
+That starts Postgres, sets up its tables, starts the radiator, and then runs a
+small test suite (`local_acceptance`) that reports to it. When the suite
+finishes, the harness container exits; the radiator keeps running at
+<http://localhost:8000>. Log in with `translator` / `radiator`.
+
+The suite queries the real Translator services (the ARS on ci), so the run
+needs internet access and takes a few minutes. It reports to the new radiator
+only, unless you put `ZE_BASE_URL` and `ZE_REFRESH_TOKEN` in `.env` to report
+to Zebrunner as well (see
+[A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)
+for where Slack posts go then).
+
+Everything is configurable from a `.env` file next to `compose.yml`; copy
+`.env.example` to `.env` to start from the Slack settings:
+
+| Setting | Default | |
+| --- | --- | --- |
+| `HARNESS_ARGS` | `load local_acceptance` | What the harness runs, eg `download sprint_4_tests`, or `--query_type MVP1 download sprint_4_tests` |
+| `RADIATOR_USERNAME` / `RADIATOR_PASSWORD` | `translator` / `radiator` | The login |
+| `RADIATOR_TOKEN` | `local-dev-token` | The API token the harness uploads with |
+| `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
+| `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
+| `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
+| `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets only Zebrunner's report, and the radiator's go to `RADIATOR_SLACK_*` (or nowhere, if that isn't set) |
+| `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)) |
+
+Then:
+- **Run another suite** against the same radiator, without restarting it:
+  `docker compose run --rm harness test-harness download sprint_4_tests`
+- **Run a cycle** (acceptance, then pathfinder, then performance) and get its
+  board: `docker compose run --rm harness test-harness-cycle --download
+  --acceptance sprint_4_tests --pathfinder pathfinder_tests` (see
+  [Run cycles](#run-cycles-and-the-weekly-digest)).
+- **See the dashboard with made-up history** instead (eg to look around without
+  waiting for real runs): `docker compose run --rm radiator python -m radiator.demo`.
+  Don't do this in a radiator you'll keep: the demo runs mix in with real ones.
+- **Stop it**: `docker compose down` keeps the results (in the `radiator-db`
+  volume) for next time; `docker compose down -v` wipes them.
+
+If the harness exits with `Permission denied: '/app/logs/harness.log'` (a Linux
+host where `./logs` isn't writable by the container's user), run
+`chmod a+w logs` (and remove `logs/harness.log` if it exists and isn't
+yours), then `docker compose up` again.
+
+#### Reporting to a radiator from the harness
+Point the harness at a radiator with `RADIATOR_URL` and `RADIATOR_TOKEN` (or
+`--radiator_url` / `--radiator_token`). If people open the radiator at a
+different address than the harness uploads to (eg an in-cluster service name),
+set `RADIATOR_PUBLIC_URL` for the links in the logs and Slack. Until the new
+radiator takes over, the harness reports to it alongside Zebrunner, if that's
+configured too.
+
+Results are posted in batches; an unreachable radiator never fails a run.
+Whenever a run isn't uploaded (`--local`, the radiator isn't configured, or an
+upload failed) it's saved to `--output_dir` as `radiator_<run id>.json`
+instead, which can be uploaded later:
+- `test-harness-radiator push test_results/radiator_<run id>.json`
+
+Uploads are idempotent, so pushing a run that partly made it is safe. The
+radiator never depends on Zebrunner or Slack: if either fails, the run still
+reaches the radiator (or is saved for it).
+
+When the radiator has the run, the Slack report also gets a headline against
+the previous run and a chart of the last 30 runs: for acceptance runs, the pass
+rate, regressions, and fixes, charted per agent; for performance runs, each
+service's max sustainable concurrency and checkpoint verdict. Runs of a
+[run cycle](#run-cycles-and-the-weekly-digest) also get the cycle's board when
+the cycle finishes, and the radiator's **Weekly** page and Monday digest cover
+every environment.
+
+The dashboard's **Run grid** page shows a suite's runs in every environment
+over time, colored by whether the pass rate went up, down, or held. The `dev`
+environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
+on the radiator (comma-separated) to change which.
+
+#### A Slack channel for the new radiator
+Which channel gets what depends on whether Zebrunner is still configured
+(`ZE_BASE_URL` and `ZE_REFRESH_TOKEN`):
+
+- **Zebrunner configured:** `SLACK_CHANNEL` is still Zebrunner's. It gets the
+  report it got before the new radiator (the Zebrunner link, the result summary
+  and the result files) and nothing of the new radiator's. The new radiator's
+  report goes to a channel of its own, if you give it one (below).
+- **No Zebrunner** (after the cutover, or in Docker Compose without `ZE_*` in
+  `.env`): `SLACK_CHANNEL` is the new radiator's and gets its report.
+
+This keys off whether Zebrunner is *configured*, not whether it answered, so a
+Zebrunner outage never switches the old channel over to the new dashboard.
+
+To give the new radiator its own channel while both run, set:
+
+| Setting | |
+|---|---|
+| `RADIATOR_SLACK_WEBHOOK_URL` | An incoming webhook for the new channel (a webhook posts to one channel only) |
+| `RADIATOR_SLACK_CHANNEL` | The new channel's ID, eg `C0456EFGH` |
+| `RADIATOR_SLACK_TOKEN` | Optional: defaults to `SLACK_TOKEN`. Invite that bot to the new channel too |
+
+That channel then gets the new radiator's report for each run (its link, the
+headline against the previous run, the history charts and the result files),
+the [run cycle boards and the weekly digest](#run-cycles-and-the-weekly-digest).
+Each run still runs once and reports to both dashboards. A failure posting to
+the new channel (eg the bot isn't in it) is logged and never costs the old
+channel its report. Without it, the new radiator still records every run; it
+just posts nothing to Slack while Zebrunner is configured.
+
+When you retire Zebrunner, drop the `ZE_*` settings, point `SLACK_*` at the
+new channel, and drop `RADIATOR_SLACK_*`.
+
+#### Deploying it
+To run it for real, in the same Kubernetes namespace as the harness, use the
+Helm charts in [`deploy/helm`](deploy/helm/README.md): one for the radiator
+(and, if you need it, a small Postgres), one for the harness's scheduled run
+cycles, digest and sweeps. Copy each chart's `values.example.yaml` to a
+git-ignored `values.<name>.yaml` and install. The plain manifests in `deploy/`
+show the same setup without Helm; see
+[Deploying](docs/information-radiator.md#deploying). To bring over the
+history from Zebrunner, see
+[Importing from Zebrunner](docs/information-radiator.md#importing-from-zebrunner).
+
 ### Running local test files
 `test-harness download <suite>` fetches the suites from
 [NCATSTranslator/Tests](https://github.com/NCATSTranslator/Tests) every run,
@@ -87,6 +220,64 @@ dropped. Pathfinder test cases don't generate an MVP query, so they're skipped
 whenever `--query_type` is given. Saved result filenames are prefixed with the
 query type (eg `MVP1_test_report.json`) so runs of different slices stay
 distinguishable.
+
+### TRAPI version
+The harness speaks **TRAPI 2.0 and 1.6**. Queries are built with
+[`translator_tom`](https://github.com/NCATSTranslator/TRAPIObjectModeling)
+(TOM), the Translator-wide TRAPI object model, so each query is validated
+against the spec before it is sent. `--trapi_version` picks the version the
+queries are written in and which services are taken from the SmartAPI
+registry (only those registered with the same `x-trapi` major.minor):
+- `auto` (the default): the version the environment's ARS is registered with
+  in SmartAPI (or, with `--target`, that service's), the newest the harness
+  speaks if it's registered with more than one. While environments move to
+  2.0 one at a time, each run follows its environment with no configuration.
+  The log says what it chose and why; if nothing is registered, or SmartAPI
+  can't be read, it falls back to 2.0 with a warning.
+- `--trapi_version 1.6.0` or `--trapi_version 2.0.0` to choose one, eg if an
+  environment's SmartAPI registration and its deployment disagree for a while.
+  In a run cycle, pass it after the `--` (or, with the Helm chart, in that
+  environment's `harnessArgs`).
+
+Each run's TRAPI version is recorded in the Information Radiator, shown on the
+run and in the runs list, and the start of the Slack report says it. When a
+run's version differs from the previous run's (an environment that just moved
+to 2.0), the run page, What changed, the cycle board's flags and the Slack
+headline all say so: what changed may be the upgrade, not the services.
+
+What 2.0 changed in the queries the harness sends: an MVP2 query's qualifiers
+go in the query edge's `constraints.qualifiers` as one
+`{qualifier_type_id: qualifier_value}` mapping (1.6's `qualifier_constraints`
+is rejected by 2.0 services), and a Pathfinder query is an ordinary query graph
+with `paths` and no `edges`. Responses are read in either shape — a 2.0
+binding is one object with an `ids` list, a 1.x binding a list of objects each
+with an `id` — since the ARS can return either.
+
+### Sending parameters with every query
+To send the same parameters with every query of a run, such as a longer
+timeout or a request to skip caches, pass them as a JSON object:
+- `test-harness --query_parameters '{"timeout": 300, "bypass_cache": true}' download <suite>`
+
+or keep them in a file and pass `--query_parameters @params.json`. The
+`QUERY_PARAMETERS` environment variable does the same, which is handier in
+`.env` for Docker Compose or in a CronJob; the flag wins if both are set.
+
+Where they go depends on the TRAPI version:
+- **TRAPI 2.0**: in the query's `parameters` object. The
+  standard ones are `timeout` (seconds), `log_level` (`ERROR`, `WARNING`,
+  `INFO` or `DEBUG`) and `bypass_cache`; a service can define its own as well,
+  and those are passed through as given.
+- **TRAPI 1.6**: as top-level fields of the query.
+  1.6 only has `log_level` and `bypass_cache`, so anything else is refused.
+
+They're checked before the run starts: a value of the wrong type, an unknown
+log level, or a parameter the TRAPI version can't carry stops the run with a
+message saying which, instead of failing every query. The run's parameters are
+shown in its Slack message and recorded in the Information Radiator, on the run
+page.
+
+They go to whatever the harness queries (the ARS, or the `--target_url`
+service). Performance tests don't use them: HelmsDeep sends its own queries.
 
 ### Result files
 The acceptance results CSV has a row per test asset, with the asset's name, its
@@ -240,6 +431,50 @@ Budget the time before you schedule it: with `--performance_profile mixed` a
 four-service sweep is roughly 70 min for the ARS plus 61 min per ARA (~4.2
 hours); the single-class default profile is ~58 + ~35 × 3 (~2.7 hours). Nothing
 overlaps, by design.
+
+### Run cycles and the weekly digest
+A run cycle is a weekly look at one environment: acceptance, then pathfinder,
+then a HelmsDeep performance run against that environment's ARS, one after
+another so they never load the services at the same time (about 2 hours with
+the `mixed` profile). The intended schedule is one environment a day: dev on
+Monday, ci on Tuesday, test on Wednesday, prod on Thursday.
+
+```
+test-harness-cycle --download \
+    --acceptance sprint_4_tests --pathfinder pathfinder_tests \
+    --performance performance_tests \
+    --performance_target ars=https://ars.ci.transltr.io \
+    --performance_profile mixed \
+    -- --log_level INFO
+```
+
+Each step is an ordinary harness run with its usual Slack report. Leave out any
+step you don't want; anything after `--` goes to every step (eg
+`--query_parameters`). When the last step finishes, the cycle posts the
+Information Radiator's **board**: each test against its previous run in that
+environment (pass rate or max concurrency, the change, regressions and fixes),
+with a verdict of *Regressed*, *Improved*, *Mixed* or *Steady*, the regressions
+and fixes by agent, and **flags** for oddities a pass rate hides:
+
+- an agent returned no results on 3+ assets that had results last run;
+- an agent errored on 3+ assets that didn't error last run;
+- an agent's median response time at least doubled, and by 5s or more;
+- the expected answer fell 30+ places while still passing;
+- the ARS's max sustainable concurrency fell by 25% or more, its run failed, or
+  it missed checkpoints it passed last run.
+
+The cycle needs `RADIATOR_URL`/`RADIATOR_TOKEN` for the board (without them,
+the steps still run and report). Its exit status works like the sweep's.
+The [test-harness Helm chart](deploy/helm/README.md) schedules a cycle per
+environment; [`deploy/cycle.example.yaml`](deploy/cycle.example.yaml) is the
+same CronJob without Helm.
+
+Every Monday morning, `test-harness-radiator digest` posts the **weekly digest**:
+each environment's latest runs of acceptance, pathfinder and performance over
+the past week, against the run before, with their flags. It reads from the
+radiator only, so it's quick; the Helm chart schedules it too (or
+[`deploy/digest.example.yaml`](deploy/digest.example.yaml) without Helm). The same view is the radiator's **Weekly** page, with a page per
+cycle.
 
 ### Overriding the target service
 Tests specify which component to run against (`ars`, `ara`, ...), and the

@@ -1,0 +1,91 @@
+# Example values for the test-harness chart. Copy to values.<name>.yaml next
+# to this file (those are git-ignored), fill it in, and install with
+#
+#   helm upgrade --install test-harness deploy/helm/test-harness \
+#     -n translator -f deploy/helm/test-harness/values.<name>.yaml
+#
+# Keep real secrets out of git: either create the Secret yourself (below,
+# recommended) or keep the copy of this file outside the repo.
+
+image:
+  # Pin a release rather than latest, eg the tag the release workflow pushed.
+  tag: latest
+
+# Created with:
+#   kubectl -n translator create secret generic test-harness-secrets \
+#     --from-literal=radiator-token='<the radiator api-token>' \
+#     --from-literal=slack-webhook-url='https://hooks.slack.com/services/...' \
+#     --from-literal=slack-token='xoxb-...' \
+#     --from-literal=slack-channel='C0123ABCD'
+#
+# Alongside Zebrunner, to give the new radiator a channel of its own (the
+# report with the Zebrunner link stays in slack-channel), add:
+#     --from-literal=radiator-slack-webhook-url='https://hooks.slack.com/services/...' \
+#     --from-literal=radiator-slack-channel='C0456EFGH'
+# and, for Zebrunner itself:
+#     --from-literal=ze-base-url='https://zebrunner.example.org' \
+#     --from-literal=ze-refresh-token='...'
+existingSecret: test-harness-secrets
+
+# ...or let the chart create it (then leave existingSecret empty):
+# secrets:
+#   radiatorToken: CHANGE-ME
+#   slackWebhookUrl: https://hooks.slack.com/services/your-webhook-path
+#   slackToken: xoxb-your-bot-token
+#   slackChannel: C0123ABCD
+#   radiatorSlackWebhookUrl: https://hooks.slack.com/services/another-webhook-path
+#   radiatorSlackChannel: C0456EFGH
+
+radiator:
+  # The radiator chart's service, in the same namespace.
+  url: http://radiator
+  publicUrl: https://radiator.example.org
+
+tests:
+  download: true
+  # testsUrl: https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip
+
+harnessArgs: ["--log_level", "INFO"]
+# queryParameters: '{"timeout": 300}'
+
+# One environment a day, Monday to Thursday, so a regression shows up in dev
+# before it reaches prod; Friday is free for re-runs. The environment comes
+# from the test cases, so each environment names the suites written for it.
+cycles:
+  enabled: true
+  defaults:
+    pathfinder: pathfinder_tests
+    performance: performance_tests
+    performanceProfile: mixed
+  environments:
+    - name: dev
+      schedule: "52 1 * * 1"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.dev.transltr.io"]
+    - name: ci
+      schedule: "52 1 * * 2"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.ci.transltr.io"]
+    - name: test
+      schedule: "52 1 * * 3"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.test.transltr.io"]
+    - name: prod
+      schedule: "52 1 * * 4"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.transltr.io"]
+      # eg to skip the load test on prod:
+      # performance: ""
+
+digest:
+  enabled: true
+  schedule: "52 8 * * 1"
+
+# The ARAs on ci, every Sunday, outside the cycles.
+sweep:
+  enabled: false
+  schedule: "0 2 * * 0"
+  targets:
+    - aragorn=https://aragorn.ci.transltr.io
+    - arax=https://arax.ci.transltr.io
+    - bte=https://bte.ci.transltr.io

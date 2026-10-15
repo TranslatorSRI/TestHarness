@@ -1,0 +1,7 @@
+apiVersion: v2
+name: test-harness
+description: Scheduled Translator Test Harness runs - weekly run cycles per environment, the Monday digest, and performance sweeps
+type: application
+version: 0.1.0
+# The image tag when values don't set one.
+appVersion: "latest"

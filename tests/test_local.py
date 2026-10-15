@@ -144,10 +144,12 @@ def test_target_override_prefixes_saved_filenames(mocker, tmp_path):
     )
 
     saved = os.listdir(tmp_path)
-    # acceptance json + csv and the json report were all saved with the prefix
-    assert len(saved) == 3
+    # acceptance json + csv, the json report, and the run saved for the
+    # Information Radiator were all saved with the prefix
+    assert len(saved) == 4
     assert all(name.startswith("aragorn_") for name in saved)
     assert "aragorn_test_report.json" in saved
+    assert any(name.startswith("aragorn_radiator_") for name in saved)
 
 
 def test_target_override_requires_both_flags(mocker, tmp_path):

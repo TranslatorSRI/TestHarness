@@ -1,0 +1,14 @@
+{{- $cycles := .Values.cycles.enabled | ternary .Values.cycles.environments list }}
+Scheduled Test Harness runs ({{ .Values.timeZone }}):
+{{- range $cycles }}
+  {{ include "harness.fullname" $ }}-cycle-{{ .name }}  "{{ .schedule }}"{{ if .suspend }} (suspended){{ end }}
+{{- end }}
+{{- if .Values.digest.enabled }}
+  {{ include "harness.fullname" . }}-weekly-digest  "{{ .Values.digest.schedule }}"
+{{- end }}
+{{- if .Values.sweep.enabled }}
+  {{ include "harness.fullname" . }}-performance-sweep  "{{ .Values.sweep.schedule }}"
+{{- end }}
+
+Run one now, eg:
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "harness.fullname" . }}-weekly-digest digest-now

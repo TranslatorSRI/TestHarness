@@ -7,14 +7,16 @@ with open("README.md", encoding="utf-8") as readme_file:
 
 setup(
     name="sri-test-harness",
-    version="0.7.3",
+    version="0.8.0",
     author="Max Wang",
     author_email="max@covar.com",
     url="https://github.com/TranslatorSRI/TestHarness",
     description="Translator SRI Test Harness",
     long_description_content_type="text/markdown",
     long_description=readme,
-    packages=["test_harness"],
+    # radiator_schema is the API contract shared with the Information
+    # Radiator; it ships with the harness so the two can't drift apart.
+    packages=["test_harness", "radiator_schema"],
     include_package_data=True,
     # The editable local test suites ship with the package so `test-harness
     # load <suite>` works from a plain (non-editable) install too, not just
@@ -22,13 +24,19 @@ setup(
     package_data={"test_harness": ["test_suites/*.json", "test_suites/README.md"]},
     zip_safe=False,
     license="MIT",
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     entry_points={
         "console_scripts": [
             "test-harness = test_harness.main:cli",
             # Runs one suite against several services in turn, so a single
             # scheduled Job can sweep the ARS and each ARA sequentially.
             "test-harness-sweep = test_harness.sweep:cli",
+            # Acceptance, then pathfinder, then performance in one
+            # environment, and the radiator's board for the whole cycle.
+            "test-harness-cycle = test_harness.cycle:cli",
+            # Uploads a run the harness saved instead of sending to the
+            # Information Radiator (--local, or the radiator was unreachable).
+            "test-harness-radiator = test_harness.radiator_client:cli",
         ],
     },
 )

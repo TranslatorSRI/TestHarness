@@ -53,7 +53,7 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
-            "trapi_version": "1.6.0",
+            "trapi_version": "2.0.0",
         },
     )
 
@@ -96,7 +96,7 @@ def test_run_tests_with_target_override(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
-            "trapi_version": "1.6.0",
+            "trapi_version": "2.0.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
         },
