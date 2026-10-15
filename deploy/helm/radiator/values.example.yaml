@@ -31,8 +31,16 @@ existingSecret: radiator-secrets
 ingress:
   enabled: true
   className: nginx
+  # Needs a DNS record pointing at the ingress controller's address (`kubectl
+  # get ingress` shows it); ask whoever runs the domain's DNS.
   host: radiator.example.org
+  # With cert-manager (below), this is the Secret it creates; without, it must
+  # already exist, or nginx serves a fake certificate that browsers refuse.
   tlsSecretName: radiator-tls
+  annotations:
+    # The cluster's ClusterIssuer (`kubectl get clusterissuer`); merged with
+    # the chart's default annotations.
+    cert-manager.io/cluster-issuer: letsencrypt
 
 # Only if the namespace has no database to use.
 postgres:
