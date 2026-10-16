@@ -10,4 +10,4 @@ No ingress is enabled. To look at it:
 
 Point the harness at it (the test-harness chart's radiator.url):
   http://{{ include "radiator.fullname" . }}.{{ .Release.Namespace }}.svc{{ if ne (int .Values.service.port) 80 }}:{{ .Values.service.port }}{{ end }}
-and give it the api-token from {{ include "radiator.secretName" . }} as RADIATOR_TOKEN.
+and set the test-harness chart's secrets.radiatorToken to this chart's secrets.apiToken.

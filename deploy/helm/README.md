@@ -19,14 +19,41 @@ cp deploy/helm/radiator/values.example.yaml deploy/helm/radiator/values.prod.yam
 cp deploy/helm/test-harness/values.example.yaml deploy/helm/test-harness/values.prod.yaml
 ```
 
-Secrets can go in two ways. The examples use the first:
+The secrets (the radiator's login, API token and database password, the
+harness's Slack and Zebrunner tokens) go under `secrets` in those copies, and
+each chart keeps them in a Secret of its own: `<release>-secrets`, plus
+`<release>-postgres` for the radiator's database password. That makes the
+copies the only place the real values live, so keep them somewhere safe (a
+password manager, or an encrypted backup), never in git.
 
-- **Create the Secrets yourself** and name them in `existingSecret` (and
-  `postgres.existingSecret`). The `kubectl create secret` commands are in each
-  example file. Nothing secret is then in any values file.
-- **Let the chart create them**: leave `existingSecret` empty and fill in
-  `secrets`. The copy is git-ignored, but it's still a file with passwords in
-  it, so keep it somewhere safe.
+Two values must agree across the charts: the harness's `secrets.radiatorToken`
+is the radiator's `secrets.apiToken`.
+
+### Moving from Secrets you created yourself
+
+Earlier versions of the charts could use Secrets made with `kubectl create
+secret` (`existingSecret`). With the default release names, those have the
+same names the charts now create (`radiator-secrets`, `radiator-postgres`,
+`test-harness-secrets`), so Helm refuses to install over them until it's told
+they're its own:
+
+```
+for s in radiator-secrets radiator-postgres; do
+  kubectl -n translator annotate secret $s meta.helm.sh/release-name=radiator meta.helm.sh/release-namespace=translator
+  kubectl -n translator label secret $s app.kubernetes.io/managed-by=Helm
+done
+kubectl -n translator annotate secret test-harness-secrets meta.helm.sh/release-name=test-harness meta.helm.sh/release-namespace=translator
+kubectl -n translator label secret test-harness-secrets app.kubernetes.io/managed-by=Helm
+```
+
+Before upgrading, copy their current values into your values copies, since
+the upgrade overwrites them with what's there. Above all, `postgres.password`
+must be the database's existing password: Postgres set it when its volume was
+first created and won't take a new one from the Secret.
+
+```
+kubectl -n translator get secret radiator-secrets -o json | jq '.data | map_values(@base64d)'
+```
 
 ## Installing
 
@@ -45,7 +72,7 @@ helm upgrade --install test-harness deploy/helm/test-harness \
 With a release named `radiator`, the radiator's Service is `radiator`, which is
 what the harness example's `radiator.url` (`http://radiator`) expects; with
 another release name, use the in-cluster URL the radiator's install notes print.
-The harness's `radiator-token` is the radiator's `api-token`.
+The harness's `secrets.radiatorToken` is the radiator's `secrets.apiToken`.
 
 Upgrades are the same command. The radiator migrates its database before it
 starts, every time; that's a no-op when the schema is current.
@@ -71,7 +98,8 @@ its CronJob but stops it from running.
 
 ## Importing Zebrunner's history
 
-Once the radiator is up, set `zebrunnerImport.enabled: true` (try
+Once the radiator is up, set `zebrunnerImport.enabled: true` with its
+`baseUrl` and `refreshToken` (try
 `args: ["--dry-run", "--limit", "5"]` first) and upgrade; the Job runs once per
 upgrade while it's enabled. Turn it off again afterwards. See
 [Importing from Zebrunner](../../docs/information-radiator.md#importing-from-zebrunner).

@@ -37,9 +37,9 @@ spec:
             {{- end }}
           env:
             - name: ZE_BASE_URL
-              valueFrom: {secretKeyRef: {name: {{ $ze.existingSecret }}, key: ze-base-url}}
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: ze-base-url}}
             - name: ZE_REFRESH_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ $ze.existingSecret }}, key: ze-refresh-token}}
+              valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: ze-refresh-token}}
             - name: RADIATOR_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "radiator.secretName" . }}, key: api-token}}
           resources: {{- toYaml $ze.resources | nindent 12 }}

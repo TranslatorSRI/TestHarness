@@ -19,7 +19,7 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end -}}
 
 {{- define "harness.secretName" -}}
-{{ .Values.existingSecret | default (printf "%s-secrets" (include "harness.fullname" .)) }}
+{{ include "harness.fullname" . }}-secrets
 {{- end -}}
 
 {{/* Where the suites come from: before any `--`. */}}

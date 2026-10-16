@@ -4,37 +4,29 @@
 #   helm upgrade --install test-harness deploy/helm/test-harness \
 #     -n translator -f deploy/helm/test-harness/values.<name>.yaml
 #
-# Keep real secrets out of git: either create the Secret yourself (below,
-# recommended) or keep the copy of this file outside the repo.
+# Your copy holds the tokens, so it must never be committed (values.*.yaml is
+# git-ignored; values.example.yaml is the only one tracked).
 
 image:
   # Pin a release rather than latest, eg the tag the release workflow pushed.
   tag: latest
 
-# Created with:
-#   kubectl -n translator create secret generic test-harness-secrets \
-#     --from-literal=radiator-token='<the radiator api-token>' \
-#     --from-literal=slack-webhook-url='https://hooks.slack.com/services/...' \
-#     --from-literal=slack-token='xoxb-...' \
-#     --from-literal=slack-channel='C0123ABCD'
-#
-# Alongside Zebrunner, to give the new radiator a channel of its own (the
-# report with the Zebrunner link stays in slack-channel), add:
-#     --from-literal=radiator-slack-webhook-url='https://hooks.slack.com/services/...' \
-#     --from-literal=radiator-slack-channel='C0456EFGH'
-# and, for Zebrunner itself:
-#     --from-literal=ze-base-url='https://zebrunner.example.org' \
-#     --from-literal=ze-refresh-token='...'
-existingSecret: test-harness-secrets
-
-# ...or let the chart create it (then leave existingSecret empty):
-# secrets:
-#   radiatorToken: CHANGE-ME
-#   slackWebhookUrl: https://hooks.slack.com/services/your-webhook-path
-#   slackToken: xoxb-your-bot-token
-#   slackChannel: C0123ABCD
-#   radiatorSlackWebhookUrl: https://hooks.slack.com/services/another-webhook-path
-#   radiatorSlackChannel: C0456EFGH
+secrets:
+  # The radiator chart's secrets.apiToken.
+  radiatorToken: CHANGE-ME
+  # Slack: the incoming webhook, the bot token and the channel ID (not its
+  # #name). Leave all three empty to save reports to files instead.
+  slackWebhookUrl: https://hooks.slack.com/services/your-webhook-path
+  slackToken: xoxb-your-bot-token
+  slackChannel: C0123ABCD
+  # Alongside Zebrunner: the new radiator's own channel (the report with the
+  # Zebrunner link stays in slackChannel). Same bot unless radiatorSlackToken
+  # is set; invite it to both channels.
+  # radiatorSlackWebhookUrl: https://hooks.slack.com/services/another-webhook-path
+  # radiatorSlackChannel: C0456EFGH
+  # Zebrunner, until the radiator takes over:
+  # zeBaseUrl: https://zebrunner.example.org
+  # zeRefreshToken: CHANGE-ME
 
 radiator:
   # The radiator chart's service, in the same namespace.

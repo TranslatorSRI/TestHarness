@@ -1,5 +1,4 @@
 {{- if .Values.postgres.enabled }}
-{{- if not .Values.postgres.existingSecret }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -10,9 +9,8 @@ metadata:
     helm.sh/resource-policy: keep
 type: Opaque
 stringData:
-  password: {{ required "postgres.password is required (or postgres.existingSecret)" .Values.postgres.password | quote }}
+  password: {{ required "postgres.password is required" .Values.postgres.password | quote }}
 ---
-{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
