@@ -73,11 +73,6 @@ def binding_ids(binding: Any) -> List[str]:
 
 # --- query parameters ----------------------------------------------------------
 
-# The query parameters TRAPI 1.6 has, as top-level fields of the Query. It has
-# no "parameters" object, and no timeout.
-TRAPI_1_6_PARAMETERS = ("log_level", "bypass_cache")
-
-
 def parse_query_parameters(text: Optional[str]) -> Optional[Dict[str, Any]]:
     """Read query parameters given on the command line or in the environment.
 
@@ -106,8 +101,8 @@ def validate_query_parameters(
 
     Returns them as they'll be sent, or raises ValueError saying what's wrong,
     so a typo stops the run before any query goes out rather than every query
-    failing. TRAPI 2.0's ``parameters`` takes service-specific keys besides
-    the standard ones; TRAPI 1.6 only has ``log_level`` and ``bypass_cache``.
+    failing. Service-specific keys (eg ARAX's ``arax_internal``) pass through
+    alongside the standard ones, in either TRAPI version.
     """
     if not params:
         return None
@@ -120,16 +115,7 @@ def validate_query_parameters(
             for err in e.errors()
         )
         raise ValueError(f"Invalid query parameters: {problems}") from None
-    normalized = checked.model_dump(mode="json", exclude_unset=True)
-    if not is_trapi_2(trapi_version):
-        unsupported = sorted(set(normalized) - set(TRAPI_1_6_PARAMETERS))
-        if unsupported:
-            raise ValueError(
-                f"TRAPI {trapi_minor_version(trapi_version)} queries can't carry "
-                f"{', '.join(unsupported)}: only "
-                f"{' and '.join(TRAPI_1_6_PARAMETERS)} exist before TRAPI 2.0"
-            )
-    return normalized
+    return checked.model_dump(mode="json", exclude_unset=True)
 
 
 def apply_query_parameters(

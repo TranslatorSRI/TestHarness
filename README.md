@@ -267,13 +267,12 @@ Where they go depends on the TRAPI version:
   standard ones are `timeout` (seconds), `log_level` (`ERROR`, `WARNING`,
   `INFO` or `DEBUG`) and `bypass_cache`; a service can define its own as well,
   and those are passed through as given.
-- **TRAPI 1.6**: as top-level fields of the query.
-  1.6 only has `log_level` and `bypass_cache`, so anything else is refused.
+- **TRAPI 1.6**: as top-level fields of the query. Service-specific ones
+  (eg ARAX's `arax_internal`) are passed through as given here too.
 
-They're checked before the run starts: a value of the wrong type, an unknown
-log level, or a parameter the TRAPI version can't carry stops the run with a
-message saying which, instead of failing every query. The run's parameters are
-shown in its Slack message and recorded in the Information Radiator, on the run
+They're checked before the run starts: a value of the wrong type or an unknown
+log level stops the run with a message saying which, instead of failing every
+query. The run's parameters are shown in its Slack message and recorded in the Information Radiator, on the run
 page.
 
 They go to whatever the harness queries (the ARS, or the `--target_url`
