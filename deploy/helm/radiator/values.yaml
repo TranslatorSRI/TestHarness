@@ -26,7 +26,7 @@ secrets:
 config:
   # Only send the session cookie over HTTPS. Turn off only for plain-http
   # testing.
-  secureCookies: true
+  secureCookies: false
   # Environments the run grid greys out (comma-separated).
   excludedEnvs: dev
   # The radiator's own log lines: each upload, and why one was rejected.
@@ -58,7 +58,9 @@ migrate:
     limits: {memory: 256Mi}
 
 podSecurityContext:
-  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 3000
+  fsGroup: 2000
 nodeSelector: {}
 tolerations: []
 affinity: {}
