@@ -25,7 +25,7 @@ app.kubernetes.io/component: web
 {{- end -}}
 
 {{- define "radiator.secretName" -}}
-{{ .Values.existingSecret | default (printf "%s-secrets" (include "radiator.fullname" .)) }}
+{{ include "radiator.fullname" . }}-secrets
 {{- end -}}
 
 {{- define "radiator.postgresName" -}}
@@ -33,7 +33,7 @@ app.kubernetes.io/component: web
 {{- end -}}
 
 {{- define "radiator.postgresSecretName" -}}
-{{ .Values.postgres.existingSecret | default (include "radiator.postgresName" .) }}
+{{ include "radiator.postgresName" . }}
 {{- end -}}
 
 {{- define "radiator.secretEnv" -}}

@@ -12,22 +12,12 @@ imagePullSecrets: []
 # Schedules are in this time zone (needs Kubernetes >= 1.27).
 timeZone: America/New_York
 
-# The harness's secrets. Either name a Secret you've created yourself, with
-# the keys below, or leave existingSecret empty and set them under `secrets`
-# for the chart to create one.
-#   radiator-token                                  the radiator's api-token
-#   slack-webhook-url, slack-token, slack-channel   optional: without them,
-#                                                   reports are saved to files
-#   radiator-slack-webhook-url, radiator-slack-channel
-#                                                   optional: a channel of the
-#                                                   radiator's own (below)
-#   radiator-slack-token                            optional: defaults to
-#                                                   slack-token
-#   ze-base-url, ze-refresh-token                   optional: Zebrunner, until
-#                                                   the radiator takes over
-existingSecret: ""
+# The harness's secrets. The chart puts them in a Secret of its own
+# (<release>-secrets). Set them in your git-ignored values copy.
 secrets:
+  # The radiator's api-token (its secrets.apiToken).
   radiatorToken: ""
+  # Optional: without them, reports are saved to files instead of Slack.
   slackWebhookUrl: ""
   slackToken: ""
   # The channel ID (eg C0123ABCD), not its #name.
@@ -39,7 +29,9 @@ secrets:
   # default.
   radiatorSlackWebhookUrl: ""
   radiatorSlackChannel: ""
+  # Optional: defaults to slackToken.
   radiatorSlackToken: ""
+  # Optional: Zebrunner, until the radiator takes over.
   zeBaseUrl: ""
   zeRefreshToken: ""
 

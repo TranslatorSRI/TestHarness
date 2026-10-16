@@ -9,11 +9,8 @@ image:
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
-# The radiator's secrets. Either name a Secret you've created yourself, with
-# the keys database-url, api-token, username, password and session-secret, or
-# leave existingSecret empty and set them under `secrets` for the chart to
-# create one.
-existingSecret: ""
+# The radiator's secrets. The chart puts them in a Secret of its own
+# (<release>-secrets). Set them in your git-ignored values copy.
 secrets:
   # postgresql+psycopg://USER:PASSWORD@HOST:5432/DB. Leave empty with
   # postgres.enabled and the chart points it at its own Postgres.
@@ -71,9 +68,10 @@ affinity: {}
 postgres:
   enabled: false
   image: postgres:16
-  # A Secret with the key `password`; or leave empty and set `password` for
-  # the chart to create one.
-  existingSecret: ""
+  # The database password, kept in a Secret the chart creates
+  # (<release>-postgres), which isn't deleted with the release. Postgres only
+  # reads it when its volume is first set up, so changing it later doesn't
+  # change the database's password.
   password: ""
   storage: 10Gi
   storageClassName: ""
@@ -85,9 +83,10 @@ postgres:
 # docs/information-radiator.md). Enable for one install/upgrade, then turn off.
 zebrunnerImport:
   enabled: false
-  # A Secret with the keys ze-base-url and ze-refresh-token (the harness's
-  # test-harness-secrets has them).
-  existingSecret: test-harness-secrets
+  # Zebrunner's address and an API refresh token (the harness's ZE_BASE_URL and
+  # ZE_REFRESH_TOKEN).
+  baseUrl: ""
+  refreshToken: ""
   # Zebrunner's project id (the projectId in the API calls its launches page
   # makes): newer Zebrunners need it; older ones (eg 1.28) don't.
   projectId: ""
