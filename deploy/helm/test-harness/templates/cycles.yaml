@@ -61,9 +61,11 @@ spec:
     - --acceptance
     - {{ . | quote }}
     {{- end }}
+    {{- if .pick.pathfinder }}
     {{- with .pick.pathfinder }}
     - --pathfinder
     - {{ . | quote }}
+    {{- end }}
     {{- end }}
     {{- if .pick.performance }}
     - --performance
