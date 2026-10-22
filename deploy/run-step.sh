@@ -41,7 +41,7 @@ die() {
   exit 1
 }
 
-namespace="${NAMESPACE:-translator}"
+namespace="${NAMESPACE:-translator-dev}"
 cronjob=""
 job_name=""
 dry_run=false
