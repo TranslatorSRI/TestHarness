@@ -27,7 +27,7 @@ Usage: $(basename "$0") ENVIRONMENT STEP [options]
   STEP          acceptance, pathfinder or performance
 
 Options:
-  -n, --namespace NS   the namespace (default: \$NAMESPACE, else translator)
+  -n, --namespace NS   the namespace (default: \$NAMESPACE, else translator-dev)
   --cronjob NAME       the CronJob to copy (default: test-harness-cycle-ENVIRONMENT)
   --name NAME          the Job's name (default: STEP-ENVIRONMENT-<timestamp>)
   --dry-run            print the Job instead of creating it

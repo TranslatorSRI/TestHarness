@@ -73,6 +73,7 @@ def binding_ids(binding: Any) -> List[str]:
 
 # --- query parameters ----------------------------------------------------------
 
+
 def parse_query_parameters(text: Optional[str]) -> Optional[Dict[str, Any]]:
     """Read query parameters given on the command line or in the environment.
 
