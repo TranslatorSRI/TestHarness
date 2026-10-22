@@ -736,8 +736,8 @@ def cli():
             "Parameters sent with every query, as a JSON object or @file, eg "
             '\'{"timeout": 300, "bypass_cache": true}\'. TRAPI 2.0 queries carry '
             "them in their parameters object (timeout, log_level, bypass_cache, "
-            "and any a service defines); TRAPI 1.6 queries take only log_level "
-            "and bypass_cache. Defaults to $QUERY_PARAMETERS. Not used by "
+            "and any a service defines); TRAPI 1.6 queries carry them as "
+            "top-level fields. Defaults to $QUERY_PARAMETERS. Not used by "
             "performance tests, which send HelmsDeep's own queries."
         ),
     )

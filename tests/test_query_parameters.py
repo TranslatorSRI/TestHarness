@@ -67,8 +67,12 @@ def test_validation_trapi_1_6():
     assert validate_query_parameters({"bypass_cache": True}, "1.6.0") == {
         "bypass_cache": True
     }
-    with pytest.raises(ValueError, match="can't carry timeout"):
-        validate_query_parameters({"timeout": 30}, "1.6.0")
+    # service-specific parameters go out on 1.6 queries too, eg to ARAX
+    assert validate_query_parameters({"arax_internal": True}, "1.6.0") == {
+        "arax_internal": True
+    }
+    with pytest.raises(ValueError, match="log_level"):
+        validate_query_parameters({"log_level": "LOUD"}, "1.6.0")
 
 
 def test_queries_carry_the_parameters():
@@ -155,7 +159,7 @@ def _main_args(tmp_path, **extra):
 def test_main_refuses_bad_parameters_before_running(mocker, tmp_path):
     run = mocker.patch("test_harness.main.run_tests")
     code = main(
-        _main_args(tmp_path, trapi_version="1.6.0", query_parameters={"timeout": 30})
+        _main_args(tmp_path, trapi_version="1.6.0", query_parameters={"timeout": "soon"})
     )
     assert code == 1
     run.assert_not_called()
