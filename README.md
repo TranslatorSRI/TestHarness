@@ -94,10 +94,10 @@ Then:
 - **Stop it**: `docker compose down` keeps the results (in the `radiator-db`
   volume) for next time; `docker compose down -v` wipes them.
 
-If the harness exits with `Permission denied: '/app/logs/harness.log'` (a Linux
-host where `./logs` isn't writable by the container's user), run
-`chmod a+w logs` (and remove `logs/harness.log` if it exists and isn't
-yours), then `docker compose up` again.
+If the harness warns `Can't write ./logs/harness.log` (a Linux host where
+`./logs` isn't writable by the container's user), it logs to the console only;
+to get the file back, run `chmod a+w logs` (and remove `logs/harness.log` if it
+exists and isn't yours), then `docker compose up` again.
 
 #### Reporting to a radiator from the harness
 Point the harness at a radiator with `RADIATOR_URL` and `RADIATOR_TOKEN` (or

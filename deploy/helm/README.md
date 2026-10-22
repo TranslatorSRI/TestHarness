@@ -93,6 +93,20 @@ kubectl -n translator create job --from=cronjob/test-harness-cycle-ci cycle-ci-n
 kubectl -n translator create job --from=cronjob/test-harness-weekly-digest digest-now
 ```
 
+That runs the whole cycle. To run one step of it (acceptance, pathfinder or
+performance) on its own, with the suites and targets from that environment's
+CronJob:
+
+```
+deploy/run-step.sh ci acceptance
+deploy/run-step.sh prod performance -n translator
+deploy/run-step.sh test pathfinder --dry-run   # print the Job instead
+```
+
+It needs `kubectl` and `jq`, and won't start while a Job of the same CronJob is
+still running (a Job created by hand ignores the CronJob's
+`concurrencyPolicy`); `--force` starts it anyway. `--help` lists the rest.
+
 `suspend: true` on an environment (or `digest.suspend`, `sweep.suspend`) keeps
 its CronJob but stops it from running.
 

@@ -1,7 +1,9 @@
 from collections import deque
+from copy import deepcopy
 from datetime import datetime
 import logging
 from logging import config
+import os
 
 logging_config = {
     "version": 1,
@@ -96,7 +98,20 @@ def get_logger(qid, log_level):
 
 
 def setup_logger():
-    config.dictConfig(logging_config)
+    log_file = logging_config["handlers"]["file"]["filename"]
+    try:
+        # the image leaves logs/ out (.dockerignore), so make it here
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        config.dictConfig(logging_config)
+    except (OSError, ValueError) as e:
+        # an unwritable log file shouldn't stop a run: log to the console only
+        console_only = deepcopy(logging_config)
+        del console_only["handlers"]["file"]
+        console_only["root"]["handlers"] = ["console"]
+        config.dictConfig(console_only)
+        logging.getLogger(__name__).warning(
+            f"Can't write {log_file} ({e.__cause__ or e}); logging to the console only."
+        )
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)

@@ -12,3 +12,10 @@ Scheduled Test Harness runs ({{ .Values.timeZone }}):
 
 Run one now, eg:
   kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ include "harness.fullname" . }}-weekly-digest digest-now
+{{- with $cycles }}
+{{- with first . }}
+
+Run one step of a cycle (acceptance, pathfinder or performance), eg:
+  deploy/run-step.sh {{ .name }} acceptance -n {{ $.Release.Namespace }}{{ if ne (include "harness.fullname" $) "test-harness" }} --cronjob {{ include "harness.fullname" $ }}-cycle-{{ .name }}{{ end }}
+{{- end }}
+{{- end }}

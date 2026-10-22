@@ -159,7 +159,9 @@ def _main_args(tmp_path, **extra):
 def test_main_refuses_bad_parameters_before_running(mocker, tmp_path):
     run = mocker.patch("test_harness.main.run_tests")
     code = main(
-        _main_args(tmp_path, trapi_version="1.6.0", query_parameters={"timeout": "soon"})
+        _main_args(
+            tmp_path, trapi_version="1.6.0", query_parameters={"timeout": "soon"}
+        )
     )
     assert code == 1
     run.assert_not_called()
