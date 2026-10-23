@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Information Radiator{% endblock %} · Translator</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230ca30c'/%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css').path }}">
 </head>
 <body>
   <header class="topbar">
@@ -22,7 +22,7 @@
   <main{% block live %}{% endblock %}>
     {% block content %}{% endblock %}
   </main>
-  <script src="{{ url_for('static', path='charts.js') }}" defer></script>
-  <script src="{{ url_for('static', path='live.js') }}" defer></script>
+  <script src="{{ url_for('static', path='charts.js').path }}" defer></script>
+  <script src="{{ url_for('static', path='live.js').path }}" defer></script>
 </body>
 </html>
