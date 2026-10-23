@@ -74,7 +74,7 @@ for tool in kubectl jq; do
 done
 
 cronjob="${cronjob:-test-harness-cycle-$env_name}"
-job_name="${job_name:-$step-$env_name-$(date +%Y%m%d-%H%M%S)}"
+job_name="test-harness-${job_name:-$step-$env_name-$(date +%Y%m%d-%H%M%S)}"
 kc=(kubectl -n "$namespace")
 
 "${kc[@]}" get cronjob "$cronjob" >/dev/null ||

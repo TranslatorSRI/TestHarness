@@ -123,3 +123,11 @@ def test_login_returns_to_the_full_url(client):
     target = res.headers["location"]
     page = client.get(target)
     assert 'value="/runs/abc?status=FAILED&amp;agent=arax"' in page.text
+
+
+def test_static_links_are_relative(client, browser):
+    # Behind a TLS-terminating ingress the app sees plain http, so absolute
+    # links would come out http:// and the browser would block them.
+    for page in (client.get("/login"), browser.get("/")):
+        assert 'href="/static/style.css"' in page.text
+        assert "http://testserver/static" not in page.text
