@@ -401,6 +401,7 @@ def run_tests(
                             output_dir=args.get("output_dir") or "test_results",
                             profile=args.get("performance_profile"),
                             logger=logger,
+                            trapi_version=trapi_version,
                         )
                         collector.collect_performance_result(
                             test,

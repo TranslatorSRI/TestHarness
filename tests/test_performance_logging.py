@@ -76,3 +76,22 @@ def test_a_base_url_host_is_not_flagged(caplog):
     caplog.set_level(logging.INFO)
     ptr.check_host("ars_mixed", "https://ars.ci.transltr.io")
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_the_runs_trapi_version_reaches_helmsdeep(tmp_path, monkeypatch, caplog):
+    _fake_helmsdeep(
+        tmp_path,
+        monkeypatch,
+        """
+        import os
+        print("trapi=" + os.environ.get("HELMSDEEP_TRAPI_VERSION", "unset"))
+        """,
+    )
+    monkeypatch.delenv("HELMSDEEP_TRAPI_VERSION", raising=False)
+    caplog.set_level(logging.INFO)
+    ptr.run_helmsdeep(
+        "aras", "https://example.org", str(tmp_path / "run"), trapi_version="2.0.0"
+    )
+    messages = [r.getMessage() for r in caplog.records]
+    assert "[helmsdeep] trapi=2.0.0" in messages
+    assert "HelmsDeep will write its queries in TRAPI 2.0.0" in messages

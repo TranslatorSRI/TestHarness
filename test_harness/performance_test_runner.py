@@ -75,6 +75,9 @@ OUTPUT_TAIL_LINES = 200
 # HelmsDeep's output goes to the harness log line by line, under this tag.
 LOG_TAG = "[helmsdeep]"
 
+# How the run's TRAPI version reaches HelmsDeep (0.3.0 and later).
+TRAPI_VERSION_ENV = "HELMSDEEP_TRAPI_VERSION"
+
 
 def _slugify(text: str) -> str:
     """Make ``text`` safe to use inside a filename."""
@@ -185,10 +188,10 @@ def check_host(
         )
 
 
-def _stream(cmd: List[str], logger: logging.Logger):
+def _stream(cmd: List[str], logger: logging.Logger, extra_env: Optional[Dict] = None):
     """Run ``cmd``, logging its output as it comes. Returns the exit code and
     the last lines of output."""
-    env = dict(os.environ)
+    env = {**os.environ, **(extra_env or {})}
     # Python block-buffers a pipe, which would hold HelmsDeep's (and the locust
     # it starts') lines back for minutes at a time.
     env["PYTHONUNBUFFERED"] = "1"
@@ -253,8 +256,14 @@ def run_helmsdeep(
     host: str,
     prefix: str,
     logger: logging.Logger = logging.getLogger(__name__),
+    trapi_version: Optional[str] = None,
 ) -> Dict:
     """Run one HelmsDeep load test and collect what it wrote.
+
+    ``trapi_version`` is the version HelmsDeep writes its queries in: TRAPI 2.0
+    carries ``bypass_cache`` under the query's ``parameters``, 1.x at the top
+    level. It goes over as ``HELMSDEEP_TRAPI_VERSION``, which releases before
+    HelmsDeep 0.3.0 ignore (they always write the 1.x shape).
 
     Returns the parsed ``summary.json``, the HTML report, and the process exit
     code.
@@ -284,12 +293,16 @@ def run_helmsdeep(
     ]
     logger.info(f"Running HelmsDeep: {' '.join(cmd)}")
     check_host(helmsdeep_run_type, host, logger)
+    extra_env = {}
+    if trapi_version:
+        extra_env[TRAPI_VERSION_ENV] = trapi_version
+        logger.info(f"HelmsDeep will write its queries in TRAPI {trapi_version}")
 
     error = None
     output = ""
     started = time.monotonic()
     try:
-        exit_code, output = _stream(cmd, logger)
+        exit_code, output = _stream(cmd, logger, extra_env)
     except OSError as e:
         exit_code = None
         error = f"Failed to launch HelmsDeep: {e}"
@@ -334,6 +347,7 @@ def run_performance_test(
     output_dir: str = "test_results",
     profile: Optional[str] = None,
     logger: logging.Logger = logging.getLogger(__name__),
+    trapi_version: Optional[str] = None,
 ) -> Dict:
     """Run a performance test case through HelmsDeep.
 
@@ -342,6 +356,9 @@ def run_performance_test(
     says. Any target that isn't the ARS is queried as an ARA.
 
     ``profile`` overrides the HelmsDeep query profile the test case asks for.
+
+    ``trapi_version`` is the run's TRAPI version, for HelmsDeep to write its
+    queries in.
     """
     component = str(target or (test.components or [ARS_COMPONENT])[0])
     component = component.split("infores:")[-1].lower()
@@ -351,7 +368,7 @@ def run_performance_test(
     prefix = os.path.join(
         output_dir, f"helmsdeep_{_slugify(run_type)}_case_{_slugify(test.id)}"
     )
-    results = run_helmsdeep(run_type, host, prefix, logger)
+    results = run_helmsdeep(run_type, host, prefix, logger, trapi_version)
     results["component"] = component
     results["profile"] = resolved_profile
     return results
