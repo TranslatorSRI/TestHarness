@@ -4,6 +4,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from functools import partial
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -343,6 +344,8 @@ def run_page(
     previous = queries.previous_run(session, run)
     if previous is not None:
         previous = queries.get_run(session, previous.id)
+    if queries.is_performance_run(run):
+        return performance_run_page(request, session, run, previous)
     diff = queries.diff_runs(previous, run)
     agents = queries.run_agents(run)
 
@@ -403,6 +406,153 @@ def run_page(
         filtered=any([status, expected, q]),
         pass_rate=queries.pass_rate,
         progress=queries.run_progress(session, run),
+        trapi_change=queries.trapi_change(previous, run),
+    )
+
+
+# How many of a service's earlier runs its trend on a run's page covers.
+PERF_TREND_RUNS = 20
+
+
+@dataclass
+class PerfView:
+    """One HelmsDeep load test in a run, laid out for its card."""
+
+    perf: object  # models.PerformanceResult
+    # its series' earlier runs and this one, oldest first
+    history: list
+    previous: Optional[object]
+    previous_run: Optional[object]
+    config: dict
+    stages: list
+    knee: Optional[dict]
+    checkpoints: list
+    stage_warnings: list
+    red_flags: list
+    chart: Markup
+    # the same chart drawn for a phone; CSS shows one or the other
+    chart_narrow: Markup
+
+    @property
+    def name(self) -> str:
+        return queries.perf_series_name(self.perf)
+
+    @property
+    def slo_ms(self) -> Optional[float]:
+        return self.config.get("p99_slo_ms")
+
+    @property
+    def max_error_rate(self) -> Optional[float]:
+        return self.config.get("max_error_rate")
+
+    @property
+    def compressed(self) -> bool:
+        scale = self.config.get("time_scale")
+        return scale is not None and scale < 1.0
+
+    @property
+    def msc_delta(self) -> Optional[float]:
+        now = self.perf.max_sustainable_concurrency
+        before = self.previous.max_sustainable_concurrency if self.previous else None
+        if now is None or before is None:
+            return None
+        return now - before
+
+    @property
+    def trend(self) -> list:
+        return [p.max_sustainable_concurrency for _, p in self.history]
+
+    @property
+    def checkpoints_met(self) -> int:
+        return sum(1 for c in self.checkpoints if c.get("verdict") == "PASS")
+
+    def within(self, stage: dict) -> Optional[bool]:
+        """Whether a stage kept inside both the p99 SLO and the error cap."""
+        p99, errors = stage.get("p99_ms"), stage.get("error_rate")
+        if p99 is None or errors is None or self.slo_ms is None:
+            return None
+        cap = self.max_error_rate if self.max_error_rate is not None else 1.0
+        return p99 <= self.slo_ms and errors <= cap
+
+    def warnings_for(self, stage: dict) -> list:
+        return [
+            issue
+            for w in self.stage_warnings
+            if w.get("stage") == stage.get("stage")
+            for issue in w.get("issues") or []
+        ]
+
+
+def perf_views(session: Session, run) -> list[PerfView]:
+    views = []
+    for perf, history in queries.performance_series(
+        session, run, limit=PERF_TREND_RUNS
+    ):
+        summary = perf.summary or {}
+        stages = [s for s in summary.get("stages") or [] if isinstance(s, dict)]
+        knee = summary.get("knee") or None
+        config = summary.get("config") or {}
+        earlier = history[-2] if len(history) > 1 else (None, None)
+        stage_chart = partial(
+            charts.stage_chart,
+            stages,
+            slo_ms=config.get("p99_slo_ms"),
+            knee_stage=knee.get("stage") if knee else None,
+            label=f"p99 latency at each load stage for {perf.host}",
+        )
+        views.append(
+            PerfView(
+                perf=perf,
+                history=history,
+                previous=earlier[1],
+                previous_run=earlier[0],
+                config=config,
+                stages=stages,
+                knee=knee,
+                checkpoints=list(summary.get("checkpoints") or []),
+                stage_warnings=list(summary.get("stage_warnings") or []),
+                red_flags=list(summary.get("red_flags") or []),
+                chart=stage_chart(width=charts.WIDTH_FULL, height=260),
+                chart_narrow=stage_chart(width=charts.WIDTH_THIRD, height=220),
+            )
+        )
+    return views
+
+
+def ms(value: Optional[float]) -> str:
+    """A latency in milliseconds, in the unit people read it in."""
+    if value is None:
+        return "–"
+    if value >= 10000:
+        return f"{value / 1000:,.0f}s"
+    if value >= 1000:
+        return f"{value / 1000:,.1f}s"
+    return f"{value:,.0f}ms"
+
+
+def performance_run_page(request: Request, session: Session, run, previous):
+    """A load-test run's page: what each service sustained, and how the ramp
+    went, rather than the acceptance pass-rate grid."""
+    views = perf_views(session, run)
+    progress = queries.run_progress(session, run)
+    checkpoints = [c for v in views for c in v.checkpoints]
+    return render(
+        request,
+        "performance_run.html",
+        nav="runs",
+        run=run,
+        previous=previous,
+        views=views,
+        progress=progress,
+        passed=sum(1 for v in views if v.perf.status == "PASSED"),
+        checkpoints_total=len(checkpoints),
+        checkpoints_met=sum(1 for c in checkpoints if c.get("verdict") == "PASS"),
+        # while the first load test is going there's nothing of this run's to
+        # show yet: what the previous run measured is what to expect
+        last_time=previous.performance if previous is not None and not views else [],
+        perf_series_name=queries.perf_series_name,
+        sparkline=sparkline,
+        ms=ms,
         trapi_change=queries.trapi_change(previous, run),
     )
 

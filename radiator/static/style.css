@@ -433,3 +433,29 @@ ul.flags li { margin: 4px 0; }
 .progress-card .sub { margin: 8px 0 0; }
 
 .callout { border: 1px solid var(--v-mixed); border-left-width: 4px; background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; color: var(--ink); }
+
+/* --- a load-test run --------------------------------------------------- */
+
+.perf-card h3 { font-size: 13px; font-weight: 650; margin: 18px 0 2px; }
+.perf-card h3 + .sub { margin-bottom: 8px; }
+.perf-card .scroll { margin-top: 10px; }
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 6px; }
+.figure { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.figure .label { color: var(--ink-2); font-size: 12px; }
+.figure .value { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.figure .value .unit { font-size: 13px; font-weight: 500; }
+.figure .spark-value { margin: 4px 0 2px; }
+.figure .delta { font-size: 12px; color: var(--ink-muted); }
+.callout.bad { border-color: var(--status-failed); }
+.badge.warn { border-color: var(--v-mixed); color: var(--ink); margin-left: 4px; cursor: help; }
+table.stages tr.knee td { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+table.data td.over { color: var(--down); font-weight: 600; }
+.chart .slo { stroke: var(--status-failed); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart text.slo-label { fill: var(--down); }
+.chart text.knee-label { fill: var(--ink); font-weight: 600; }
+.chart[data-chart="stages"] .dot { fill: var(--agent-1); }
+.chart[data-chart="stages"] .dot.over { fill: var(--surface); stroke: var(--status-failed); stroke-width: 2; }
+.legend .line.dashed { background: repeating-linear-gradient(90deg, var(--status-failed) 0 5px, transparent 5px 9px); }
+.legend .ring { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--status-failed); box-sizing: border-box; }
+ul.notes { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+ul.notes li { margin: 3px 0; }

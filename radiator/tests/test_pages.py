@@ -533,3 +533,139 @@ def test_breakdown_by_agent_and_expected_output(app, browser):
         params={"agent": "arax", "status": "FAILED", "expected": "TopAnswer"},
     ).text
     assert "A1 name" in filtered and "A2 name" not in filtered
+
+
+def _helmsdeep_summary(msc=29.4):
+    """A HelmsDeep summary.json for a mixed run, shaped like the real thing."""
+
+    def stage(i, users, p99, errors=0.0):
+        return {
+            "stage": i,
+            "qtype": "__all__",
+            "users": users,
+            "requests": 100 * (i + 1),
+            "errors": int(errors * 100 * (i + 1)),
+            "error_rate": errors,
+            "duration_s": 300.0,
+            "rps": 0.5 * (i + 1),
+            "mean_ms": p99 / 2,
+            "p50_ms": p99 / 3,
+            "p95_ms": p99 * 0.9,
+            "p99_ms": p99,
+            "concurrency": users * 0.98,
+        }
+
+    stages = [
+        stage(0, 10, 90000.0),
+        stage(1, 30, 120000.0),
+        stage(2, 60, 410000.0, 0.08),
+    ]
+    return {
+        "config": {
+            "target": "aras_mixed",
+            "time_scale": 1.0,
+            "component": "Shepherd (Mixed)",
+            "protocol": "sync",
+            "p99_slo_ms": 300000,
+            "max_error_rate": 0.01,
+        },
+        "stages": stages,
+        "knee": {**stages[1], "concurrency": msc},
+        "max_sustainable_concurrency": msc,
+        "stage_warnings": [
+            {
+                "stage": 2,
+                "users": 60,
+                "requests": 300,
+                "issues": [{"kind": "in_flight_bleed", "detail": "most queries bled"}],
+            }
+        ],
+        "knee_unsupported": False,
+        "checkpoints": [
+            {
+                "users": 30,
+                "goal": "sustain peak load",
+                "p99_slo_ms": 300000,
+                "max_error_rate": 0.01,
+                "p99_ms": 120000.0,
+                "error_rate": 0.0,
+                "verdict": "PASS",
+                "detail": "within limits",
+            },
+            {
+                "users": 60,
+                "goal": "survive overload",
+                "p99_slo_ms": None,
+                "max_error_rate": 0.05,
+                "p99_ms": 410000.0,
+                "error_rate": 0.08,
+                "verdict": "FAIL",
+                "detail": "errors 8.00% > 5.00%",
+            },
+        ],
+        "checkpoints_passed": False,
+    }
+
+
+def test_performance_run_page(app, browser):
+    """A load-test run's page shows the ramp, the knee and the checkpoints,
+    not the acceptance grid."""
+    earlier = _perf_run(T0, msc=25.0)
+    this = _perf_run(T0 + timedelta(days=1), passed=False)
+    this.performance[0].max_sustainable_concurrency = 29.4
+    this.performance[0].summary = _helmsdeep_summary()
+    _load(app, earlier, this)
+
+    page = browser.get(f"/runs/{this.run.run_id}")
+    assert page.status_code == 200
+    text = page.text
+    assert "Max sustainable concurrency" in text and "29.4" in text
+    assert "+4.4 vs previous run" in text
+    assert "1 <span" in text and "of 2 met" in text  # checkpoints
+    assert 'data-chart="stages"' in text and "p99 SLO 300s" in text
+    assert "sustain peak load" in text and "errors 8.00% &gt; 5.00%" in text
+    assert "in flight bleed" in text and "most queries bled" in text
+    assert "Shepherd (Mixed)" in text
+    # none of the acceptance run's sections
+    assert "By agent" not in text and 'id="matrix"' not in text
+
+
+def test_running_performance_run_page(app, browser):
+    """Before its first load test ends, a performance run says what's going on
+    and what the previous run measured, rather than an empty asset grid."""
+    earlier = _perf_run(T0, msc=25.0)
+    running = schema.RunPayload(
+        run=f.run_create(
+            started_at=datetime.now(timezone.utc),
+            suite="performance_tests",
+            env="ci",
+            target="arax",
+            target_url="https://arax",
+            expected_assets=1,
+        )
+    )
+    _load(app, earlier, running)
+
+    page = browser.get(f"/runs/{running.run.run_id}")
+    assert page.status_code == 200
+    text = page.text
+    assert "<b>0</b> of 1 load test finished" in text
+    assert "measured when the load test ends" in text
+    assert "Last time" in text and "25.0" in text
+    assert "No results yet" not in text and "By agent" not in text
+
+
+def test_performance_run_that_failed_to_run(app, browser):
+    payload = _perf_run(T0, passed=False)
+    perf = payload.performance[0]
+    perf.max_sustainable_concurrency = None
+    perf.checkpoints_passed = None
+    perf.error = "HelmsDeep exited 2 without writing summary.json"
+    perf.exit_code = 2
+    _load(app, payload)
+
+    page = browser.get(f"/runs/{payload.run.run_id}")
+    assert page.status_code == 200
+    assert "didn't produce a result" in page.text
+    assert "HelmsDeep exited 2 without writing summary.json" in page.text
+    assert "exit code 2" in page.text
