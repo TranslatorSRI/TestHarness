@@ -548,6 +548,14 @@ def resolve_trapi_version(args, test_env, logger) -> str:
             f"TRAPI {versions[0]}: what {infores} is registered with for "
             f"{test_env} in SmartAPI{others}"
         )
+        if args.get("target_url"):
+            # the registry describes the deployed service, not the one at
+            # --target_url, which may well be on a different version
+            logger.warning(
+                f"--trapi_version auto read {infores}'s {test_env} SmartAPI "
+                f"entry, not the service at {args['target_url']}. If that "
+                "service is on another TRAPI version, pass --trapi_version."
+            )
         return versions[0]
     logger.warning(
         f"--trapi_version auto: {why}; using {DEFAULT_TRAPI_VERSION}. Pass "

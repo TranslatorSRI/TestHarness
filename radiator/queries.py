@@ -604,6 +604,19 @@ def performance_series(
     return out
 
 
+def is_performance_run(run: Run) -> bool:
+    """Whether a run is a load test rather than an acceptance run.
+
+    A run with performance results is one. Before the first arrives (HelmsDeep
+    reports only when a load test ends, tens of minutes in), a run with no
+    asset results either is taken to be one when its suite is a performance
+    suite.
+    """
+    if run.performance:
+        return True
+    return not run.assets and "performance" in run.suite.lower()
+
+
 # --- live updates ---------------------------------------------------------------
 
 RUNNING, STALLED, FINISHED = "running", "stalled", "finished"

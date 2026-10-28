@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}{{ run.suite }} · {{ when(run.started_at) }}{% endblock %}
+{% block live %}{% if progress.running %} data-live="/api/runs/{{ run.id }}/progress" data-live-interval="15" data-live-version="{{ progress.version }}" data-live-until-done{% endif %}{% endblock %}
+{% macro conc(value) -%}{{ '%.1f'|format(value) if value is not none else '–' }}{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div class="crumbs"><a href="/">Runs</a> / <a href="/performance">Performance</a> / {{ run.suite }}</div>
+  <h1><span class="muted">#{{ run.number }}</span> {{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
+  <div class="meta" id="run-meta" data-live-region>
+    <span>{{ when(run.started_at) }}</span>
+    <span>{% if run.ended_at %}Duration {{ duration(run) }}{% else %}{{ run_badge(run) }} for {{ elapsed(run) }}{% endif %}</span>
+    <span class="badge">load test</span>
+    {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
+    {% if run.trapi_version %}<span class="badge" title="The TRAPI version the queries were written in">TRAPI {{ trapi_minor(run.trapi_version) }}</span>{% endif %}
+    {% if run.harness_version %}<span>harness {{ run.harness_version }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="live-note" data-live-indicator hidden></div>
+{% if trapi_change %}
+<div class="callout" role="note"><b>TRAPI {{ trapi_change[0] }} → {{ trapi_change[1] }}</b> since the previous run: some of the changes may come from the version change rather than from the services.</div>
+{% endif %}
+
+<div id="run-progress" data-live-region>
+{% if progress.running %}
+  {% set done, total = progress.done_assets, progress.expected_assets %}
+  <div class="card progress-card">
+    <div class="progress-head">
+      <span><b>{{ done }}</b>{% if total %} of {{ total }}{% endif %} load test{{ '' if (total or done) == 1 else 's' }} finished</span>
+      <span class="muted">running for {{ elapsed(run) }}</span>
+    </div>
+    {% if total %}
+    <div class="progress" role="progressbar" aria-label="Load tests finished" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ [done, total]|min }}"><span style="width: {{ [100 * done / total, 100]|min }}%"></span></div>
+    {% endif %}
+    <p class="sub">HelmsDeep steps the load up and holds each level for several minutes, so one load test takes tens of minutes. Its numbers arrive all at once when it ends; this page updates by itself.</p>
+  </div>
+{% endif %}
+</div>
+
+<div class="tiles" id="run-tiles" data-live-region>
+  {% if views|length == 1 %}{% set v = views[0] %}
+  <div class="tile hero">
+    <div class="label">Max sustainable concurrency</div>
+    <div class="value">{{ conc(v.perf.max_sustainable_concurrency) }}</div>
+    {% if v.msc_delta is not none %}
+      <div class="delta {{ 'up' if v.msc_delta > 0.05 else ('down' if v.msc_delta < -0.05 else '') }}">{{ '%+.1f'|format(v.msc_delta) }} vs previous run</div>
+    {% elif v.perf.max_sustainable_concurrency is none and not v.perf.error %}
+      <div class="delta down">no stage met the SLO</div>
+    {% else %}
+      <div class="delta">queries in flight at once, within the SLO</div>
+    {% endif %}
+  </div>
+  {% elif views %}
+  <div class="tile hero">
+    <div class="label">Load tests passed</div>
+    <div class="value">{{ passed }} <span class="muted" style="font-size:24px">of {{ views|length }}</span></div>
+    <div class="delta">ran, and met every checkpoint</div>
+  </div>
+  {% else %}
+  <div class="tile hero">
+    <div class="label">Max sustainable concurrency</div>
+    <div class="value">–</div>
+    <div class="delta">{% if progress.running %}measured when the load test ends{% else %}no load test reported{% endif %}</div>
+  </div>
+  {% endif %}
+  <div class="tile">
+    <div class="label">Load tests</div>
+    <div class="value">{{ views|length }}{% if progress.expected_assets %} <span class="muted" style="font-size:16px">of {{ progress.expected_assets }}</span>{% endif %}</div>
+    <div class="delta">{{ passed }} passed · {{ views|length - passed }} failed</div>
+  </div>
+  <div class="tile">
+    <div class="label">Checkpoints</div>
+    {% if checkpoints_total %}
+    <div class="value">{{ checkpoints_met }} <span class="muted" style="font-size:16px">of {{ checkpoints_total }} met</span></div>
+    <div class="delta {{ 'down' if checkpoints_met < checkpoints_total else 'up' }}">{{ 'every load level held' if checkpoints_met == checkpoints_total else 'a load level missed its bar' }}</div>
+    {% else %}
+    <div class="value">–</div>
+    <div class="delta">{% if views %}none configured: this run finds the knee{% else %}none yet{% endif %}</div>
+    {% endif %}
+  </div>
+  <div class="tile">
+    <div class="label">Previous run</div>
+    {% if previous %}
+    <div class="value"><a href="/runs/{{ previous.id }}">#{{ previous.number }}</a></div>
+    <div class="delta">{{ when(previous.started_at) }} · {{ ago(previous.started_at) }}</div>
+    {% else %}
+    <div class="value">–</div>
+    <div class="delta">no earlier run to compare</div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="run-performance" data-live-region>
+{% if last_time %}
+<div class="card">
+  <h2>Last time</h2>
+  <p class="sub">What the <a href="/runs/{{ previous.id }}">previous run</a> measured, for comparison while this one is going.</p>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Service</th><th>Result</th><th class="num">Max sustainable concurrency</th><th>Checkpoints</th></tr></thead>
+    <tbody>
+    {% for perf in last_time %}
+      <tr>
+        <td>{{ perf_series_name(perf) }}</td>
+        <td>{{ status_badge(perf.status) }}</td>
+        <td class="num">{{ conc(perf.max_sustainable_concurrency) }}</td>
+        <td>{% if perf.checkpoints_passed is none %}<span class="muted">none configured</span>{% else %}{{ status_badge('PASSED' if perf.checkpoints_passed else 'FAILED') }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% elif not views %}
+<div class="card"><p class="empty">{% if progress.running %}No load test has finished yet.{% else %}This run recorded no load test results.{% endif %}</p></div>
+{% endif %}
+
+{% for v in views %}{% set perf = v.perf %}
+<div class="card perf-card" id="perf-{{ loop.index }}">
+  <div class="card-head">
+    <div>
+      <h2>{{ perf.host }}</h2>
+      <p class="sub">
+        {{ v.config.get('component') or perf.helmsdeep_target or 'HelmsDeep' }}
+        · run type <span class="mono">{{ perf.helmsdeep_target or '–' }}</span>
+        · {{ perf.profile or 'default' }} profile
+        {% if v.config.get('protocol') %}· {{ v.config.get('protocol') }}{% endif %}
+      </p>
+    </div>
+    <div>{{ status_badge(perf.status) }}</div>
+  </div>
+
+  {% if perf.error %}
+  <div class="callout bad" role="alert"><b>The load test didn't produce a result.</b> {{ perf.error }}{% if perf.exit_code is not none %} <span class="muted">(exit code {{ perf.exit_code }})</span>{% endif %}</div>
+  {% endif %}
+  {% if v.compressed %}
+  <div class="callout" role="note"><b>Compressed run</b> (time scale {{ v.config.get('time_scale') }}): far fewer samples per stage, so these numbers aren't a quotable measurement.</div>
+  {% endif %}
+  {% if perf.knee_unsupported %}
+  <div class="callout" role="note"><b>Read the headline with care:</b> HelmsDeep flagged the knee stage's measurement as not trustworthy (see the stage notes below).</div>
+  {% endif %}
+
+  {% if not perf.error %}
+  <div class="figures">
+    <div class="figure">
+      <div class="label">Max sustainable concurrency</div>
+      <div class="value">{{ conc(perf.max_sustainable_concurrency) }}</div>
+      <div class="delta {{ 'up' if v.msc_delta and v.msc_delta > 0.05 else ('down' if v.msc_delta and v.msc_delta < -0.05 else '') }}">
+        {% if v.msc_delta is not none %}{{ '%+.1f'|format(v.msc_delta) }} vs <a href="/runs/{{ v.previous_run.id }}">previous</a> ({{ conc(v.previous.max_sustainable_concurrency) }})
+        {% elif v.previous %}previous: {{ conc(v.previous.max_sustainable_concurrency) }}
+        {% else %}first run of this series{% endif %}
+      </div>
+    </div>
+    <div class="figure">
+      <div class="label">Knee</div>
+      {% if v.knee %}
+      <div class="value">{{ v.knee.get('users', '?') }} <span class="muted unit">users</span></div>
+      <div class="delta">p99 {{ ms(v.knee.get('p99_ms')) }} · {{ '%.2f'|format(v.knee.get('rps') or 0) }} req/s · {{ pct(v.knee.get('error_rate'), 1) }} errors</div>
+      {% else %}
+      <div class="value">–</div>
+      <div class="delta down">no stage kept within the SLO</div>
+      {% endif %}
+    </div>
+    <div class="figure">
+      <div class="label">p99 SLO</div>
+      <div class="value">{{ ms(v.slo_ms) }}</div>
+      <div class="delta">errors under {{ pct(v.max_error_rate, 1) }}</div>
+    </div>
+    <div class="figure">
+      <div class="label">Trend</div>
+      <div class="value spark-value">{{ sparkline(v.trend, pct=False) }}</div>
+      <div class="delta">last {{ v.history|length }} run{{ '' if v.history|length == 1 else 's' }} · <a href="/performance">all history</a></div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if v.stages %}
+  <h3>The ramp</h3>
+  <p class="sub">p99 latency at each load level. The knee is the highest level that kept within the SLO and the error cap.</p>
+  <div class="wide-only">{{ v.chart }}</div>
+  <div class="narrow-only">{{ v.chart_narrow }}</div>
+  <div class="scroll">
+  <table class="data stages">
+    <thead><tr><th>Stage</th><th class="num">Users</th><th class="num">Requests</th><th class="num">Req/s</th><th class="num">Errors</th><th class="num">p50</th><th class="num">p95</th><th class="num">p99</th><th class="num">Concurrency</th><th>Within SLO</th></tr></thead>
+    <tbody>
+    {% for s in v.stages %}{% set ok = v.within(s) %}{% set issues = v.warnings_for(s) %}
+      <tr class="{{ 'knee' if v.knee and s.get('stage') == v.knee.get('stage') }}">
+        <td class="nowrap">{{ s.get('stage', loop.index0) }}{% if v.knee and s.get('stage') == v.knee.get('stage') %} <span class="badge">knee</span>{% endif %}</td>
+        <td class="num">{{ s.get('users') if s.get('users') is not none else '–' }}</td>
+        <td class="num">{{ '{:,}'.format(s.get('requests')) if s.get('requests') is not none else '–' }}</td>
+        <td class="num">{{ '%.2f'|format(s.get('rps')) if s.get('rps') is not none else '–' }}</td>
+        <td class="num {{ 'over' if v.max_error_rate is not none and s.get('error_rate') is not none and s.get('error_rate') > v.max_error_rate }}">{{ pct(s.get('error_rate'), 1) }}{% if s.get('errors') %} <span class="muted">({{ s.get('errors') }})</span>{% endif %}</td>
+        <td class="num">{{ ms(s.get('p50_ms')) }}</td>
+        <td class="num">{{ ms(s.get('p95_ms')) }}</td>
+        <td class="num {{ 'over' if v.slo_ms and s.get('p99_ms') is not none and s.get('p99_ms') > v.slo_ms }}">{{ ms(s.get('p99_ms')) }}</td>
+        <td class="num">{{ '%.1f'|format(s.get('concurrency')) if s.get('concurrency') is not none else '–' }}</td>
+        <td class="nowrap">{% if ok is none %}<span class="muted">–</span>{% else %}{{ status_badge('PASSED' if ok else 'FAILED') }}{% endif %}
+          {% for issue in issues %}<span class="badge warn" title="{{ issue.get('detail', '') }}">{{ (issue.get('kind') or 'warning')|replace('_', ' ') }}</span>{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% elif not perf.error %}
+  <p class="sub">HelmsDeep didn't report per-stage numbers for this run.</p>
+  {% endif %}
+
+  {% if v.checkpoints %}
+  <h3>Checkpoints <span class="muted">· {{ v.checkpoints_met }} of {{ v.checkpoints|length }} met</span></h3>
+  <p class="sub">Pass/fail questions about set load levels: does the service hold this many users?</p>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Verdict</th><th class="num">Users</th><th>Goal</th><th class="num">p99</th><th class="num">p99 bar</th><th class="num">Errors</th><th class="num">Error cap</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for c in v.checkpoints %}
+      <tr>
+        <td>{% if c.get('verdict') == 'PASS' %}{{ status_badge('PASSED') }}{% elif c.get('verdict') == 'FAIL' %}{{ status_badge('FAILED') }}{% else %}{{ status_badge('NO_RESULTS') }}{% endif %}</td>
+        <td class="num">{{ c.get('users', '–') }}</td>
+        <td>{{ c.get('goal') or '–' }}</td>
+        <td class="num">{{ ms(c.get('p99_ms')) }}</td>
+        <td class="num">{{ ms(c.get('p99_slo_ms')) if c.get('p99_slo_ms') is not none else 'not judged' }}</td>
+        <td class="num">{{ pct(c.get('error_rate'), 1) }}</td>
+        <td class="num">{{ pct(c.get('max_error_rate'), 1) }}</td>
+        <td class="muted">{{ c.get('detail') or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if v.stage_warnings or v.red_flags %}
+  <h3>Notes from HelmsDeep</h3>
+  <ul class="notes">
+    {% for w in v.stage_warnings %}{% for issue in w.get('issues') or [] %}
+    <li><b>Stage {{ w.get('stage') }}{% if w.get('users') is not none %} ({{ w.get('users') }} users){% endif %}:</b> {{ issue.get('detail') or issue.get('kind') }}</li>
+    {% endfor %}{% endfor %}
+    {% for flag in v.red_flags %}<li>{{ flag }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+{% endblock %}
