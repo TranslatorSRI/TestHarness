@@ -1,8 +1,9 @@
 """The Collector of Results."""
 
+import json
 import logging
 import re
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -13,162 +14,17 @@ from translator_testing_model.datamodel.pydanticmodel import (
     TestEnvEnum,
 )
 
-from test_harness import perf_plots
-from test_harness.utils import AgentStatus, TestReport
-
-# Stat row identifiers produced by the performance test runner. Kept in sync
-# with the constants in performance_test_runner.py.
-QUERY_TYPE = "QUERY"
-SUBMIT_NAME = "submit_query"
-POLL_NAME = "poll_status"
-
-ARS_OUTCOMES = (
-    "ars_query_completed",
-    "ars_query_errored",
-    "ars_query_polling_failed",
-    "ars_query_timed_out",
-    "ars_query_abandoned",
-)
-ARA_OUTCOMES = (
-    "ara_query_completed",
-    "ara_query_failed",
-)
+from radiator_schema import AgentResult, AssetResult, PerformanceResult
+from test_harness.performance_test_runner import checkpoint_verdicts
+from test_harness.radiator_client import RadiatorClient
+from test_harness.utils import AgentReport, AgentStatus, TestReport
 
 
-def percentile_from_dict(total: int, counts: Dict[int, int], pct: float) -> int:
-    """Return the response_time bucket at a given percentile (0..1)."""
-    if total <= 0 or not counts:
-        return 0
-    target = max(0.0, min(1.0, pct)) * (total - 1)
-    cumulative = 0
-    last_bucket = 0
-    for bucket in sorted(counts.keys()):
-        cumulative += counts[bucket]
-        last_bucket = bucket
-        if cumulative > target:
-            return bucket
-    return last_bucket
-
-
-def median_from_dict(total: int, count: Dict[int, int]) -> int:
-    """Backwards-compatible median helper."""
-    return percentile_from_dict(total, count, 0.5)
-
-
-def _safe_div(numerator: float, denominator: float) -> float:
-    return numerator / denominator if denominator else 0.0
-
-
-def _summarize_layer(stat: Optional[Dict]) -> Dict:
-    """Pull the metrics we care about out of a single Locust stats row."""
-    if not stat:
-        return {
-            "num_requests": 0,
-            "num_failures": 0,
-            "min_response_time": 0,
-            "max_response_time": 0,
-            "avg_response_time": 0.0,
-            "median_response_time": 0,
-            "p95_response_time": 0,
-            "requests_per_second": 0.0,
-        }
-    num_requests = stat.get("num_requests", 0)
-    num_none = stat.get("num_none_requests", 0)
-    measured = max(0, num_requests - num_none)
-    response_times = stat.get("response_times", {}) or {}
-    duration = (stat.get("last_request_timestamp", 0) or 0) - (
-        stat.get("start_time", 0) or 0
-    )
-    return {
-        "num_requests": num_requests,
-        "num_failures": stat.get("num_failures", 0),
-        "min_response_time": stat.get("min_response_time") or 0,
-        "max_response_time": stat.get("max_response_time", 0),
-        "avg_response_time": _safe_div(stat.get("total_response_time", 0), measured),
-        "median_response_time": percentile_from_dict(measured, response_times, 0.5),
-        "p95_response_time": percentile_from_dict(measured, response_times, 0.95),
-        "requests_per_second": _safe_div(num_requests, duration),
-    }
-
-
-def _find_stat(
-    stats: Iterable[Dict], name: str, method: Optional[str] = None
-) -> Optional[Dict]:
-    for stat in stats:
-        if stat.get("name") != name:
-            continue
-            ##
-        if method is not None and stat.get("method") != method:
-            continue
-        return stat
-    return None
-
-
-def _summarize_query_lifecycle(stats: List[Dict], outcome_names: Iterable[str]) -> Dict:
-    """Aggregate end-to-end QUERY events across all outcomes."""
-    total_requests = 0
-    total_response_time = 0.0
-    min_rt: Optional[int] = None
-    max_rt = 0
-    combined_buckets: Dict[int, int] = {}
-    by_outcome: Dict[str, int] = {name: 0 for name in outcome_names}
-
-    for stat in stats:
-        if stat.get("method") != QUERY_TYPE:
-            continue
-        name = stat.get("name", "")
-        count = stat.get("num_requests", 0)
-        if name in by_outcome:
-            by_outcome[name] = count
-        total_requests += count
-        total_response_time += stat.get("total_response_time", 0) or 0
-        stat_min = stat.get("min_response_time")
-        if stat_min is not None and (min_rt is None or stat_min < min_rt):
-            min_rt = stat_min
-        stat_max = stat.get("max_response_time", 0) or 0
-        if stat_max > max_rt:
-            max_rt = stat_max
-        for bucket, n in (stat.get("response_times") or {}).items():
-            combined_buckets[bucket] = combined_buckets.get(bucket, 0) + n
-
-    completed_name = next(
-        (name for name in outcome_names if name.endswith("_completed")), None
-    )
-    completed_stat = (
-        _find_stat(stats, completed_name, QUERY_TYPE) if completed_name else None
-    )
-    completed_buckets = (completed_stat or {}).get("response_times", {}) or {}
-    completed_count = (completed_stat or {}).get("num_requests", 0)
-    completed_total_rt = (completed_stat or {}).get("total_response_time", 0) or 0
-
-    return {
-        "total_queries": total_requests,
-        "by_outcome": by_outcome,
-        "all_outcomes": {
-            "min_response_time": min_rt or 0,
-            "max_response_time": max_rt,
-            "avg_response_time": _safe_div(total_response_time, total_requests),
-            "median_response_time": percentile_from_dict(
-                total_requests, combined_buckets, 0.5
-            ),
-            "p95_response_time": percentile_from_dict(
-                total_requests, combined_buckets, 0.95
-            ),
-        },
-        "completed_only": {
-            "count": completed_count,
-            "avg_response_time": _safe_div(completed_total_rt, completed_count),
-            "median_response_time": percentile_from_dict(
-                completed_count, completed_buckets, 0.5
-            ),
-            "p95_response_time": percentile_from_dict(
-                completed_count, completed_buckets, 0.95
-            ),
-            "min_response_time": (completed_stat or {}).get("min_response_time") or 0,
-            "max_response_time": (completed_stat or {}).get("max_response_time", 0)
-            or 0,
-        },
-    }
+def _fmt_ms(ms: Optional[float]) -> str:
+    """Milliseconds as seconds, the unit every latency in the report uses."""
+    if ms is None:
+        return "n/a"
+    return f"{ms / 1000.0:.1f}s"
 
 
 def _slugify_host(host_url: str) -> str:
@@ -177,51 +33,41 @@ def _slugify_host(host_url: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", netloc).strip("_") or "perf"
 
 
-def _summarize_response_sizes(
-    sizes_by_outcome: Dict[str, List[int]], outcome_names: Iterable[str]
-) -> Dict[str, Dict]:
-    """Per-outcome response-size summary, including distinct-size count so
-    the report can flag queries that finished with the same status but came
-    back with different payloads (eg an error body in place of TRAPI)."""
-    summary: Dict[str, Dict] = {}
-    for name in outcome_names:
-        sizes = sizes_by_outcome.get(name) or []
-        if not sizes:
-            continue
-        summary[name] = {
-            "count": len(sizes),
-            "min": min(sizes),
-            "max": max(sizes),
-            "avg": sum(sizes) / len(sizes),
-            "distinct": len(set(sizes)),
-        }
-    return summary
-
-
 class ResultCollector:
     """Collect results for easy dissemination."""
 
-    def __init__(self, test_env: Optional[TestEnvEnum], logger: logging.Logger):
-        """Initialize the Collector."""
+    def __init__(
+        self,
+        test_env: Optional[TestEnvEnum],
+        logger: logging.Logger,
+        target: Optional[str] = None,
+        radiator: Optional[RadiatorClient] = None,
+    ):
+        """Initialize the Collector.
+
+        ``target`` is the infores of an override target service (with or
+        without the ``infores:`` prefix). A non-ARS override queries a single
+        service directly, so results are collected for that one agent instead
+        of the ARS + ARA roster; an ARS override still fans out to ARAs and
+        keeps the usual roster.
+
+        ``radiator``, when given, is handed a structured record of every result
+        as it is collected.
+        """
         self.logger = logger
+        self.radiator = radiator
         self.has_acceptance_results = False
         self.has_performance_results = False
         agents = [
             "ars",
-            "aragorn",
-            "arax",
-            "biothings-explorer",
-            "improving-agent",
-            "unsecret-agent",
-            "cqs",
+            "shepherd-aragorn",
+            "shepherd-arax",
+            "shepherd-bte",
         ]
-        if test_env == "dev" or test_env == "ci":
-            agents = [
-                "ars",
-                "shepherd-aragorn",
-                "shepherd-arax",
-                "shepherd-bte",
-            ]
+        if target is not None:
+            target = target.split("infores:")[-1]
+            if target != "ars":
+                agents = [target]
         self.agents = agents
         self.query_types = ["TopAnswer", "Acceptable", "BadButForgivable", "NeverShow"]
         self.acceptance_report = {status_type.value: 0 for status_type in AgentStatus}
@@ -233,7 +79,22 @@ class ResultCollector:
                 for result_type in self.acceptance_report.keys():
                     self.acceptance_stats[agent][query_type][result_type] = 0
 
-        self.columns = ["name", "url", "pk", "TestCase", "TestAsset", *self.agents]
+        # Each agent gets its status plus the detail the report JSON already
+        # carries for it: whether the expected answer was anywhere in that
+        # agent's response, and the rank/score it came back with.
+        self.agent_columns = ["", "_found", "_rank", "_score"]
+        self.columns = [
+            "name",
+            "url",
+            "pk",
+            "TestCase",
+            "TestAsset",
+            *[
+                f"{agent}{suffix}"
+                for agent in self.agents
+                for suffix in self.agent_columns
+            ],
+        ]
         header = ",".join(self.columns)
         self.acceptance_csv = f"{header}\n"
         self.performance_stats = {}
@@ -250,6 +111,7 @@ class ResultCollector:
         parent_pk: Union[str, None],
         url: str,
         force_skipped: bool = False,
+        status: Optional[AgentStatus] = None,
     ):
         """Add a single report to the total output.
 
@@ -257,16 +119,21 @@ class ResultCollector:
         in ``report``. It is used when the test as a whole was skipped (eg the
         query never ran) so the per-agent stats/CSV agree with the skipped
         test-level status instead of reporting incidental per-ARA errors.
+
+        ``status`` is the test's overall status, for the radiator. Without it,
+        it is worked out the way ``run_tests`` does: from the ARS, or from the
+        single agent when an override target narrowed the roster to one.
         """
         self.has_acceptance_results = True
         # add result to stats
-        agent_statuses = []
+        agent_cells = []
         for agent in self.agents:
             query_type = asset.expected_output
             if not force_skipped and agent in report.result:
                 agent_result = report.result[agent]
                 self.acceptance_stats[agent][query_type][agent_result.status.value] += 1
-                agent_statuses.append(agent_result.status.value)
+                agent_cells.append(agent_result.status.value)
+                agent_cells.extend(self._expected_answer_cells(agent_result))
             else:
                 # Agent produced no response for this asset. Record it as
                 # SKIPPED in the per-agent stats too, so the JSON summary
@@ -274,10 +141,13 @@ class ResultCollector:
                 # already reports SKIPPED here) and every asset is accounted
                 # for in each agent's totals.
                 self.acceptance_stats[agent][query_type][AgentStatus.SKIPPED.value] += 1
-                agent_statuses.append(AgentStatus.SKIPPED.value)
+                agent_cells.append(AgentStatus.SKIPPED.value)
+                # Nothing came back, so there's nothing to say about where the
+                # expected answer landed.
+                agent_cells.extend([""] * (len(self.agent_columns) - 1))
 
         # add result to csv
-        agent_results = ",".join(agent_statuses)
+        agent_results = ",".join(agent_cells)
         pk_url = (
             f"https://arax.ci.transltr.io/?r={parent_pk}"
             if parent_pk is not None
@@ -287,6 +157,146 @@ class ResultCollector:
             f""""{asset.name}",{url},{pk_url},{test.id},{asset.id},{agent_results}\n"""
         )
 
+        if self.radiator is not None:
+            if status is None:
+                status_agent = "ars" if "ars" in self.agents else self.agents[0]
+                agent_report = report.result.get(status_agent)
+                status = (
+                    agent_report.status
+                    if agent_report is not None and not force_skipped
+                    else AgentStatus.SKIPPED
+                )
+            # A record the schema rejects costs the radiator one asset, never
+            # the run its results.
+            try:
+                record = self._asset_result(
+                    test, asset, report, parent_pk, status, force_skipped
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"[{test.id}] couldn't record asset {asset.id} for the "
+                    f"Information Radiator: {e}"
+                )
+            else:
+                self.radiator.add_result(record)
+
+    def _asset_result(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+        report: TestReport,
+        parent_pk: Optional[str],
+        status: AgentStatus,
+        force_skipped: bool,
+    ) -> AssetResult:
+        """The radiator's record of one asset, with a row for every agent.
+
+        Agents are the same roster as the CSV's columns, and an agent with no
+        response is SKIPPED here too, so the two always agree.
+        """
+        agents = []
+        for agent in self.agents:
+            pk = report.pks.get(agent)
+            # the query runner writes the string "None" when the ARS never
+            # produced a merged message
+            pk = None if pk in (None, "", "None") else pk
+            agent_report = None if force_skipped else report.result.get(agent)
+            if agent_report is None:
+                agents.append(
+                    AgentResult(agent=agent, status=AgentStatus.SKIPPED.value, pk=pk)
+                )
+                continue
+            found, rank, score = self._expected_answer(agent_report)
+            agents.append(
+                AgentResult(
+                    agent=agent,
+                    status=agent_report.status.value,
+                    message=agent_report.message,
+                    http_status=agent_report.http_status,
+                    found=found,
+                    rank=rank,
+                    score=score,
+                    n_results=agent_report.n_results,
+                    response_time_s=agent_report.response_time_s,
+                    pk=pk,
+                    expected_nodes_found=getattr(
+                        agent_report, "expected_nodes_found", None
+                    ),
+                )
+            )
+
+        if isinstance(asset, PathfinderTestAsset):
+            kind = "pathfinder"
+            input_curie = asset.source_input_id
+            output_curie = asset.target_input_id
+        else:
+            kind = "acceptance"
+            input_curie = asset.input_id
+            output_curie = asset.output_id
+        return AssetResult(
+            test_case_id=test.id,
+            asset_id=asset.id,
+            kind=kind,
+            name=asset.name or asset.description,
+            expected_output=asset.expected_output,
+            predicate=asset.predicate_id,
+            input_curie=input_curie,
+            output_curie=output_curie,
+            status=status.value,
+            parent_pk=parent_pk or None,
+            agents=agents,
+            details=report.test_details or {},
+        )
+
+    @classmethod
+    def _expected_answer_cells(cls, agent_report: AgentReport) -> List[str]:
+        """CSV cells for where the expected answer landed for a single agent.
+
+        Returns (found, rank, score) as strings; see ``_expected_answer``.
+        Cells are left blank when the agent never got far enough for the
+        question to have an answer (eg it errored out).
+        """
+        found, rank, score = cls._expected_answer(agent_report)
+        return [
+            "" if found is None else ("true" if found else "false"),
+            "" if rank is None else str(rank),
+            "" if score is None else str(score),
+        ]
+
+    @staticmethod
+    def _expected_answer(
+        agent_report: AgentReport,
+    ) -> Tuple[Optional[bool], Optional[int], Optional[float]]:
+        """Where the expected answer landed for a single agent.
+
+        Returns (found, rank, score), pulled from the same ``actual_output``
+        that goes into the report JSON uploaded to the radiator. ARS results
+        are scored/ranked by the ARS confidence score, ARA results by their own
+        analyses, so whichever of the two the analysis filled in is used.
+        Each is None when the agent never got far enough for the question to
+        have an answer (eg it errored out).
+        """
+        actual_output = agent_report.actual_output or {}
+        if not actual_output:
+            # No results at all means the expected answer definitely wasn't in
+            # the response; anything else (an error, a timeout) is unknown.
+            found = False if agent_report.status == AgentStatus.NO_RESULTS else None
+            return found, None, None
+
+        rank = actual_output.get("ars_rank")
+        if rank is None:
+            rank = actual_output.get("ara_rank")
+        score = actual_output.get("ars_score")
+        if score is None:
+            score = actual_output.get("ara_score")
+        found = actual_output.get("found")
+        if found is None:
+            # Report without the explicit flag: a rank/score only exists for an
+            # answer that was in the response.
+            found = rank is not None or score is not None
+
+        return bool(found), rank, score
+
     def collect_performance_result(
         self,
         test: Union[TestCase, PathfinderTestCase],
@@ -295,81 +305,204 @@ class ResultCollector:
         host_url: str,
         results: Dict,
     ):
-        """Add a single report for a performance test."""
+        """Add a single report for a performance test.
+
+        ``results`` is what the HelmsDeep driver returned: the parsed
+        ``summary.json``, the HTML report, the process exit code, and the paths
+        of everything HelmsDeep wrote. The numbers are HelmsDeep's -- nothing is
+        recomputed here, so what Slack shows and what ``summary.json`` says can
+        never drift apart.
+        """
         self.has_performance_results = True
-        results_stats = results.get("stats") or []
-        target = (results.get("target") or "").lower()
-        outcome_names = ARS_OUTCOMES if target == "ars" else ARA_OUTCOMES
+        summary = results.get("summary") or {}
+        config = summary.get("config") or {}
+        checkpoints = checkpoint_verdicts(summary)
 
-        submit_stat = _find_stat(results_stats, SUBMIT_NAME)
-        poll_stat = _find_stat(results_stats, POLL_NAME) if target == "ars" else None
-        lifecycle = _summarize_query_lifecycle(results_stats, outcome_names)
-
-        self.performance_report["stats"][host_url] = {
-            "target": target,
-            "test_run_time": results.get("test_run_time"),
-            "spawn_rate": results.get("spawn_rate"),
-            "submit": _summarize_layer(submit_stat),
-            "poll": _summarize_layer(poll_stat) if target == "ars" else None,
-            "queries": lifecycle,
-            "response_sizes": _summarize_response_sizes(
-                results.get("query_response_sizes") or {}, outcome_names
-            ),
-            "history": results.get("stats_history") or [],
-            "summary_html": results.get("summary_html"),
+        run_key = f"{host_url} ({results.get('helmsdeep_target', 'unknown')})"
+        self.performance_report["stats"][run_key] = {
+            "host": host_url,
+            "helmsdeep_target": results.get("helmsdeep_target"),
+            "component": config.get("component") or results.get("component"),
+            "profile": results.get("profile"),
+            "protocol": config.get("protocol"),
+            "exit_code": results.get("exit_code"),
+            "error": results.get("error"),
+            # < 1.0 means HelmsDeep compressed the run to a wall-clock budget.
+            # The harness never asks for that, but a summary carries the field
+            # either way and a compressed number must not be quoted as one.
+            "time_scale": config.get("time_scale"),
+            "p99_slo_ms": config.get("p99_slo_ms"),
+            "max_error_rate": config.get("max_error_rate"),
+            "knee": summary.get("knee"),
+            "max_sustainable_concurrency": summary.get("max_sustainable_concurrency"),
+            "knee_unsupported": summary.get("knee_unsupported"),
+            "stage_warnings": summary.get("stage_warnings") or [],
+            "checkpoints": checkpoints,
+            "checkpoints_passed": summary.get("checkpoints_passed"),
+            "red_flags": summary.get("red_flags") or [],
+            "stages": summary.get("stages") or [],
+            "summary": summary,
+            "report_html": results.get("report_html"),
+            "artifacts": results.get("artifacts") or {},
         }
-        # Accumulate failures across every performance target/asset. This used
-        # to be a plain assignment, which meant only the last target's failures
-        # ever reached Slack when a suite exercised more than one host. Merge by
-        # error key, summing occurrences so the summary reflects the whole run.
-        for failure_key, failure in (results.get("failures") or {}).items():
-            existing = self.performance_report["failures"].get(failure_key)
-            if existing:
-                existing["occurrences"] = existing.get("occurrences", 0) + failure.get(
-                    "occurrences", 0
-                )
-            else:
-                self.performance_report["failures"][failure_key] = dict(failure)
+        # A run that never produced a summary is a failure of the run itself,
+        # not a measured one. Keep it out of the checkpoint tally so a crashed
+        # host can't read as "everything passed".
+        if results.get("error"):
+            self.performance_report["failures"][run_key] = {
+                "error": results["error"],
+                "exit_code": results.get("exit_code"),
+                "output": results.get("output", ""),
+            }
 
         stats_id = f"{host_url}_case_{test.id}_asset_{asset.id}"
         self.performance_stats[stats_id] = {
             "information_radiator_url": url,
-            **results,
+            "helmsdeep_target": results.get("helmsdeep_target"),
+            "profile": results.get("profile"),
+            "host": host_url,
+            "exit_code": results.get("exit_code"),
+            "error": results.get("error"),
+            "summary": summary,
         }
 
-    def render_performance_artifacts(self) -> Iterator[Tuple[str, bytes]]:
-        """Yield (filename, bytes) tuples for per-target performance artifacts.
+        if self.radiator is not None:
+            # same verdict run_tests gives the test: a run with no summary, or
+            # one that missed a checkpoint, failed
+            failed = bool(results.get("error")) or (
+                summary.get("checkpoints_passed") is False
+            )
+            try:
+                record = PerformanceResult(
+                    test_case_id=test.id,
+                    asset_id=asset.id,
+                    host=host_url,
+                    helmsdeep_target=results.get("helmsdeep_target"),
+                    profile=results.get("profile"),
+                    status=(
+                        AgentStatus.FAILED.value if failed else AgentStatus.PASSED.value
+                    ),
+                    error=results.get("error"),
+                    exit_code=results.get("exit_code"),
+                    max_sustainable_concurrency=summary.get(
+                        "max_sustainable_concurrency"
+                    ),
+                    knee_unsupported=summary.get("knee_unsupported"),
+                    checkpoints_passed=summary.get("checkpoints_passed"),
+                    summary=summary,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"[{test.id}] couldn't record the performance run against "
+                    f"{host_url} for the Information Radiator: {e}"
+                )
+            else:
+                self.radiator.add_performance(record)
 
-        Produces up to two files per host:
-          * ``<slug>_perf.png`` - matplotlib chart of stats_history
-          * ``<slug>_perf.html`` - Locust's own HTML report
-        Renderable artifacts are skipped (with a log line) when data is
-        missing; render exceptions are caught so one bad target doesn't
-        block the rest.
+    def flush(self):
+        """Upload whatever the radiator has buffered."""
+        if self.radiator is not None:
+            self.radiator.flush()
+
+    def record_performance_error(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+        host_url: str,
+        error: str,
+    ):
+        """Record, for the radiator, a performance run that raised outright.
+
+        A run that returned an error goes through ``collect_performance_result``;
+        this is for one that never returned at all, which would otherwise leave
+        no trace of the attempt in the radiator.
         """
-        for host_url, target_stats in self.performance_report["stats"].items():
-            slug = _slugify_host(host_url)
+        if self.radiator is None:
+            return
+        self.radiator.add_performance(
+            PerformanceResult(
+                test_case_id=test.id,
+                asset_id=asset.id,
+                host=host_url,
+                status=AgentStatus.FAILED.value,
+                error=error,
+            )
+        )
 
-            history = target_stats.get("history") or []
-            if len(history) >= 2:
-                try:
-                    png_bytes = perf_plots.render_history_png(history, title=host_url)
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to render perf chart for {host_url}: {e}"
-                    )
-                else:
-                    yield f"{slug}_perf.png", png_bytes
+    @property
+    def performance_checkpoints_passed(self) -> Optional[bool]:
+        """Overall checkpoint verdict across every performance run.
+
+        ``None`` when no run configured any checkpoints -- a knee-finding run
+        has nothing to pass or fail, and reporting it as a pass would be a
+        claim the run never made. A run that failed to produce a summary at all
+        counts as a failure.
+        """
+        verdicts = []
+        for run_stats in self.performance_report["stats"].values():
+            if run_stats.get("error"):
+                verdicts.append(False)
+            elif run_stats.get("checkpoints"):
+                verdicts.append(bool(run_stats.get("checkpoints_passed")))
+        if not verdicts:
+            return None
+        return all(verdicts)
+
+    def render_performance_artifacts(self) -> Iterator[Tuple[str, bytes, str]]:
+        """Yield ``(filename, content, comment)`` for each performance artifact.
+
+        Two files per run -- HelmsDeep's ``summary.json`` (the authoritative
+        numbers) and its ``report.html`` (locust's charts and request tables) --
+        each carrying the run's checkpoint verdict as the comment they're
+        uploaded with, so the pass/fail is attached to the file rather than
+        buried in a separate message.
+        """
+        for run_key, run_stats in self.performance_report["stats"].items():
+            slug = _slugify_host(run_stats.get("host") or run_key)
+            target = run_stats.get("helmsdeep_target") or "perf"
+            base = f"{slug}_{target}"
+            comment = self._artifact_comment(run_key, run_stats)
+
+            summary = run_stats.get("summary")
+            if summary:
+                yield (
+                    f"{base}_summary.json",
+                    json.dumps(summary, indent=2).encode("utf-8"),
+                    comment,
+                )
             else:
                 self.logger.info(
-                    f"Skipping perf chart for {host_url}: insufficient history"
+                    f"Skipping summary.json for {run_key}: HelmsDeep produced none"
                 )
 
-            summary_html = target_stats.get("summary_html")
-            if summary_html:
-                yield f"{slug}_perf.html", summary_html.encode("utf-8")
+            report_html = run_stats.get("report_html")
+            if report_html:
+                yield f"{base}_report.html", report_html.encode("utf-8"), comment
             else:
-                self.logger.info(f"Skipping HTML report for {host_url}: not available")
+                self.logger.info(f"Skipping HTML report for {run_key}: not available")
+
+    @staticmethod
+    def _artifact_comment(run_key: str, run_stats: Dict) -> str:
+        """One-line pass/fail headline to upload the artifacts with."""
+        if run_stats.get("error"):
+            return (
+                f"Performance run FAILED TO COMPLETE - {run_key}: {run_stats['error']}"
+            )
+        checkpoints = run_stats.get("checkpoints") or []
+        if not checkpoints:
+            concurrency = run_stats.get("max_sustainable_concurrency")
+            knee = (
+                f"max sustainable concurrency {concurrency:.1f}"
+                if concurrency is not None
+                else "no stage met the SLO"
+            )
+            return f"Performance report - {run_key}: no checkpoints, {knee}"
+        passed = sum(1 for c in checkpoints if c["verdict"] == "PASS")
+        verdict = "PASS" if run_stats.get("checkpoints_passed") else "FAIL"
+        return (
+            f"Performance report - {run_key}: checkpoints {verdict} "
+            f"({passed}/{len(checkpoints)} passed)"
+        )
 
     def dump_result_summary(self):
         """Format test results summary for Slack."""
@@ -384,111 +517,100 @@ class ResultCollector:
 > Errors: {self.acceptance_report['ERROR']}
 """
         if self.has_performance_results:
-            results_formatted += """
-> Performance Test Results:"""
-            for target_url, target_stats in self.performance_report["stats"].items():
-                results_formatted += self._format_performance_target(
-                    target_url, target_stats
-                )
-            failures = self.performance_report["failures"]
-            if failures:
-                total_occurrences = sum(
-                    f.get("occurrences", 0) for f in failures.values()
-                )
-                results_formatted += (
-                    f"\n> Failures: {total_occurrences} "
-                    f"({len(failures)} distinct) - see uploaded HTML report"
-                )
+            overall = self.performance_checkpoints_passed
+            if overall is None:
+                headline = "no checkpoints configured"
+            else:
+                headline = "*PASS*" if overall else "*FAIL*"
+            results_formatted += (
+                f"\n> Performance Test Results (HelmsDeep) - "
+                f"checkpoints: {headline}"
+            )
+            for run_key, run_stats in self.performance_report["stats"].items():
+                results_formatted += self._format_performance_run(run_key, run_stats)
 
         return results_formatted
 
     @staticmethod
-    def _format_performance_target(target_url: str, target_stats: Dict) -> str:
-        """Render the per-host performance section of the summary."""
-        ms_to_s = lambda ms: ms / 1000.0  # noqa: E731
+    def _format_performance_run(run_key: str, run_stats: Dict) -> str:
+        """Render one HelmsDeep run's section of the Slack summary.
 
-        lines = [f"> {target_url}"]
-        target = target_stats.get("target") or "unknown"
-        run_time = target_stats.get("test_run_time")
-        spawn_rate = target_stats.get("spawn_rate")
-        if run_time is not None or spawn_rate is not None:
-            lines.append(
-                f"> - Target: {target} | run_time={run_time}s, spawn_rate={spawn_rate}"
-            )
+        Leads with the checkpoint verdicts, because that is the pass/fail the
+        run was asked for; the knee follows as the headline measurement every
+        run produces whether or not it has checkpoints.
+        """
+        lines = [f"> {run_key}"]
 
-        queries = target_stats.get("queries") or {}
-        total_queries = queries.get("total_queries", 0)
-        by_outcome = queries.get("by_outcome", {}) or {}
-        completed = queries.get("completed_only") or {}
-        all_outcomes = queries.get("all_outcomes") or {}
-        response_sizes = target_stats.get("response_sizes") or {}
-        run_time_seconds = run_time or 0
+        if run_stats.get("error"):
+            lines.append(f"> - RUN FAILED: {run_stats['error']}")
+            return "\n" + "\n".join(lines)
 
-        lines.append("> - End-to-end queries:")
-        lines.append(f">   * Submitted (recorded): {total_queries}")
-        for name, count in by_outcome.items():
-            label = name.replace("ars_query_", "").replace("ara_query_", "")
-            line = f">   * {label}: {count}"
-            size_summary = response_sizes.get(name)
-            if size_summary:
-                line += (
-                    f" [response size bytes: "
-                    f"min={size_summary['min']}, "
-                    f"max={size_summary['max']}, "
-                    f"avg={size_summary['avg']:.0f}, "
-                    f"distinct={size_summary['distinct']}]"
+        profile = run_stats.get("profile") or "default"
+        protocol = run_stats.get("protocol") or "unknown"
+        lines.append(f"> - Profile: {profile} | protocol: {protocol}")
+
+        checkpoints = run_stats.get("checkpoints") or []
+        if checkpoints:
+            verdict = "PASS" if run_stats.get("checkpoints_passed") else "FAIL"
+            lines.append(f"> - Checkpoints: *{verdict}*")
+            for cp in checkpoints:
+                mark = {"PASS": ":white_check_mark:", "FAIL": ":x:"}.get(
+                    cp["verdict"], ":grey_question:"
                 )
-            lines.append(line)
-            if size_summary and size_summary["distinct"] > 1:
                 lines.append(
-                    f">     WARNING: {label} responses differ in size; "
-                    "check for partial or error payloads"
+                    f">   * {mark} {cp['users']} users - {cp['goal']}: "
+                    f"{cp['verdict']} ({cp['detail']})"
                 )
-        completed_count = completed.get("count", 0)
-        if run_time_seconds:
-            throughput = completed_count / (run_time_seconds / 60.0)
-            lines.append(f">   * Completed throughput: {throughput:.2f} queries/minute")
-        if completed_count:
-            lines.append(
-                ">   * Completed query time (s): "
-                f"avg={ms_to_s(completed['avg_response_time']):.1f}, "
-                f"median={ms_to_s(completed['median_response_time']):.1f}, "
-                f"p95={ms_to_s(completed['p95_response_time']):.1f}, "
-                f"min={ms_to_s(completed['min_response_time']):.1f}, "
-                f"max={ms_to_s(completed['max_response_time']):.1f}"
+                if cp.get("p99_ms") is not None:
+                    lines.append(
+                        f">     p99={_fmt_ms(cp['p99_ms'])}, "
+                        f"errors={cp['error_rate'] * 100:.2f}%, "
+                        f"requests={cp['requests']}"
+                    )
+        else:
+            lines.append("> - Checkpoints: none configured for this run type")
+
+        concurrency = run_stats.get("max_sustainable_concurrency")
+        knee = run_stats.get("knee") or {}
+        if concurrency is not None:
+            caveat = (
+                " (UNSUPPORTED - see stage warnings)"
+                if run_stats.get("knee_unsupported")
+                else ""
             )
-        if total_queries:
+            lines.append(f"> - Max sustainable concurrency: {concurrency:.1f}{caveat}")
             lines.append(
-                ">   * All-outcome query time (s): "
-                f"avg={ms_to_s(all_outcomes['avg_response_time']):.1f}, "
-                f"median={ms_to_s(all_outcomes['median_response_time']):.1f}, "
-                f"p95={ms_to_s(all_outcomes['p95_response_time']):.1f}, "
-                f"min={ms_to_s(all_outcomes['min_response_time']):.1f}, "
-                f"max={ms_to_s(all_outcomes['max_response_time']):.1f}"
+                f">   * Knee at stage {knee.get('stage')} "
+                f"({knee.get('users')} users): "
+                f"p99={_fmt_ms(knee.get('p99_ms'))}, "
+                f"errors={(knee.get('error_rate') or 0) * 100:.2f}%, "
+                f"rps={knee.get('rps', 0):.2f}"
+            )
+        else:
+            lines.append(
+                "> - Max sustainable concurrency: none - no stage met the "
+                f"p99 SLO ({_fmt_ms(run_stats.get('p99_slo_ms'))}) and error cap"
             )
 
-        submit = target_stats.get("submit") or {}
-        if submit.get("num_requests"):
+        warnings = run_stats.get("stage_warnings") or []
+        if warnings:
+            kinds = sorted({i["kind"] for w in warnings for i in w["issues"]})
             lines.append(
-                "> - Submit requests: "
-                f"count={submit['num_requests']}, "
-                f"failures={submit['num_failures']}, "
-                f"avg={ms_to_s(submit['avg_response_time']):.2f}s, "
-                f"median={ms_to_s(submit['median_response_time']):.2f}s, "
-                f"p95={ms_to_s(submit['p95_response_time']):.2f}s, "
-                f"rps={submit['requests_per_second']:.3f}"
+                f"> - Measurement quality: {len(warnings)} stage(s) flagged "
+                f"({', '.join(kinds)})"
             )
 
-        poll = target_stats.get("poll")
-        if poll and poll.get("num_requests"):
+        red_flags = run_stats.get("red_flags") or []
+        if red_flags:
+            lines.append(f"> - ARS red flags: {len(red_flags)}")
+            for flag in red_flags[:3]:
+                lines.append(f">   * {flag}")
+
+        time_scale = run_stats.get("time_scale")
+        if time_scale is not None and time_scale < 1.0:
             lines.append(
-                "> - Poll requests: "
-                f"count={poll['num_requests']}, "
-                f"failures={poll['num_failures']}, "
-                f"avg={ms_to_s(poll['avg_response_time']):.2f}s, "
-                f"median={ms_to_s(poll['median_response_time']):.2f}s, "
-                f"p95={ms_to_s(poll['p95_response_time']):.2f}s, "
-                f"rps={poll['requests_per_second']:.3f}"
+                f"> - WARNING: compressed run (time scale {time_scale:.2f}); "
+                "treat these numbers as indicative, not a measurement"
             )
 
         return "\n" + "\n".join(lines)

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: radiator
+description: The Translator Information Radiator, the dashboard the Test Harness reports to
+type: application
+version: 0.1.0
+# The image tag when values don't set one.
+appVersion: "latest"

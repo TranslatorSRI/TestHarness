@@ -1,0 +1,390 @@
+"""Client for the Information Radiator's ingest API.
+
+Runs alongside the Zebrunner ``Reporter`` while the new radiator is brought up.
+Unlike the Reporter, it never makes a call per test: results are buffered and
+posted in batches as structured records (see ``radiator_schema``).
+
+An unreachable radiator must never cost a run its results, so nothing here
+raises. Every record is kept in ``payload`` whether or not it was uploaded;
+when an upload fails the harness saves that payload to disk, and
+``test-harness-radiator push`` replays it later. Every write is an upsert on
+ids the client chose, so replaying a run that partly made it is safe.
+"""
+
+import json
+import logging
+import os
+import sys
+from argparse import ArgumentParser
+from datetime import datetime
+from typing import List, Optional
+
+import httpx
+
+from radiator_schema import (
+    INGEST_PREFIX,
+    AssetResult,
+    PerformanceResult,
+    ResultBatch,
+    RunCreate,
+    RunFinish,
+    RunPayload,
+)
+
+
+class RadiatorClient:
+    """Posts a run's results to the Information Radiator."""
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+        enabled: bool = True,
+        public_url: Optional[str] = None,
+        batch_size: int = 50,
+        logger: logging.Logger = logging.getLogger(__name__),
+    ):
+        """Initialize the client.
+
+        With ``enabled=False``, or without a URL and token, nothing is sent:
+        the client only records, which is what ``--local`` runs want.
+
+        ``public_url`` (or RADIATOR_PUBLIC_URL) is where people open the
+        radiator, for the links the harness logs and posts to Slack, when it
+        differs from where the harness uploads to: eg ``http://radiator:8000``
+        inside docker compose, but ``http://localhost:8000`` in a browser.
+        """
+        self.base_url = (base_url or os.getenv("RADIATOR_URL") or "").rstrip("/")
+        self.public_url = (
+            public_url or os.getenv("RADIATOR_PUBLIC_URL") or self.base_url
+        ).rstrip("/")
+        self.token = token or os.getenv("RADIATOR_TOKEN")
+        self.enabled = enabled and bool(self.base_url and self.token)
+        self.batch_size = batch_size
+        self.logger = logger
+        self.payload: Optional[RunPayload] = None
+        # Set by the first failed upload. Nothing is sent after that: the run
+        # is replayed from the saved payload instead, which avoids a half-run
+        # in the radiator that looks complete.
+        self.upload_failed = False
+        self._pending = ResultBatch()
+        self._client: Optional[httpx.Client] = None
+        # what actually reached the radiator, for the end-of-run log
+        self.sent_results = 0
+        self.sent_performance = 0
+        self.sent_batches = 0
+
+    @staticmethod
+    def is_configured(base_url=None, token=None) -> bool:
+        """Return True if enough config exists to talk to the radiator."""
+        return bool(
+            (base_url or os.getenv("RADIATOR_URL"))
+            and (token or os.getenv("RADIATOR_TOKEN"))
+        )
+
+    @property
+    def run_url(self) -> Optional[str]:
+        """Link to the run in the radiator UI, once a run is open."""
+        if not self.enabled or self.payload is None:
+            return None
+        return f"{self.public_url}/runs/{self.payload.run.run_id}"
+
+    def start_run(self, run: RunCreate):
+        """Open a run."""
+        self.payload = RunPayload(run=run)
+        self._send("POST", "/runs", run.model_dump(mode="json"), what="opening the run")
+
+    def add_result(self, result: AssetResult):
+        """Record one asset's result, uploading once a batch has built up."""
+        self.payload.results.append(result)
+        self._pending.results.append(result)
+        if len(self._pending.results) >= self.batch_size:
+            self.flush()
+
+    def add_performance(self, result: PerformanceResult):
+        """Record one performance run and upload it straight away.
+
+        These come hours apart in a sweep, so they aren't held for a batch.
+        """
+        self.payload.performance.append(result)
+        self._pending.performance.append(result)
+        self.flush()
+
+    def flush(self):
+        """Upload whatever results are buffered."""
+        if not (self._pending.results or self._pending.performance):
+            return
+        batch, self._pending = self._pending, ResultBatch()
+        if self._send(
+            "POST",
+            f"/runs/{self.payload.run.run_id}/results",
+            batch.model_dump(mode="json"),
+            what=f"{len(batch.results)} asset results and "
+            f"{len(batch.performance)} performance results",
+        ):
+            self.sent_results += len(batch.results)
+            self.sent_performance += len(batch.performance)
+            self.sent_batches += 1
+
+    def finish_run(
+        self, counts: Optional[dict] = None, finish: Optional[RunFinish] = None
+    ):
+        """Upload any remaining results and close the run.
+
+        ``finish`` closes it with a given end time instead of now, for replays.
+        """
+        self.flush()
+        self.payload.finish = finish or RunFinish(
+            ended_at=datetime.now().astimezone(), counts=counts or {}
+        )
+        self._send(
+            "PATCH",
+            f"/runs/{self.payload.run.run_id}",
+            self.payload.finish.model_dump(mode="json"),
+            what="closing the run",
+        )
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def save(self, output_dir: str, prefix: str = "") -> str:
+        """Write the whole run to ``output_dir`` for replay; return the path."""
+        os.makedirs(output_dir, exist_ok=True)
+        path = os.path.join(
+            output_dir, f"{prefix}radiator_{self.payload.run.run_id}.json"
+        )
+        with open(path, "w") as f:
+            f.write(self.payload.model_dump_json(indent=2))
+        return path
+
+    @property
+    def diff_url(self) -> Optional[str]:
+        """Link to what changed since the previous run, once a run is open."""
+        return f"{self.run_url}/diff" if self.run_url else None
+
+    def summary(self) -> Optional[dict]:
+        """The run against the previous one in its series (pass rates,
+        regressions, fixes), or None if it isn't available."""
+        res = self._read("summary")
+        return res.json() if res is not None else None
+
+    def history_png(self, runs: int = 30) -> Optional[bytes]:
+        """The series' pass-rate history up to this run, as a PNG, or None."""
+        res = self._read("history.png", params={"runs": runs})
+        return res.content if res is not None else None
+
+    def performance_png(self, runs: int = 30) -> Optional[bytes]:
+        """Each of the run's services' max sustainable concurrency up to this
+        run, as a PNG, or None."""
+        res = self._read("performance.png", params={"runs": runs})
+        return res.content if res is not None else None
+
+    def _read(self, what: str, params: Optional[dict] = None):
+        """GET something about this run from the read API. Best effort: only
+        once the whole run has been uploaded, and never raises."""
+        if not self.enabled or self.upload_failed or self.payload is None:
+            return None
+        if self.payload.finish is None:
+            return None
+        return self._get(
+            f"/api/runs/{self.payload.run.run_id}/{what}", params, f"the run's {what}"
+        )
+
+    # --- run cycles and the weekly digest ------------------------------------
+
+    def cycle_url(self, cycle_id) -> Optional[str]:
+        return f"{self.public_url}/cycles/{cycle_id}" if self.enabled else None
+
+    @property
+    def weekly_url(self) -> Optional[str]:
+        return f"{self.public_url}/weekly" if self.enabled else None
+
+    def cycle(self, cycle_id) -> Optional[dict]:
+        """A run cycle's board (each test against its previous run, changes by
+        agent, flags), or None if it isn't available."""
+        res = self._get(f"/api/cycles/{cycle_id}", what="the run cycle")
+        return res.json() if res is not None else None
+
+    def cycle_board_png(self, cycle_id) -> Optional[bytes]:
+        res = self._get(f"/api/cycles/{cycle_id}/board.png", what="the cycle board")
+        return res.content if res is not None else None
+
+    def digest(self, days: int = 7) -> Optional[dict]:
+        """Every environment's latest runs over the last ``days``, or None."""
+        res = self._get("/api/digest", {"days": days}, "the weekly digest")
+        return res.json() if res is not None else None
+
+    def digest_png(self, days: int = 7) -> Optional[bytes]:
+        res = self._get("/api/digest.png", {"days": days}, "the weekly digest")
+        return res.content if res is not None else None
+
+    def _get(self, path: str, params: Optional[dict] = None, what: str = "it"):
+        """GET from the read API. Best effort: never raises."""
+        if not self.enabled:
+            return None
+        try:
+            res = self._http().get(f"{self.base_url}{path}", params=params)
+            res.raise_for_status()
+            return res
+        except Exception as e:
+            self.logger.warning(
+                f"Couldn't get {what} from the Information Radiator: {e}"
+            )
+            return None
+
+    def _http(self) -> httpx.Client:
+        if self._client is None:
+            self._client = httpx.Client(
+                base_url=f"{self.base_url}{INGEST_PREFIX}",
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=30,
+                # retries connection failures only; an HTTP error is an answer
+                transport=httpx.HTTPTransport(retries=2),
+            )
+        return self._client
+
+    def _send(self, method: str, path: str, body: dict, what: str = "") -> bool:
+        """Send one write. Returns True if the radiator took it.
+
+        The first failure stops the rest of the run's uploads (see
+        ``upload_failed``), so it logs everything needed to see why: the
+        radiator's own answer (eg which field a 422 rejected), or the
+        connection error.
+        """
+        if not self.enabled or self.upload_failed:
+            return False
+        try:
+            res = self._http().request(method, path, json=body)
+            res.raise_for_status()
+            return True
+        except httpx.HTTPStatusError as e:
+            reason = (
+                f"the radiator answered {e.response.status_code}: "
+                f"{e.response.text[:2000]}"
+            )
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+        self.upload_failed = True
+        run_id = self.payload.run.run_id if self.payload else "?"
+        self.logger.error(
+            f"Upload to the Information Radiator failed ({method} "
+            f"{self.base_url}{INGEST_PREFIX}{path}"
+            f"{', ' + what if what else ''}): {reason}. Not sending the rest of "
+            f"run {run_id}; the whole run will be saved locally for "
+            "`test-harness-radiator push`."
+        )
+        return False
+
+    def outcome(self, expected: list) -> List[str]:
+        """Log lines on what the radiator got, against ``expected``
+        (test case id, asset id) pairs: for the end of a run."""
+        lines = []
+        if self.payload is None:
+            return lines
+        recorded = {(r.test_case_id, r.asset_id) for r in self.payload.results}
+        recorded |= {(r.test_case_id, r.asset_id) for r in self.payload.performance}
+        have = len(recorded & set(expected))
+        perf = len(self.payload.performance)
+        perf_note = f" ({perf} performance results)" if perf else ""
+        if self.enabled and not self.upload_failed:
+            lines.append(
+                f"Information Radiator: {self.run_url} has {have} of the "
+                f"{len(expected)} assets in the suite{perf_note}, sent in "
+                f"{self.sent_batches} batches."
+            )
+        elif self.enabled:
+            lines.append(
+                "Information Radiator: the upload failed partway (see the error "
+                f"above); it got {self.sent_results} asset results and "
+                f"{self.sent_performance} performance results before that. "
+                f"{have} of the {len(expected)} assets were recorded and saved "
+                "locally (below)."
+            )
+        else:
+            lines.append(
+                f"Information Radiator: not uploaded; {have} of the "
+                f"{len(expected)} assets were recorded and saved locally (below)."
+            )
+        missing = [pair for pair in expected if pair not in recorded]
+        if missing:
+            shown = ", ".join(f"{t}/{a}" for t, a in missing[:25])
+            more = f" and {len(missing) - 25} more" if len(missing) > 25 else ""
+            lines.append(
+                f"{len(missing)} assets in the suite have no result for the "
+                f"Information Radiator: {shown}{more}. Search this log for an "
+                "asset id to see why."
+            )
+        return lines
+
+
+def push(payload: RunPayload, client: RadiatorClient) -> bool:
+    """Replay a saved run into the radiator. Returns True on success."""
+    client.start_run(payload.run)
+    for result in payload.results:
+        client.add_result(result)
+    for result in payload.performance:
+        client.add_performance(result)
+    if payload.finish is not None:
+        # keep the original end time and counts, not the time of the replay
+        client.finish_run(finish=payload.finish)
+    else:
+        # the run never finished (eg the harness crashed); leave it open
+        client.flush()
+    return not client.upload_failed
+
+
+def cli(argv=None):
+    """Entrypoint for ``test-harness-radiator``."""
+    # where the radiator is: on each subcommand, so they go after it
+    common = ArgumentParser(add_help=False)
+    common.add_argument("--radiator_url", help="Defaults to $RADIATOR_URL")
+    common.add_argument("--radiator_token", help="Defaults to $RADIATOR_TOKEN")
+    parser = ArgumentParser(description="Information Radiator tools")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    push_parser = subparsers.add_parser(
+        "push",
+        parents=[common],
+        help="Upload a run saved by the harness (radiator_<run id>.json)",
+    )
+    push_parser.add_argument("files", nargs="+", help="Saved run payload(s)")
+    digest_parser = subparsers.add_parser(
+        "digest",
+        parents=[common],
+        help=(
+            "Post the weekly digest to Slack: every environment's latest runs "
+            "of each test, with flags (to RADIATOR_SLACK_*, or SLACK_* when "
+            "Zebrunner isn't configured)"
+        ),
+    )
+    digest_parser.add_argument(
+        "--days", type=int, default=7, help="How far back to look (default 7)"
+    )
+    digest_parser.add_argument(
+        "--output_dir",
+        default="test_results",
+        help="Where to save the digest if Slack isn't configured",
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("test-harness-radiator")
+    if not RadiatorClient.is_configured(args.radiator_url, args.radiator_token):
+        logger.error("Set RADIATOR_URL and RADIATOR_TOKEN (or pass the flags).")
+        sys.exit(1)
+
+    if args.command == "digest":
+        from test_harness.cycle import digest_cli
+
+        client = RadiatorClient(args.radiator_url, args.radiator_token, logger=logger)
+        sys.exit(digest_cli(client, args.days, args.output_dir, logger))
+
+    failed = 0
+    for path in args.files:
+        with open(path) as f:
+            payload = RunPayload.model_validate(json.load(f))
+        client = RadiatorClient(args.radiator_url, args.radiator_token, logger=logger)
+        if push(payload, client):
+            logger.info(f"Pushed {path} -> {client.run_url}")
+        else:
+            failed += 1
+    sys.exit(1 if failed else 0)

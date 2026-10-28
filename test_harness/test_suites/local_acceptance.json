@@ -1,0 +1,188 @@
+{
+  "id": "local_acceptance",
+  "name": "Local acceptance tests",
+  "description": "A small, hand-editable acceptance suite for local runs. Two test cases: one MVP1 (drug treats disease) and one MVP2 (chemical affects gene), so --query_type filtering has something to filter.",
+  "tags": [],
+  "test_runner_settings": [],
+  "test_metadata": {
+    "id": "local_acceptance",
+    "name": null,
+    "description": null,
+    "tags": [],
+    "test_runner_settings": [],
+    "test_source": "SMURF",
+    "test_reference": null,
+    "test_objective": "AcceptanceTest",
+    "test_annotations": []
+  },
+  "test_persona": null,
+  "test_suite_specification": null,
+  "test_cases": {
+    "TestCase_1": {
+      "id": "TestCase_1",
+      "name": "what treats MONDO:0004758",
+      "description": "MVP1: two assets against the same disease, one expected to be a top answer and one that should never show.",
+      "tags": [],
+      "test_runner_settings": ["inferred"],
+      "query_type": null,
+      "test_assets": [
+        {
+          "id": "Asset_1",
+          "name": "TopAnswer: prednisone treats scotoma",
+          "description": "TopAnswer: prednisone treats scotoma",
+          "tags": [],
+          "test_runner_settings": ["inferred"],
+          "input_id": "MONDO:0004758",
+          "input_name": "scotoma",
+          "input_category": "biolink:Disease",
+          "predicate_id": "biolink:treats",
+          "predicate_name": "treats",
+          "output_id": "PUBCHEM.COMPOUND:5865",
+          "output_name": "prednisone",
+          "output_category": "biolink:ChemicalEntity",
+          "association": null,
+          "qualifiers": [
+            {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+            {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+            {"parameter": "biolink_object_direction_qualifier", "value": ""}
+          ],
+          "expected_output": "TopAnswer",
+          "test_issue": null,
+          "semantic_severity": null,
+          "in_v1": null,
+          "well_known": false,
+          "test_reference": null,
+          "test_metadata": {
+            "id": "1",
+            "name": null,
+            "description": null,
+            "tags": [],
+            "test_runner_settings": [],
+            "test_source": "SMURF",
+            "test_reference": null,
+            "test_objective": "AcceptanceTest",
+            "test_annotations": []
+          }
+        },
+        {
+          "id": "Asset_2",
+          "name": "NeverShow: vigabatrin treats scotoma",
+          "description": "NeverShow: vigabatrin treats scotoma",
+          "tags": [],
+          "test_runner_settings": ["inferred"],
+          "input_id": "MONDO:0004758",
+          "input_name": "scotoma",
+          "input_category": "biolink:Disease",
+          "predicate_id": "biolink:treats",
+          "predicate_name": "treats",
+          "output_id": "PUBCHEM.COMPOUND:5665",
+          "output_name": "vigabatrin",
+          "output_category": "biolink:ChemicalEntity",
+          "association": null,
+          "qualifiers": [
+            {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+            {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+            {"parameter": "biolink_object_direction_qualifier", "value": ""}
+          ],
+          "expected_output": "NeverShow",
+          "test_issue": null,
+          "semantic_severity": null,
+          "in_v1": null,
+          "well_known": false,
+          "test_reference": null,
+          "test_metadata": {
+            "id": "1",
+            "name": null,
+            "description": null,
+            "tags": [],
+            "test_runner_settings": [],
+            "test_source": "SMURF",
+            "test_reference": null,
+            "test_objective": "AcceptanceTest",
+            "test_annotations": []
+          }
+        }
+      ],
+      "preconditions": [],
+      "trapi_template": null,
+      "test_case_objective": "AcceptanceTest",
+      "test_case_source": null,
+      "test_case_predicate_name": "treats",
+      "test_case_predicate_id": "biolink:treats",
+      "test_case_input_id": "MONDO:0004758",
+      "qualifiers": [
+        {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+        {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+        {"parameter": "biolink_object_direction_qualifier", "value": ""}
+      ],
+      "input_category": "biolink:Disease",
+      "output_category": "biolink:ChemicalEntity",
+      "components": ["ars"],
+      "test_env": "ci"
+    },
+    "TestCase_2": {
+      "id": "TestCase_2",
+      "name": "what affects NCBIGene:8972",
+      "description": "MVP2: a chemical that decreases the activity or abundance of a gene.",
+      "tags": [],
+      "test_runner_settings": ["inferred"],
+      "query_type": null,
+      "test_assets": [
+        {
+          "id": "Asset_3",
+          "name": "TopAnswer: Acarbose decreases activity or abundance of MGAM (human)",
+          "description": "TopAnswer: Acarbose decreases activity or abundance of MGAM (human)",
+          "tags": [],
+          "test_runner_settings": ["inferred"],
+          "input_id": "NCBIGene:8972",
+          "input_name": "MGAM (human)",
+          "input_category": "biolink:Gene",
+          "predicate_id": "biolink:affects",
+          "predicate_name": "affects",
+          "output_id": "PUBCHEM.COMPOUND:41774",
+          "output_name": "Acarbose",
+          "output_category": "biolink:ChemicalEntity",
+          "association": null,
+          "qualifiers": [
+            {"parameter": "biolink_qualified_predicate", "value": "biolink:causes"},
+            {"parameter": "biolink_object_aspect_qualifier", "value": "activity_or_abundance"},
+            {"parameter": "biolink_object_direction_qualifier", "value": "decreased"}
+          ],
+          "expected_output": "TopAnswer",
+          "test_issue": null,
+          "semantic_severity": null,
+          "in_v1": null,
+          "well_known": false,
+          "test_reference": null,
+          "test_metadata": {
+            "id": "1",
+            "name": null,
+            "description": null,
+            "tags": [],
+            "test_runner_settings": [],
+            "test_source": "SMURF",
+            "test_reference": null,
+            "test_objective": "AcceptanceTest",
+            "test_annotations": []
+          }
+        }
+      ],
+      "preconditions": [],
+      "trapi_template": null,
+      "test_case_objective": "AcceptanceTest",
+      "test_case_source": null,
+      "test_case_predicate_name": "affects",
+      "test_case_predicate_id": "biolink:affects",
+      "test_case_input_id": "NCBIGene:8972",
+      "qualifiers": [
+        {"parameter": "biolink_qualified_predicate", "value": "biolink:causes"},
+        {"parameter": "biolink_object_aspect_qualifier", "value": "activity_or_abundance"},
+        {"parameter": "biolink_object_direction_qualifier", "value": "decreased"}
+      ],
+      "input_category": "biolink:Gene",
+      "output_category": "biolink:ChemicalEntity",
+      "components": ["ars"],
+      "test_env": "ci"
+    }
+  }
+}

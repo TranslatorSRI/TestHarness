@@ -1,0 +1,88 @@
+{
+  "id": "local_performance",
+  "name": "Local performance tests",
+  "description": "A hand-editable performance suite for local runs. Performance tests are run by HelmsDeep, which owns the ramp and the corpus - see the notes in test_suites/README.md before editing.",
+  "tags": [],
+  "test_runner_settings": [],
+  "test_metadata": {
+    "id": "local_performance",
+    "name": null,
+    "description": null,
+    "tags": [],
+    "test_runner_settings": [],
+    "test_source": null,
+    "test_reference": null,
+    "test_objective": "QuantitativeTest",
+    "test_annotations": []
+  },
+  "test_persona": null,
+  "test_suite_specification": null,
+  "test_cases": {
+    "TestCase_1": {
+      "id": "TestCase_1",
+      "name": "Performance: ARS, single-class inferred corpus",
+      "description": "Runs HelmsDeep's 'ars' target: the async submit/poll/merge ramp over its own inferred corpus, reporting the knee. Add \"mixed\" to test_runner_settings to run the checkpointed acceptance profile instead, or \"pathfinder\" for the path-finding corpus.",
+      "tags": [],
+      "test_runner_settings": ["inferred"],
+      "query_type": null,
+      "test_run_time": 1200,
+      "spawn_rate": 0.1,
+      "test_assets": [
+        {
+          "id": "Asset_1",
+          "name": "Performance: Ehlers-Danlos Syndrome",
+          "description": "Performance: Ehlers-Danlos Syndrome",
+          "tags": [],
+          "test_runner_settings": ["inferred"],
+          "input_id": "MONDO:0017314",
+          "input_name": "Ehlers-Danlos Syndrome",
+          "input_category": "biolink:Disease",
+          "predicate_id": "biolink:treats",
+          "predicate_name": "treats",
+          "output_id": null,
+          "output_name": null,
+          "output_category": null,
+          "association": null,
+          "qualifiers": [
+            {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+            {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+            {"parameter": "biolink_object_direction_qualifier", "value": ""}
+          ],
+          "expected_output": "Performance",
+          "test_issue": null,
+          "semantic_severity": null,
+          "in_v1": null,
+          "well_known": false,
+          "test_reference": null,
+          "test_metadata": {
+            "id": "1",
+            "name": null,
+            "description": null,
+            "tags": [],
+            "test_runner_settings": [],
+            "test_source": null,
+            "test_reference": null,
+            "test_objective": "QuantitativeTest",
+            "test_annotations": []
+          }
+        }
+      ],
+      "preconditions": [],
+      "trapi_template": null,
+      "test_case_objective": "QuantitativeTest",
+      "test_case_source": null,
+      "test_case_predicate_name": "treats",
+      "test_case_predicate_id": "biolink:treats",
+      "test_case_input_id": "MONDO:0017314",
+      "qualifiers": [
+        {"parameter": "biolink_qualified_predicate", "value": "biolink:treats"},
+        {"parameter": "biolink_object_aspect_qualifier", "value": ""},
+        {"parameter": "biolink_object_direction_qualifier", "value": ""}
+      ],
+      "input_category": "biolink:Disease",
+      "output_category": null,
+      "components": ["ars"],
+      "test_env": "ci"
+    }
+  }
+}

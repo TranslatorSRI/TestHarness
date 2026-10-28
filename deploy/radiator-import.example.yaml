@@ -1,0 +1,43 @@
+# The Helm charts in deploy/helm/ are the maintained way to deploy; these plain
+# manifests are kept as a reference for clusters without Helm.
+#
+# One-off Job: import past runs from Zebrunner into the Information Radiator.
+# Run it once the radiator is up; it's safe to re-run (already-imported runs
+# are skipped). Try `--dry-run` and `--limit 5` first to check what comes
+# across.
+#
+# Zebrunner never recorded the environment, so each run's is looked up from its
+# pks on each environment's ARS (see --ars, --no-env-lookup); --env records
+# every run under one environment instead.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: radiator-zebrunner-import
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: import
+          image: ghcr.io/translatorsri/testharness-radiator:latest
+          command: ["python", "-m", "radiator.zebrunner_import"]
+          args:
+            - --zebrunner-url=$(ZE_BASE_URL)
+            - --refresh-token=$(ZE_REFRESH_TOKEN)
+            - --radiator-url=http://radiator
+            - --radiator-token=$(RADIATOR_TOKEN)
+            # - --project-id=1   # newer Zebrunners (the v1 API) need it
+            # without --env, each run's environment is looked up from its pks
+            # on each environment's ARS
+            - --since=2026-09-15
+          env:
+            - name: ZE_BASE_URL
+              valueFrom: {secretKeyRef: {name: test-harness-secrets, key: ze-base-url}}
+            - name: ZE_REFRESH_TOKEN
+              valueFrom: {secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}}
+            - name: RADIATOR_TOKEN
+              valueFrom: {secretKeyRef: {name: radiator-secrets, key: api-token}}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}

@@ -1,0 +1,2 @@
+# copies of values.example.yaml stay out of the chart package
+values.*.yaml

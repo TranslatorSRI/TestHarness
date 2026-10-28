@@ -1,0 +1,54 @@
+# Example values for the radiator chart. Copy to values.<name>.yaml next to
+# this file (those are git-ignored), fill it in, and install with
+#
+#   helm upgrade --install radiator deploy/helm/radiator \
+#     -n translator -f deploy/helm/radiator/values.<name>.yaml
+#
+# Your copy holds the passwords and tokens, so it must never be committed
+# (values.*.yaml is git-ignored; values.example.yaml is the only one tracked).
+
+image:
+  # Pin a release rather than latest, eg the tag the release workflow pushed.
+  tag: latest
+
+# Generate each with eg `openssl rand -base64 32`. The harness's
+# secrets.radiatorToken must be the same as apiToken.
+secrets:
+  # Empty: the chart's own Postgres (postgres.enabled, below). Otherwise
+  # postgresql+psycopg://USER:PASSWORD@HOST:5432/DB.
+  databaseUrl: ""
+  apiToken: CHANGE-ME
+  # The one shared login for the consortium.
+  username: translator
+  password: CHANGE-ME
+  # Signs the login cookie; changing it logs everyone out.
+  sessionSecret: CHANGE-ME
+
+ingress:
+  enabled: true
+  className: nginx
+  # Needs a DNS record pointing at the ingress controller's address (`kubectl
+  # get ingress` shows it); ask whoever runs the domain's DNS.
+  host: radiator.example.org
+  # With cert-manager (below), this is the Secret it creates; without, it must
+  # already exist, or nginx serves a fake certificate that browsers refuse.
+  tlsSecretName: radiator-tls
+  annotations:
+    # The cluster's ClusterIssuer (`kubectl get clusterissuer`); merged with
+    # the chart's default annotations.
+    cert-manager.io/cluster-issuer: letsencrypt
+
+# Only if the namespace has no database to use.
+postgres:
+  enabled: true
+  # Set once: Postgres only reads it when its volume is first created.
+  password: CHANGE-ME
+  storage: 10Gi
+  # storageClassName: standard
+
+# To bring over Zebrunner's history once the radiator is up:
+# zebrunnerImport:
+#   enabled: true
+#   baseUrl: https://zebrunner.example.org
+#   refreshToken: CHANGE-ME
+#   args: ["--since", "2026-09-15", "--dry-run"]

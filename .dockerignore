@@ -1,0 +1,15 @@
+# Both images build from the repo root (see compose.yml). Keep secrets and
+# local clutter out of them: `COPY . .` in the harness's Dockerfile would
+# otherwise bake a local .env (Slack/Zebrunner/radiator tokens) into the image.
+.env
+.env.*
+!.env.example
+deploy/helm/*/values.*.yaml
+.git
+.github
+.pytest_cache
+.vscode
+**/__pycache__
+*.egg-info
+logs/
+test_results/

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Run cycle · {{ cycle.env }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumbs"><a href="/weekly">Weekly</a> / run cycle</div>
+  <h1>{{ (cycle.env or 'mixed environments')|upper }} run cycle · {{ cycle.started_at.strftime('%a %b %-d') }}</h1>
+  <div class="meta">
+    <span>Started {{ when(cycle.started_at) }}{% if cycle.ended_at %}, finished {{ when(cycle.ended_at) }}{% else %}, still running{% endif %}</span>
+    <span>Each test against its previous run in {{ cycle.env or 'its environment' }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table class="data board">
+    <thead><tr>
+      <th>Test</th><th class="num">Result</th><th>Change</th><th>Last {{ history_runs }} runs</th><th>Verdict</th><th class="num">Flags</th>
+    </tr></thead>
+    <tbody>
+    {% for row in cycle.rows %}
+      <tr>
+        <td><a href="/runs/{{ row.run.id }}"><b>{{ row.label }}</b></a><div class="sub">{{ row.run.suite }} · #{{ row.run.number }}</div></td>
+        <td class="num"><span class="big">{{ row.value_text }}</span><div class="sub">{{ row.unit }}</div></td>
+        <td><b>{{ row.change_text }}</b><div class="sub">{{ row.detail_text }}{% if row.previous_run and row.perf is none %} · <a href="/runs/{{ row.run.id }}/diff">what changed</a>{% endif %}</div></td>
+        <td>{{ sparkline(row.history, pct=row.perf is none) }}</td>
+        <td>{{ verdict_chip(row.verdict) }}</td>
+        <td class="num">{% if row.flags %}⚑ {{ row.flags|length }}{% else %}<span class="muted">–</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">No results in this cycle yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="sub">Regressions and fixes count agent results that went from passing to not passing, or back.</p>
+</div>
+
+{% if cycle.flags %}
+<div class="card">
+  <h2>Flags</h2>
+  <p class="sub">Oddities against the previous run: results gone, new errors, slower responses, the expected answer ranked much lower while still passing, and performance drops.</p>
+  <ul class="flags">{% for flag in cycle.flags %}<li><a href="/runs/{{ flag.run_id }}">{{ flag.text }}</a></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% for row in cycle.rows if row.changes %}
+<div class="card">
+  <h2>{{ row.label }}: regressions and fixes by agent</h2>
+  <p class="sub"><a href="/runs/{{ row.run.id }}/diff">Everything that changed</a>, including rank moves and skips</p>
+  <table class="data">
+    <thead><tr><th>Agent</th><th>Regressions</th><th>Fixed</th></tr></thead>
+    <tbody>
+    {% for c in row.changes %}
+      <tr>
+        <td class="nowrap">{{ m.agent_head(c.agent) }}</td>
+        <td>{% for a in c.regressions %}<a href="/assets/{{ a.test_case_id }}/{{ a.asset_id }}?env={{ row.run.env or NO_ENV }}">{{ a.label }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">–</span>{% endfor %}</td>
+        <td>{% for a in c.fixed %}<a href="/assets/{{ a.test_case_id }}/{{ a.asset_id }}?env={{ row.run.env or NO_ENV }}">{{ a.label }}</a>{{ ', ' if not loop.last }}{% else %}<span class="muted">–</span>{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+{% endblock %}

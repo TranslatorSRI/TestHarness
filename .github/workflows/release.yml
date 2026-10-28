@@ -23,3 +23,13 @@ jobs:
                   password: ${{ secrets.GITHUB_TOKEN }}
                   registry: ghcr.io
                   tags: latest,${{ steps.get_version.outputs.VERSION }}
+            - name: Push the Information Radiator to GitHub Packages
+              uses: docker/build-push-action@v1
+              with:
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+                  registry: ghcr.io
+                  repository: translatorsri/testharness-radiator
+                  dockerfile: radiator/Dockerfile
+                  path: .
+                  tags: latest,${{ steps.get_version.outputs.VERSION }}

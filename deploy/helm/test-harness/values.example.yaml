@@ -1,0 +1,83 @@
+# Example values for the test-harness chart. Copy to values.<name>.yaml next
+# to this file (those are git-ignored), fill it in, and install with
+#
+#   helm upgrade --install test-harness deploy/helm/test-harness \
+#     -n translator -f deploy/helm/test-harness/values.<name>.yaml
+#
+# Your copy holds the tokens, so it must never be committed (values.*.yaml is
+# git-ignored; values.example.yaml is the only one tracked).
+
+image:
+  # Pin a release rather than latest, eg the tag the release workflow pushed.
+  tag: latest
+
+secrets:
+  # The radiator chart's secrets.apiToken.
+  radiatorToken: CHANGE-ME
+  # Slack: the incoming webhook, the bot token and the channel ID (not its
+  # #name). Leave all three empty to save reports to files instead.
+  slackWebhookUrl: https://hooks.slack.com/services/your-webhook-path
+  slackToken: xoxb-your-bot-token
+  slackChannel: C0123ABCD
+  # Alongside Zebrunner: the new radiator's own channel (the report with the
+  # Zebrunner link stays in slackChannel). Same bot unless radiatorSlackToken
+  # is set; invite it to both channels.
+  # radiatorSlackWebhookUrl: https://hooks.slack.com/services/another-webhook-path
+  # radiatorSlackChannel: C0456EFGH
+  # Zebrunner, until the radiator takes over:
+  # zeBaseUrl: https://zebrunner.example.org
+  # zeRefreshToken: CHANGE-ME
+
+radiator:
+  # The radiator chart's service, in the same namespace.
+  url: http://radiator
+  publicUrl: https://radiator.example.org
+
+tests:
+  download: true
+  # testsUrl: https://github.com/NCATSTranslator/Tests/archive/refs/heads/main.zip
+
+harnessArgs: ["--log_level", "INFO"]
+# queryParameters: '{"timeout": 300}'
+
+# One environment a day, Monday to Thursday, so a regression shows up in dev
+# before it reaches prod; Friday is free for re-runs. The environment comes
+# from the test cases, so each environment names the suites written for it.
+cycles:
+  enabled: true
+  defaults:
+    pathfinder: pathfinder_tests
+    performance: performance_tests
+    performanceProfile: mixed
+  environments:
+    - name: dev
+      schedule: "52 1 * * 1"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.dev.transltr.io"]
+    - name: ci
+      schedule: "52 1 * * 2"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.ci.transltr.io"]
+    - name: test
+      schedule: "52 1 * * 3"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.test.transltr.io"]
+    - name: prod
+      schedule: "52 1 * * 4"
+      acceptance: sprint_4_tests
+      performanceTargets: ["ars=https://ars.transltr.io"]
+      # eg to skip the load test on prod:
+      # performance: ""
+
+digest:
+  enabled: true
+  schedule: "52 8 * * 1"
+
+# The ARAs on ci, every Sunday, outside the cycles.
+sweep:
+  enabled: false
+  schedule: "0 2 * * 0"
+  targets:
+    - aragorn=https://aragorn.ci.transltr.io
+    - arax=https://arax.ci.transltr.io
+    - bte=https://bte.ci.transltr.io
