@@ -12,7 +12,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
 
 from test_harness.runner.generate_query import generate_query
 from test_harness.runner.smart_api_registry import retrieve_registry_from_smartapi
-from test_harness.trapi import DEFAULT_TRAPI_VERSION, trapi_minor_version
+from test_harness.trapi import (
+    DEFAULT_TRAPI_VERSION,
+    environment_query_parameters,
+    trapi_minor_version,
+)
 from test_harness.utils import hash_test_asset, normalize_curies
 
 MAX_QUERY_TIME = 600
@@ -331,6 +335,9 @@ class QueryRunner:
         normalized_curies = normalize_curies(test_case, self.logger)
         # TODO: figure out the right way to handle input category wrt normalization
 
+        query_parameters = environment_query_parameters(
+            self.query_parameters, test_case.test_env
+        )
         queries: Dict[int, dict] = {}
         for test_asset in test_case.test_assets:
             if isinstance(test_case, PathfinderTestCase):
@@ -348,7 +355,7 @@ class QueryRunner:
                 # generate query
                 try:
                     query = generate_query(
-                        test_asset, self.trapi_version, self.query_parameters
+                        test_asset, self.trapi_version, query_parameters
                     )
                     queries[asset_hash] = {
                         "query": query,

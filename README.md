@@ -262,6 +262,10 @@ or keep them in a file and pass `--query_parameters @params.json`. The
 `QUERY_PARAMETERS` environment variable does the same, which is handier in
 `.env` for Docker Compose or in a CronJob; the flag wins if both are set.
 
+Tests run against the CI environment always send `"bypass_cache": true`, so
+a CI run tests what is deployed rather than what an earlier run cached. Pass
+`'{"bypass_cache": false}'` to use the caches there anyway.
+
 Where they go depends on the TRAPI version:
 - **TRAPI 2.0**: in the query's `parameters` object. The
   standard ones are `timeout` (seconds), `log_level` (`ERROR`, `WARNING`,

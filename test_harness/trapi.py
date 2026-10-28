@@ -73,6 +73,9 @@ def binding_ids(binding: Any) -> List[str]:
 
 # --- query parameters ----------------------------------------------------------
 
+# The environments whose queries always bypass the services' caches.
+CI_ENVS = ("ci",)
+
 
 def parse_query_parameters(text: Optional[str]) -> Optional[Dict[str, Any]]:
     """Read query parameters given on the command line or in the environment.
@@ -92,6 +95,28 @@ def parse_query_parameters(text: Optional[str]) -> Optional[Dict[str, Any]]:
         raise ValueError(f"Query parameters aren't valid JSON: {e}") from None
     if not isinstance(params, dict):
         raise ValueError('Query parameters must be a JSON object, eg {"timeout": 300}')
+    return params
+
+
+def environment_query_parameters(
+    params: Optional[Dict[str, Any]], test_env: Any
+) -> Optional[Dict[str, Any]]:
+    """Add the parameters an environment's queries always carry.
+
+    Queries to CI bypass the services' caches, so a run there tests what is
+    deployed rather than what an earlier run left behind. A ``bypass_cache``
+    given explicitly (eg ``{"bypass_cache": false}``) wins.
+
+    Examples:
+        >>> environment_query_parameters(None, "ci")
+        {'bypass_cache': True}
+        >>> environment_query_parameters({"bypass_cache": False}, "ci")
+        {'bypass_cache': False}
+        >>> environment_query_parameters({"timeout": 300}, "prod")
+        {'timeout': 300}
+    """
+    if test_env in CI_ENVS and "bypass_cache" not in (params or {}):
+        return {**(params or {}), "bypass_cache": True}
     return params
 
 
