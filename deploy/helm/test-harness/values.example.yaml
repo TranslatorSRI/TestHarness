@@ -41,30 +41,27 @@ harnessArgs: ["--log_level", "INFO"]
 # queryParameters: '{"timeout": 300}'
 
 # One environment a day, Monday to Thursday, so a regression shows up in dev
-# before it reaches prod; Friday is free for re-runs. The environment comes
-# from the test cases, so each environment names the suites written for it.
+# before it reaches prod; Friday is free for re-runs. Every environment runs
+# the same suites; an entry's name is the environment it tests.
 cycles:
   enabled: true
   defaults:
+    acceptance: mvp_tests
     pathfinder: pathfinder_tests
     performance: performance_tests
     performanceProfile: mixed
   environments:
     - name: dev
       schedule: "52 1 * * 1"
-      acceptance: sprint_4_tests
       performanceTargets: ["ars=https://ars.dev.transltr.io"]
     - name: ci
       schedule: "52 1 * * 2"
-      acceptance: sprint_4_tests
       performanceTargets: ["ars=https://ars.ci.transltr.io"]
     - name: test
       schedule: "52 1 * * 3"
-      acceptance: sprint_4_tests
       performanceTargets: ["ars=https://ars.test.transltr.io"]
     - name: prod
       schedule: "52 1 * * 4"
-      acceptance: sprint_4_tests
       performanceTargets: ["ars=https://ars.transltr.io"]
       # eg to skip the load test on prod:
       # performance: ""
@@ -77,6 +74,7 @@ digest:
 sweep:
   enabled: false
   schedule: "0 2 * * 0"
+  env: ci
   targets:
     - aragorn=https://aragorn.ci.transltr.io
     - arax=https://arax.ci.transltr.io

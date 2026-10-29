@@ -52,6 +52,9 @@ class Run(Base):
         Integer, RUN_NUMBER_SEQ, server_default=RUN_NUMBER_SEQ.next_value(), unique=True
     )
     suite: Mapped[str] = mapped_column(String(255))
+    # the suite's old name, when the run was recorded under one (see
+    # radiator.suites)
+    source_suite: Mapped[Optional[str]] = mapped_column(String(255))
     env: Mapped[Optional[str]] = mapped_column(String(32))
     target: Mapped[Optional[str]] = mapped_column(String(255))
     target_url: Mapped[Optional[str]] = mapped_column(Text)
@@ -110,7 +113,7 @@ class AssetResult(Base):
     expected_output: Mapped[Optional[str]] = mapped_column(String(64))
     predicate: Mapped[Optional[str]] = mapped_column(String(255))
     input_curie: Mapped[Optional[str]] = mapped_column(String(255))
-    output_curie: Mapped[Optional[str]] = mapped_column(String(255))
+    output_curies: Mapped[list[str]] = mapped_column(JsonType, default=list)
     status: Mapped[str] = mapped_column(String(32))
     parent_pk: Mapped[Optional[str]] = mapped_column(String(255))
     details: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
@@ -142,6 +145,7 @@ class AgentResult(Base):
     message: Mapped[Optional[str]] = mapped_column(Text)
     http_status: Mapped[Optional[int]] = mapped_column(Integer)
     found: Mapped[Optional[bool]] = mapped_column(Boolean)
+    found_curies: Mapped[Optional[list[str]]] = mapped_column(JsonType)
     rank: Mapped[Optional[int]] = mapped_column(Integer)
     score: Mapped[Optional[float]] = mapped_column(Float)
     n_results: Mapped[Optional[int]] = mapped_column(Integer)

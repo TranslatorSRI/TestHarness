@@ -9,8 +9,8 @@ cycle posts the Information Radiator's board for the whole cycle: each test
 against its previous run in this environment, the regressions and fixes by
 agent, and flags for anything odd.
 
-    test-harness-cycle --download \\
-        --acceptance sprint_4_tests --pathfinder pathfinder_tests \\
+    test-harness-cycle --env ci --download \\
+        --acceptance mvp_tests --pathfinder pathfinder_tests \\
         --performance performance_tests \\
         --performance_target ars=https://ars.ci.transltr.io \\
         --performance_profile mixed \\
@@ -43,10 +43,12 @@ from test_harness.sweep import (
     SUBCOMMAND_FLAGS,
     TARGETS_ENV,
     _banner,
+    _passes_env,
     build_command,
     parse_targets,
     split_passthrough,
 )
+from test_harness.utils import TEST_ENVS
 
 FLAG = "⚑"
 
@@ -338,7 +340,7 @@ def cli(argv: Sequence[str] = None) -> int:
         epilog=(
             "Anything after a `--` separator is passed to every harness "
             "invocation, e.g.:\n\n"
-            "  test-harness-cycle --download --acceptance sprint_4_tests \\\n"
+            "  test-harness-cycle --env ci --download --acceptance mvp_tests \\\n"
             "      --pathfinder pathfinder_tests --performance performance_tests \\\n"
             "      --performance_target ars=https://ars.ci.transltr.io \\\n"
             "      --performance_profile mixed -- --log_level INFO\n"
@@ -361,6 +363,12 @@ def cli(argv: Sequence[str] = None) -> int:
     parser.add_argument(
         "--performance_profile",
         help="HelmsDeep's query profile for the performance step, e.g. mixed.",
+    )
+    parser.add_argument(
+        "--env",
+        required=True,
+        choices=TEST_ENVS,
+        help="The environment the cycle tests; passed to every step.",
     )
     parser.add_argument(
         "--download",
@@ -389,6 +397,8 @@ def cli(argv: Sequence[str] = None) -> int:
         )
     if "--cycle_id" in harness_args:
         parser.error("The cycle sets --cycle_id itself.")
+    if _passes_env(harness_args):
+        parser.error("Pass --env to the cycle, before the `--`.")
     if not (args.acceptance or args.pathfinder or args.performance):
         parser.error(
             "Nothing to run: pass --acceptance, --pathfinder or --performance."
@@ -416,7 +426,7 @@ def cli(argv: Sequence[str] = None) -> int:
         performance_targets=targets,
         performance_profile=args.performance_profile,
         output_dir=args.output_dir,
-        harness_args=harness_args,
+        harness_args=["--env", args.env, *harness_args],
         download=args.download,
         tests_url=args.tests_url,
         tests_dir=args.tests_dir,

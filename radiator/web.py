@@ -377,7 +377,13 @@ def run_page(
             in " ".join(
                 filter(
                     None,
-                    [a.name, a.asset_id, a.test_case_id, a.input_curie, a.output_curie],
+                    [
+                        a.name,
+                        a.asset_id,
+                        a.test_case_id,
+                        a.input_curie,
+                        *(a.output_curies or []),
+                    ],
                 )
             ).lower()
         ]

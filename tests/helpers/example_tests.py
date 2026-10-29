@@ -24,7 +24,6 @@ example_test_cases = TestSuite.model_validate(
                 "name": "what treats MONDO:0010794",
                 "description": "Valproic_Acid_treats_NARP_Syndrome; Barbiturates_treats_NARP_Syndrome",
                 "tags": [],
-                "test_env": "ci",
                 "query_type": None,
                 "test_assets": [
                     {
@@ -37,7 +36,7 @@ example_test_cases = TestSuite.model_validate(
                         "input_category": "biolink:Disease",
                         "predicate_id": "biolink:treats",
                         "predicate_name": "treats",
-                        "output_id": "DRUGBANK:DB00313",
+                        "output_ids": ["DRUGBANK:DB00313"],
                         "output_name": "Valproic Acid",
                         "output_category": None,
                         "association": None,
@@ -70,7 +69,7 @@ example_test_cases = TestSuite.model_validate(
                         "input_category": "biolink:Disease",
                         "predicate_id": "biolink:treats",
                         "predicate_name": "treats",
-                        "output_id": "MESH:D001463",
+                        "output_ids": ["MESH:D001463"],
                         "output_name": "Barbiturates",
                         "output_category": None,
                         "association": None,
@@ -140,7 +139,6 @@ example_test_cases = TestSuite.model_validate(
                 ],
                 "test_case_objective": "AcceptanceTest",
                 "components": ["ars"],
-                "test_env": "ci",
             },
         },
     }

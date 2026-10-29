@@ -1,13 +1,13 @@
 # Local test suites
 
 Editable test suites for running the harness without downloading anything.
-`test-harness load <suite>` reads `<suite>.json` from here; `<suite>` is the
+`test-harness --env ci load <suite>` reads `<suite>.json` from here; `<suite>` is the
 file name without the extension.
 
 ```bash
-test-harness --local load local_acceptance
-test-harness --local load local_performance
-test-harness --local load local_pathfinder
+test-harness --env ci --local load local_acceptance
+test-harness --env ci --local load local_performance
+test-harness --env ci --local load local_pathfinder
 ```
 
 These are ordinary [Translator Testing Model](https://github.com/TranslatorSRI/translator-testing-model)
@@ -22,7 +22,7 @@ editing in your own checkout is found without a flag. Otherwise this directory
 (shipped with the package) is used. `--tests_dir` overrides both:
 
 ```bash
-test-harness --local load my_suite --tests_dir ~/scratch/suites
+test-harness --env ci --local load my_suite --tests_dir ~/scratch/suites
 ```
 
 ## What's here
@@ -37,11 +37,16 @@ test-harness --local load my_suite --tests_dir ~/scratch/suites
 
 The fields that usually matter:
 
-- **`test_env`** (`dev`/`ci`/`test`/`prod`) and **`components`** decide which
-  deployed service the queries go to. `--target_url` / `--target` override both.
-- **`input_id`** / **`output_id`** are the CURIEs under test. They must be ones
+- **`components`** decides which deployed service the queries go to, in the
+  environment given with `--env`. `--target_url` / `--target` override it.
+  Suites don't name an environment: the same suite runs in every one.
+- **`input_id`** / **`output_ids`** are the CURIEs under test. They must be ones
   the target environment actually knows about, or you'll get empty results that
-  look like failures.
+  look like failures. `output_ids` is a list: give more than one CURIE when the
+  expected answer can come back under any of them (eg a chemical's ChEBI and
+  PubChem ids, if node normalization keeps them apart). A TopAnswer or
+  Acceptable asset passes if any of them does; a BadButForgivable or NeverShow
+  asset fails if any of them does.
 - **`expected_output`** (`TopAnswer`, `Acceptable`, `BadButForgivable`,
   `NeverShow`) is what the asset is asserting, and drives pass/fail. Assets with
   any other value are skipped, so a typo here silently drops the asset.
@@ -71,7 +76,7 @@ inert:
 So to run the checkpointed profile against a local ARA:
 
 ```bash
-test-harness --local --performance_profile mixed \
+test-harness --env ci --local --performance_profile mixed \
     --target_url http://localhost:8080 --target aragorn \
     load local_performance
 ```

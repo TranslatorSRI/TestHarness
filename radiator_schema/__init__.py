@@ -25,9 +25,11 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = 1
+# 2: AssetResult.output_curie became the list output_curies, and AgentResult
+# gained found_curies. Version 1 records are still accepted (see AssetResult).
+SCHEMA_VERSION = 2
 
 # Every write the harness makes goes under this prefix, authenticated with a
 # bearer token. The rest of the radiator sits behind the consortium login.
@@ -97,6 +99,10 @@ class AgentResult(BaseModel):
     # and the rank/score it came back with (ARS sugeno for the ARS, the ARA's
     # own analysis score for an ARA).
     found: Optional[bool] = None
+    # Which of the asset's output_curies came back, best ranked first; rank and
+    # score are those of the first. More than one means Translator returned
+    # the expected answer split across several of its identifiers.
+    found_curies: Optional[List[str]] = None
     rank: Optional[int] = None
     score: Optional[float] = None
     n_results: Optional[int] = None
@@ -118,9 +124,10 @@ class AssetResult(BaseModel):
     name: Optional[str] = None
     expected_output: Optional[str] = None
     predicate: Optional[str] = None
-    # acceptance: input -> output; pathfinder: source -> target
+    # acceptance: input -> output; pathfinder: source -> target. An acceptance
+    # asset's expected output can go by several CURIEs, any of which counts.
     input_curie: Optional[str] = None
-    output_curie: Optional[str] = None
+    output_curies: List[str] = Field(default_factory=list)
     # The overall status, driven by the ARS (or the override target).
     status: Status
     parent_pk: Optional[str] = None
@@ -128,6 +135,19 @@ class AssetResult(BaseModel):
     # Anything type-specific that doesn't merit a column yet, eg Pathfinder's
     # expected path nodes.
     details: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_v1(cls, data: Any) -> Any:
+        """Read a version 1 record, whose single CURIE was ``output_curie``.
+
+        Runs saved before version 2 can still be pushed.
+        """
+        if isinstance(data, dict) and "output_curie" in data:
+            data = dict(data)
+            curie = data.pop("output_curie")
+            data.setdefault("output_curies", [curie] if curie else [])
+        return data
 
 
 class PerformanceResult(BaseModel):

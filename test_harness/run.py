@@ -34,6 +34,7 @@ from test_harness.utils import (
     AgentStatus,
     TestReport,
     hash_test_asset,
+    normalized_output_ids,
 )
 
 
@@ -72,6 +73,7 @@ def run_tests(
     trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
     query_runner = QueryRunner(
         logger,
+        args["env"],
         target_url=target_url,
         target=target,
         trapi_version=trapi_version,
@@ -224,11 +226,7 @@ def run_tests(
                                     report.result,
                                     agent,
                                     response["response"]["message"]["results"],
-                                    (
-                                        normalized_curies.get(asset.output_id, "")
-                                        if asset.output_id is not None
-                                        else ""
-                                    ),
+                                    normalized_output_ids(asset, normalized_curies),
                                     asset.expected_output,
                                 )
                         except Exception as e:
@@ -364,7 +362,7 @@ def run_tests(
                         host = query_runner.target_url
                         perf_target = status_agent
                     else:
-                        host = query_runner.registry[env_map[test.test_env]][
+                        host = query_runner.registry[env_map[query_runner.env]][
                             test.components[0]
                         ][0]["url"]
                         perf_target = None

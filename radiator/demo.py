@@ -80,7 +80,7 @@ def build_assets():
                 expected_output=expectations[i % 5],
                 predicate="biolink:treats",
                 input_curie=mondo,
-                output_curie=chem,
+                output_curies=[chem],
                 difficulty=random.random(),
             )
         )
@@ -93,7 +93,7 @@ def build_assets():
                 expected_output="TopAnswer" if j % 3 else "Acceptable",
                 predicate="biolink:affects",
                 input_curie=ncbi,
-                output_curie=chem,
+                output_curies=[chem],
                 difficulty=random.random(),
             )
         )
@@ -106,7 +106,7 @@ def build_assets():
                 expected_output="NeverShow",
                 predicate="biolink:treats",
                 input_curie=mondo,
-                output_curie=chem,
+                output_curies=[chem],
                 difficulty=0.2,
             )
         )
@@ -231,7 +231,7 @@ def build_paths():
             name=f"{drug} to {disease}",
             expected_output=None,
             input_curie=chem,
-            output_curie=mondo,
+            output_curies=[mondo],
             difficulty=random.random() * 0.8,
         )
         for i, (drug, disease, chem, mondo) in enumerate(PATHS)

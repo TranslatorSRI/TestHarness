@@ -93,13 +93,13 @@ if ! $dry_run && ! $force; then
   fi
 fi
 
-# The cycle's arguments with every other step left out: the suite source and
-# output flags, this step's flag (with, for performance, its targets and
+# The cycle's arguments with every other step left out: the environment, the
+# suite source and output flags, this step's flag (with, for performance, its targets and
 # profile), and everything after the `--` as it is.
 job=$("${kc[@]}" create job "$job_name" --from="cronjob/$cronjob" --dry-run=client -o json |
   jq --arg step "$step" --arg env "$env_name" '
     def keep($flag):
-      ["--download", "--tests_url", "--tests_dir", "--output_dir", "--\($step)"]
+      ["--env", "--download", "--tests_url", "--tests_dir", "--output_dir", "--\($step)"]
       + (if $step == "performance"
          then ["--performance_target", "--performance_profile"] else [] end)
       | index([$flag]) != null;

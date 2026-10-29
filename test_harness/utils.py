@@ -11,7 +11,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
     PathfinderTestCase,
     TestAsset,
     TestCase,
+    TestEnvEnum,
 )
+
+# The environments a run can test, eg ["dev", "ci", "test", "prod"].
+TEST_ENVS = [env.value for env in TestEnvEnum]
 
 NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
@@ -46,7 +50,9 @@ class AgentReport:
     message: Optional[str]
     # Where the expected answer landed in this agent's response: a "found"
     # flag plus the ARS/ARA rank (int) and score (float) when it was found.
-    actual_output: Optional[dict[str, Union[bool, int, float, None]]]
+    # found_curies lists which of the expected output's CURIEs came back, best
+    # ranked first; the rank and score are those of the first.
+    actual_output: Optional[dict[str, Union[bool, int, float, List[str], None]]]
     # About the response itself rather than the analysis of it. None when it
     # isn't known: no response, or (for response_time_s) one fanned out by the
     # ARS, which the harness only sees through its 10s polling.
@@ -73,10 +79,11 @@ class TestReport:
 
 def normalize_curies(
     test: Union[TestCase, PathfinderTestCase],
+    env: str,
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict[str, Dict[str, Union[Dict[str, str], List[str]]]]:
-    """Normalize a list of curies."""
-    node_norm = NODE_NORM_URL.get(test.test_env)
+    """Normalize a list of curies, with the node normalizer of ``env``."""
+    node_norm = NODE_NORM_URL.get(env)
     # collect all curies from test
     if isinstance(test, PathfinderTestCase):
         curies = set([asset.source_input_id for asset in test.test_assets])
@@ -90,7 +97,9 @@ def normalize_curies(
             ]
         )
     else:
-        curies = set([asset.output_id for asset in test.test_assets])
+        curies = set(
+            [curie for asset in test.test_assets for curie in asset.output_ids or []]
+        )
         curies.update([asset.input_id for asset in test.test_assets])
         curies.add(test.test_case_input_id)
 
@@ -120,6 +129,22 @@ def normalize_curies(
             for curie in curies:
                 normalized_curies[curie] = curie
     return normalized_curies
+
+
+def normalized_output_ids(
+    asset: TestAsset, normalized_curies: Dict[str, str]
+) -> List[str]:
+    """The asset's expected output CURIEs, normalized, without duplicates.
+
+    Two of an asset's CURIEs normalize to the same one when node normalization
+    merges them, so they're only counted once.
+    """
+    normalized = []
+    for curie in asset.output_ids or []:
+        curie = normalized_curies.get(curie, curie)
+        if curie not in normalized:
+            normalized.append(curie)
+    return normalized
 
 
 def filter_tests_by_query_type(

@@ -65,6 +65,9 @@ spec:
               args:
                 - "--suite"
                 - "performance_tests"
+                # The environment the targets below are in.
+                - "--env"
+                - "ci"
                 # --download takes the upstream Tests repo's main branch. To
                 # pin a branch or a fork, replace it with --tests_url (which
                 # implies --download). Both belong to the sweep, NOT after the

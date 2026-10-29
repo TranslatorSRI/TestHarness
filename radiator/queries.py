@@ -691,6 +691,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "run_id": str(run.id),
         "number": run.number,
         "suite": run.suite,
+        "source_suite": run.source_suite,
         "env": run.env,
         "target": run.target,
         "query_type": run.query_type,
@@ -711,13 +712,14 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                 "kind": asset.kind,
                 "expected_output": asset.expected_output,
                 "input_curie": asset.input_curie,
-                "output_curie": asset.output_curie,
+                "output_curies": asset.output_curies,
                 "status": asset.status,
                 "agents": [
                     {
                         "agent": agent.agent,
                         "status": agent.status,
                         "found": agent.found,
+                        "found_curies": agent.found_curies,
                         "rank": agent.rank,
                         "score": agent.score,
                         "n_results": agent.n_results,
