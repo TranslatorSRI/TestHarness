@@ -14,7 +14,12 @@ from radiator_schema import RunPayload
 from test_harness.main import _query_parameters, main
 from test_harness.run import run_tests
 from test_harness.runner.generate_query import generate_query
-from test_harness.trapi import parse_query_parameters, validate_query_parameters
+from test_harness.trapi import (
+    environment_query_parameters,
+    parse_query_parameters,
+    validate_query_parameters,
+)
+from test_harness.utils import NODE_NORM_URL
 
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
@@ -101,10 +106,11 @@ def test_queries_carry_the_parameters():
     assert "parameters" not in generate_query(ONE_HOP, "2.0.0")
 
 
-def test_every_query_sent_carries_them(httpx_mock: HTTPXMock):
+def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters):
+    """Run ``tests`` and return the parameters of every query sent."""
     httpx_mock.add_response(url="http://localhost:8080/query", json=kp_response)
     httpx_mock.add_response(
-        url="https://nodenorm-es.ci.transltr.io/get_normalized_nodes",
+        url=f"{NODE_NORM_URL[next(iter(tests.values())).test_env]}/get_normalized_nodes",
         # nothing normalizes, so every curie is kept as is
         json={
             curie: None
@@ -123,7 +129,7 @@ def test_every_query_sent_carries_them(httpx_mock: HTTPXMock):
         },
     )
     run_tests(
-        tests=example_test_cases,
+        tests=tests,
         reporter=MockReporter(base_url="http://test"),
         collector=MockResultCollector("ci", logger, target="aragorn"),
         logger=logger,
@@ -132,15 +138,49 @@ def test_every_query_sent_carries_them(httpx_mock: HTTPXMock):
             "trapi_version": "2.0.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
-            "query_parameters": {"timeout": 300.0},
+            "query_parameters": query_parameters,
         },
     )
     sent = [
-        json.loads(r.content)
+        json.loads(r.content).get("parameters")
         for r in httpx_mock.get_requests()
         if r.url.path == "/query"
     ]
-    assert sent and all(q["parameters"] == {"timeout": 300.0} for q in sent)
+    assert sent
+    return sent
+
+
+def test_every_query_sent_carries_them(httpx_mock: HTTPXMock):
+    # the example tests are CI's, so their queries also bypass the caches
+    sent = _sent_parameters(httpx_mock, example_test_cases, {"timeout": 300.0})
+    assert all(p == {"timeout": 300.0, "bypass_cache": True} for p in sent)
+
+
+def test_ci_queries_bypass_the_cache_unless_told_not_to(httpx_mock: HTTPXMock):
+    sent = _sent_parameters(httpx_mock, example_test_cases, {"bypass_cache": False})
+    assert all(p == {"bypass_cache": False} for p in sent)
+
+
+def test_other_environments_keep_the_cache(httpx_mock: HTTPXMock):
+    prod_tests = {
+        key: test.model_copy(update={"test_env": "prod"})
+        for key, test in example_test_cases.items()
+    }
+    assert all(p is None for p in _sent_parameters(httpx_mock, prod_tests, None))
+
+
+def test_environment_query_parameters():
+    assert environment_query_parameters(None, "ci") == {"bypass_cache": True}
+    assert environment_query_parameters({"timeout": 5}, "ci") == {
+        "timeout": 5,
+        "bypass_cache": True,
+    }
+    assert environment_query_parameters({"bypass_cache": False}, "ci") == {
+        "bypass_cache": False
+    }
+    for env in ("dev", "test", "prod"):
+        assert environment_query_parameters(None, env) is None
+        assert environment_query_parameters({"timeout": 5}, env) == {"timeout": 5}
 
 
 def _main_args(tmp_path, **extra):
@@ -175,7 +215,8 @@ def test_main_sends_and_records_them(mocker, tmp_path):
     [saved] = [p for p in os.listdir(tmp_path) if p.startswith("radiator_")]
     with open(tmp_path / saved) as f:
         payload = RunPayload.model_validate(json.load(f))
-    assert payload.run.query_parameters == {"timeout": 300.0}
+    # the example tests are CI's: the record shows the cache was bypassed
+    assert payload.run.query_parameters == {"timeout": 300.0, "bypass_cache": True}
 
 
 def test_cli_flag_and_environment(monkeypatch):

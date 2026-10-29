@@ -31,6 +31,7 @@ from test_harness.runner.smart_api_registry import registered_trapi_versions
 from test_harness.trapi import (
     AUTO_TRAPI_VERSION,
     DEFAULT_TRAPI_VERSION,
+    environment_query_parameters,
     parse_query_parameters,
     trapi_minor_version,
     validate_query_parameters,
@@ -291,10 +292,13 @@ def main(args):
     except ValueError as e:
         logger.error(str(e))
         return EXIT_COULD_NOT_RUN
-    if args["query_parameters"]:
+    # what this environment's queries go out with, eg CI's bypass_cache, for
+    # the log and the reports (the query runner adds them per test)
+    sent_parameters = environment_query_parameters(args["query_parameters"], test_env)
+    if sent_parameters:
         logger.info(
             f"Sending these parameters with every query: "
-            f"{json.dumps(args['query_parameters'])}"
+            f"{json.dumps(sent_parameters)}"
         )
 
     output_dir = args.get("output_dir") or "test_results"
@@ -366,7 +370,7 @@ def main(args):
             target=args.get("target"),
             target_url=args.get("target_url"),
             query_type=query_type,
-            query_parameters=args.get("query_parameters"),
+            query_parameters=sent_parameters,
             cycle_id=args.get("cycle_id"),
             trapi_version=args["trapi_version"],
             expected_assets=sum(len(test.test_assets) for test in tests.values()),
@@ -388,8 +392,8 @@ def main(args):
             "`test-harness-radiator push`."
         )
     params_note = (
-        f"\nQuery parameters: `{json.dumps(args['query_parameters'])}`"
-        if args.get("query_parameters")
+        f"\nQuery parameters: `{json.dumps(sent_parameters)}`"
+        if sent_parameters
         else ""
     )
     # Only link to Zebrunner when the run went there: the local stand-in's
@@ -745,7 +749,8 @@ def cli():
             '\'{"timeout": 300, "bypass_cache": true}\'. TRAPI 2.0 queries carry '
             "them in their parameters object (timeout, log_level, bypass_cache, "
             "and any a service defines); TRAPI 1.6 queries carry them as "
-            "top-level fields. Defaults to $QUERY_PARAMETERS. Not used by "
+            "top-level fields. Queries to CI always add bypass_cache: true "
+            "unless it is given here. Defaults to $QUERY_PARAMETERS. Not used by "
             "performance tests, which send HelmsDeep's own queries."
         ),
     )
