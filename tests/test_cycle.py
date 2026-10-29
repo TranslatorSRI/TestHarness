@@ -72,7 +72,7 @@ def test_every_step_runs_even_when_one_fails(run, post, _slacker, monkeypatch):
     monkeypatch.setenv("RADIATOR_URL", "http://radiator")
     monkeypatch.setenv("RADIATOR_TOKEN", "tok")
     run.side_effect = [mock.Mock(returncode=2), mock.Mock(returncode=0)]
-    code = cli(["--acceptance", "a", "--pathfinder", "p", "--download"])
+    code = cli(["--env", "ci", "--acceptance", "a", "--pathfinder", "p", "--download"])
     assert run.call_count == 2
     assert code == 1
     # the board is still posted, for the steps that ran
@@ -89,8 +89,25 @@ def test_without_the_radiator_there_is_no_board(run, monkeypatch):
     monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
     run.return_value = mock.Mock(returncode=0)
     with mock.patch("test_harness.cycle.post_cycle_report") as post:
-        assert cli(["--acceptance", "a"]) == 0
+        assert cli(["--env", "ci", "--acceptance", "a"]) == 0
     post.assert_not_called()
+
+
+def test_env_is_required(capsys):
+    with pytest.raises(SystemExit):
+        cli(["--acceptance", "a"])
+    assert "--env" in capsys.readouterr().err
+
+
+@mock.patch("test_harness.cycle.subprocess.run")
+def test_every_step_tests_the_cycles_env(run, monkeypatch):
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    run.return_value = mock.Mock(returncode=0)
+    cli(["--env", "prod", "--acceptance", "a", "--pathfinder", "p"])
+    for call in run.call_args_list:
+        cmd = call.args[0]
+        assert cmd[cmd.index("--env") + 1] == "prod"
 
 
 @pytest.mark.parametrize(
@@ -100,12 +117,13 @@ def test_without_the_radiator_there_is_no_board(run, monkeypatch):
         (["--performance", "perf"], "needs a --performance_target"),
         (["--acceptance", "a", "--", "--tests_url", "x"], "belongs before the `--`"),
         (["--acceptance", "a", "--", "--cycle_id", "x"], "sets --cycle_id itself"),
+        (["--acceptance", "a", "--", "--env", "prod"], "Pass --env to the cycle"),
     ],
 )
 def test_bad_arguments(argv, message, capsys, monkeypatch):
     monkeypatch.delenv("PERFORMANCE_TARGETS", raising=False)
     with pytest.raises(SystemExit):
-        cli(argv)
+        cli(["--env", "ci", *argv])
     assert message in capsys.readouterr().err
 
 
@@ -251,6 +269,8 @@ def test_the_board_comes_from_the_radiator_the_steps_reported_to(monkeypatch):
         run.return_value = mock.Mock(returncode=0)
         cli(
             [
+                "--env",
+                "ci",
                 "--acceptance",
                 "a",
                 "--",
@@ -272,5 +292,5 @@ def test_a_slack_failure_after_the_cycle_is_a_warning(monkeypatch, caplog):
         "test_harness.cycle.post_cycle_report", side_effect=RuntimeError("slack down")
     ):
         run.return_value = mock.Mock(returncode=0)
-        assert cli(["--acceptance", "a"]) == 0
+        assert cli(["--env", "ci", "--acceptance", "a"]) == 0
     assert "Couldn't post the cycle board: RuntimeError: slack down" in caplog.text

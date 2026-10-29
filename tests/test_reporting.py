@@ -527,7 +527,6 @@ def _performance_test_case():
         input_category="biolink:Disease",
         output_category=None,
         components=[ComponentEnum.ars],
-        test_env=TestEnvEnum.ci,
     )
 
 
@@ -535,7 +534,7 @@ def test_performance_test_is_finished_in_radiator(mocker):
     """A performance test must reach a terminal status in the radiator."""
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger),
+        return_value=MockQueryRunner(logger, "ci"),
     )
     mocker.patch(
         "test_harness.run.run_performance_test",
@@ -550,7 +549,7 @@ def test_performance_test_is_finished_in_radiator(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "2.0.0"},
+        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished, "performance test was never finished in the radiator"
@@ -562,7 +561,7 @@ def test_performance_checkpoint_failure_fails_the_radiator_test(mocker):
     Slack instead of showing the run as PASSED."""
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger),
+        return_value=MockQueryRunner(logger, "ci"),
     )
     mocker.patch(
         "test_harness.run.run_performance_test",
@@ -579,7 +578,7 @@ def test_performance_checkpoint_failure_fails_the_radiator_test(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "2.0.0"},
+        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished[0][1] == AgentStatus.FAILED.value
@@ -589,7 +588,7 @@ def test_performance_run_without_a_summary_fails_the_radiator_test(mocker):
     """HelmsDeep exiting without a summary must not be reported as PASSED."""
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger),
+        return_value=MockQueryRunner(logger, "ci"),
     )
     mocker.patch(
         "test_harness.run.run_performance_test",
@@ -604,7 +603,7 @@ def test_performance_run_without_a_summary_fails_the_radiator_test(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "2.0.0"},
+        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished[0][1] == AgentStatus.FAILED.value
@@ -615,7 +614,7 @@ def test_performance_test_finished_failed_on_error(mocker):
     FAILED status instead of a perpetually-unfinished test."""
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger),
+        return_value=MockQueryRunner(logger, "ci"),
     )
     mocker.patch(
         "test_harness.run.run_performance_test",
@@ -628,7 +627,7 @@ def test_performance_test_finished_failed_on_error(mocker):
         reporter=reporter,
         collector=MockResultCollector("ci", logger),
         logger=logger,
-        args={"suite": "perf", "trapi_version": "2.0.0"},
+        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     assert reporter.finished
@@ -650,7 +649,7 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
     from the per-agent stats entirely."""
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=_NoResponseQueryRunner(logger),
+        return_value=_NoResponseQueryRunner(logger, "ci"),
     )
 
     collector = ResultCollector("ci", logger)
@@ -660,7 +659,7 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
         reporter=reporter,
         collector=collector,
         logger=logger,
-        args={"suite": "acceptance", "trapi_version": "2.0.0"},
+        args={"suite": "acceptance", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     # 3 assets total across the two acceptance cases in the fixture.
@@ -718,7 +717,7 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
     httpx_mock.add_response(url="http://ars/ars/api/submit", status_code=502)
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=_ArsBadGatewayQueryRunner(logger),
+        return_value=_ArsBadGatewayQueryRunner(logger, "ci"),
     )
 
     collector = ResultCollector("ci", logger)
@@ -728,7 +727,7 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
         reporter=reporter,
         collector=collector,
         logger=logger,
-        args={"suite": "acceptance", "trapi_version": "1.6.0"},
+        args={"suite": "acceptance", "env": "ci", "trapi_version": "1.6.0"},
     )
 
     # Nothing was polled after the failed submit.

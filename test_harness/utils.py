@@ -11,7 +11,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
     PathfinderTestCase,
     TestAsset,
     TestCase,
+    TestEnvEnum,
 )
+
+# The environments a run can test, eg ["dev", "ci", "test", "prod"].
+TEST_ENVS = [env.value for env in TestEnvEnum]
 
 NODE_NORM_URL = {
     "dev": "https://nodenormalization-sri.renci.org/1.4",
@@ -75,10 +79,11 @@ class TestReport:
 
 def normalize_curies(
     test: Union[TestCase, PathfinderTestCase],
+    env: str,
     logger: logging.Logger = logging.getLogger(__name__),
 ) -> Dict[str, Dict[str, Union[Dict[str, str], List[str]]]]:
-    """Normalize a list of curies."""
-    node_norm = NODE_NORM_URL.get(test.test_env)
+    """Normalize a list of curies, with the node normalizer of ``env``."""
+    node_norm = NODE_NORM_URL.get(env)
     # collect all curies from test
     if isinstance(test, PathfinderTestCase):
         curies = set([asset.source_input_id for asset in test.test_assets])

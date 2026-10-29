@@ -17,6 +17,7 @@ from .test_reporting import _checkpoint, _helmsdeep_summary
 
 BASE_ARGS = {
     "suite": "testing",
+    "env": "ci",
     "save_to_dashboard": False,
     "json_output": False,
     "log_level": "ERROR",
@@ -90,6 +91,13 @@ def test_no_subcommand_cannot_run(mocker):
     mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
     mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
     assert main(dict(BASE_ARGS)) == EXIT_COULD_NOT_RUN
+
+
+def test_no_environment_cannot_run(mocker):
+    """Suites don't say where they run, so a run without --env can't."""
+    run_tests = mocker.patch("test_harness.main.run_tests")
+    assert _run(mocker, tests=example_test_cases, env=None) == EXIT_COULD_NOT_RUN
+    run_tests.assert_not_called()
 
 
 def test_a_suite_that_isnt_there_cannot_run(mocker):

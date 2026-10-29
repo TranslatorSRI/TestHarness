@@ -24,7 +24,6 @@ example_test_cases = TestSuite.model_validate(
                 "name": "what treats MONDO:0010794",
                 "description": "Valproic_Acid_treats_NARP_Syndrome; Barbiturates_treats_NARP_Syndrome",
                 "tags": [],
-                "test_env": "ci",
                 "query_type": None,
                 "test_assets": [
                     {
@@ -140,7 +139,6 @@ example_test_cases = TestSuite.model_validate(
                 ],
                 "test_case_objective": "AcceptanceTest",
                 "components": ["ars"],
-                "test_env": "ci",
             },
         },
     }

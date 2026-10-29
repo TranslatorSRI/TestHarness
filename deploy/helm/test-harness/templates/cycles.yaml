@@ -7,6 +7,10 @@
 {{- $_ := set $pick $field (ternary (get $env $field) (get $d $field) (hasKey $env $field)) }}
 {{- end }}
 {{- $targets := $env.performanceTargets | default list }}
+{{- $testEnv := $env.env | default $name }}
+{{- if not (has $testEnv (list "dev" "ci" "test" "prod")) }}
+{{- fail (printf "cycles.environments[%s]: the environment to test is dev, ci, test or prod; set env if the name isn't one" $name) }}
+{{- end }}
 {{- if and $pick.performance (not $targets) }}
 {{- fail (printf "cycles.environments[%s]: performance needs performanceTargets, eg [\"ars=https://ars.%s.transltr.io\"] (or set performance: \"\")" $name $name) }}
 {{- end }}
@@ -44,7 +48,7 @@ spec:
             app.kubernetes.io/component: cycle
         spec:
           terminationGracePeriodSeconds: 120
-          {{- $container := include "harness.cycleContainer" (dict "root" $ "env" $env "pick" $pick "targets" $targets) }}
+          {{- $container := include "harness.cycleContainer" (dict "root" $ "env" $env "testEnv" $testEnv "pick" $pick "targets" $targets) }}
           {{- include "harness.podSpec" (dict "root" $ "container" $container) | nindent 10 }}
 {{- end }}
 {{- end }}
@@ -56,6 +60,8 @@ spec:
   imagePullPolicy: {{ $.Values.image.pullPolicy }}
   command: ["test-harness-cycle"]
   args:
+    - --env
+    - {{ .testEnv | quote }}
     {{- include "harness.testsArgs" $ | trim | nindent 4 }}
     {{- with .pick.acceptance }}
     - --acceptance

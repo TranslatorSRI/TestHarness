@@ -19,7 +19,7 @@ The sweep exits non-zero only when a harness invocation could not carry out its
 run at all: bad arguments, a suite that isn't there, a crash, an OOM kill, or
 the binary missing from the image.
 
-    test-harness-sweep --suite performance_tests --download \\
+    test-harness-sweep --suite performance_tests --env ci --download \\
         ars=https://ars.ci.transltr.io \\
         aragorn=https://aragorn.ci.transltr.io \\
         arax=https://arax.ci.transltr.io \\
@@ -37,6 +37,8 @@ import sys
 import time
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from typing import Dict, List, Sequence, Tuple
+
+from test_harness.utils import TEST_ENVS
 
 # Comma-separated `name=url` pairs, an alternative to passing them as arguments.
 TARGETS_ENV = "PERFORMANCE_TARGETS"
@@ -126,6 +128,11 @@ def build_command(
         if tests_dir:
             cmd += ["--tests_dir", tests_dir]
     return cmd
+
+
+def _passes_env(harness_args: Sequence[str]) -> bool:
+    """Whether ``--env`` was given after the ``--``, where it doesn't belong."""
+    return any(arg == "--env" or arg.startswith("--env=") for arg in harness_args)
 
 
 def _banner(text: str) -> None:
@@ -231,7 +238,7 @@ def cli(argv: Sequence[str] = None) -> int:
         epilog=(
             "Anything after a `--` separator is passed through to every "
             "harness invocation, e.g.:\n\n"
-            "  test-harness-sweep --suite performance_tests --download \\\n"
+            "  test-harness-sweep --suite performance_tests --env ci --download \\\n"
             "      ars=https://ars.ci.transltr.io \\\n"
             "      aragorn=https://aragorn.ci.transltr.io \\\n"
             "      -- --performance_profile mixed --log_level INFO\n"
@@ -252,6 +259,12 @@ def cli(argv: Sequence[str] = None) -> int:
         "--suite",
         required=True,
         help="The test suite to run against every target.",
+    )
+    parser.add_argument(
+        "--env",
+        required=True,
+        choices=TEST_ENVS,
+        help="The environment to test; passed to every harness run.",
     )
     parser.add_argument(
         "--download",
@@ -307,6 +320,9 @@ def cli(argv: Sequence[str] = None) -> int:
             "URL` before the `--`."
         )
 
+    if _passes_env(harness_args):
+        parser.error("Pass --env to the sweep, before the `--`.")
+
     try:
         targets = parse_targets(args.targets)
     except ValueError as e:
@@ -321,7 +337,7 @@ def cli(argv: Sequence[str] = None) -> int:
         targets,
         args.suite,
         output_dir=args.output_dir,
-        harness_args=harness_args,
+        harness_args=["--env", args.env, *harness_args],
         download=args.download,
         tests_url=args.tests_url,
         tests_dir=args.tests_dir,

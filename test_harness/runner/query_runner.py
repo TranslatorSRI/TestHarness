@@ -36,12 +36,16 @@ class QueryRunner:
     def __init__(
         self,
         logger: logging.Logger,
+        env: str,
         target_url: Optional[str] = None,
         target: Optional[str] = None,
         trapi_version: str = DEFAULT_TRAPI_VERSION,
         query_parameters: Optional[Dict] = None,
     ):
         """Initialize the Query Runner.
+
+        ``env`` is the environment every query goes to (dev, ci, test or
+        prod): suites are the same in each, so the run picks one.
 
         ``trapi_version`` is the TRAPI version queries are written in, and the
         version of the services picked from the SmartAPI registry.
@@ -58,6 +62,7 @@ class QueryRunner:
         """
         self.registry = {}
         self.logger = logger
+        self.env = env
         self.target_url = target_url.rstrip("/") if target_url else None
         if target is not None and not target.startswith("infores:"):
             target = f"infores:{target}"
@@ -332,12 +337,10 @@ class QueryRunner:
     ) -> Tuple[Dict[int, dict], Dict[str, str]]:
         """Run all queries specified in a Test Case."""
         # normalize all the curies in a test case
-        normalized_curies = normalize_curies(test_case, self.logger)
+        normalized_curies = normalize_curies(test_case, self.env, self.logger)
         # TODO: figure out the right way to handle input category wrt normalization
 
-        query_parameters = environment_query_parameters(
-            self.query_parameters, test_case.test_env
-        )
+        query_parameters = environment_query_parameters(self.query_parameters, self.env)
         queries: Dict[int, dict] = {}
         for test_asset in test_case.test_assets:
             if isinstance(test_case, PathfinderTestCase):
@@ -384,10 +387,10 @@ class QueryRunner:
                 # component = "ara"
                 # loop over all specified components, i.e. ars, ara, kp, utilities
                 self.logger.info(
-                    f"Sending queries to {self.registry[env_map[test_case.test_env]][component]}"
+                    f"Sending queries to {self.registry[env_map[self.env]][component]}"
                 )
                 self._send_queries(
-                    self.registry[env_map[test_case.test_env]][component],
+                    self.registry[env_map[self.env]][component],
                     queries,
                 )
 

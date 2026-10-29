@@ -73,6 +73,7 @@ def run_tests(
     trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
     query_runner = QueryRunner(
         logger,
+        args["env"],
         target_url=target_url,
         target=target,
         trapi_version=trapi_version,
@@ -361,7 +362,7 @@ def run_tests(
                         host = query_runner.target_url
                         perf_target = status_agent
                     else:
-                        host = query_runner.registry[env_map[test.test_env]][
+                        host = query_runner.registry[env_map[query_runner.env]][
                             test.components[0]
                         ][0]["url"]
                         perf_target = None

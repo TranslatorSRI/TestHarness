@@ -36,7 +36,11 @@ from test_harness.trapi import (
     trapi_minor_version,
     validate_query_parameters,
 )
-from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
+from test_harness.utils import (
+    QUERY_TYPE_PREDICATES,
+    TEST_ENVS,
+    filter_tests_by_query_type,
+)
 
 setproctitle("TestHarness")
 setup_logger()
@@ -255,6 +259,11 @@ def main(args):
     if bool(args.get("target_url")) != bool(args.get("target")):
         logger.error("--target_url and --target must be provided together.")
         return EXIT_COULD_NOT_RUN
+    # Suites are the same in every environment; the run says which to test.
+    test_env = args.get("env")
+    if test_env not in TEST_ENVS:
+        logger.error(f"--env must be one of {', '.join(TEST_ENVS)}.")
+        return EXIT_COULD_NOT_RUN
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -281,7 +290,6 @@ def main(args):
 
     # The TRAPI version: given, or (auto) what this environment's services are
     # registered with, while environments are on different versions.
-    test_env = next(iter(tests.values())).test_env
     args["trapi_version"] = resolve_trapi_version(args, test_env, logger)
     # Check the query parameters against the TRAPI version now, so a typo
     # stops the run before any query goes out rather than failing every one.
@@ -447,9 +455,7 @@ def main(args):
     collector = ResultCollector(
         test_env, logger, target=args.get("target"), radiator=radiator
     )
-    queried_envs = set()
-    for test in tests.values():
-        queried_envs.add(test.test_env)
+    queried_envs = {test_env}
     for channel, links, _, best_effort in channels:
         post(
             lambda: channel.post_notification(
@@ -636,6 +642,16 @@ def cli():
         "tests",
         type=json.loads,
         help="The tests to be run, as a JSON string. This is the same structure `download_tests()` returns; to run tests from a file, use the `load` subcommand instead.",
+    )
+
+    parser.add_argument(
+        "--env",
+        required=True,
+        choices=TEST_ENVS,
+        help=(
+            "The environment to test: every query goes to its services. "
+            "Suites are the same in every environment."
+        ),
     )
 
     parser.add_argument(

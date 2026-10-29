@@ -230,6 +230,7 @@ def test_run_tests_records_response_metadata(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
@@ -398,6 +399,7 @@ def test_run_tests_still_collects_when_zebrunner_fails(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
@@ -410,6 +412,7 @@ def _main_args(tmp_path):
     return {
         "tests": example_test_cases,
         "suite": "testing",
+        "env": "ci",
         "save_to_dashboard": False,
         "json_output": False,
         "log_level": "ERROR",
@@ -668,6 +671,7 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",

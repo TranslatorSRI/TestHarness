@@ -59,7 +59,6 @@ def _mixed_suite():
             "name": case_id,
             "description": case_id,
             "tags": [],
-            "test_env": "ci",
             "test_assets": copy.deepcopy(assets),
             "components": ["ars"],
             "test_case_objective": "AcceptanceTest",
@@ -154,6 +153,7 @@ def test_main_runs_only_the_requested_query_type(mocker):
         {
             "tests": _mixed_suite(),
             "suite": "testing",
+            "env": "ci",
             "query_type": "MVP2",
             "save_to_dashboard": False,
             "json_output": False,
@@ -176,6 +176,7 @@ def test_main_without_query_type_runs_every_test(mocker):
         {
             "tests": _mixed_suite(),
             "suite": "testing",
+            "env": "ci",
             "save_to_dashboard": False,
             "json_output": False,
             "log_level": "ERROR",

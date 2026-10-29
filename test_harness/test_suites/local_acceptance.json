@@ -117,8 +117,7 @@
       ],
       "input_category": "biolink:Disease",
       "output_category": "biolink:ChemicalEntity",
-      "components": ["ars"],
-      "test_env": "ci"
+      "components": ["ars"]
     },
     "TestCase_2": {
       "id": "TestCase_2",
@@ -181,8 +180,7 @@
       ],
       "input_category": "biolink:Gene",
       "output_category": "biolink:ChemicalEntity",
-      "components": ["ars"],
-      "test_env": "ci"
+      "components": ["ars"]
     }
   }
 }

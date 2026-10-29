@@ -41,6 +41,8 @@ spec:
   args:
     - --suite
     - {{ .Values.sweep.suite | quote }}
+    - --env
+    - {{ required "sweep.env (dev, ci, test or prod) is required" .Values.sweep.env | quote }}
     {{- include "harness.testsArgs" . | trim | nindent 4 }}
     {{- range .Values.sweep.targets }}
     - {{ . | quote }}

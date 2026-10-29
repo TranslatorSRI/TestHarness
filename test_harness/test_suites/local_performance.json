@@ -81,8 +81,7 @@
       ],
       "input_category": "biolink:Disease",
       "output_category": null,
-      "components": ["ars"],
-      "test_env": "ci"
+      "components": ["ars"]
     }
   }
 }

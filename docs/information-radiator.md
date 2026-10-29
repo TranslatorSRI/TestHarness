@@ -298,7 +298,7 @@ Tests need a database they may wipe:
 and check `alembic -c radiator/alembic.ini check` is clean (CI runs it).
 
 To point a local harness run at it: `RADIATOR_URL=http://localhost:8000
-RADIATOR_TOKEN=dev-token test-harness load local_acceptance`.
+RADIATOR_TOKEN=dev-token test-harness --env ci load local_acceptance`.
 
 ## When a run, or part of one, is missing from the dashboard
 

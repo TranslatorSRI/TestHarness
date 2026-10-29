@@ -98,7 +98,7 @@ class TestVersions:
 
     def test_query_runner_rejects_unsupported_version(self):
         with pytest.raises(ValueError):
-            QueryRunner(logger, trapi_version="1.5.0")
+            QueryRunner(logger, "ci", trapi_version="1.5.0")
 
 
 class TestQueries2_0:
@@ -292,6 +292,7 @@ def test_run_sends_and_reads_trapi_2_0(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "2.0.0",
             "target_url": "http://localhost:8080",
             "target": "gandalf",

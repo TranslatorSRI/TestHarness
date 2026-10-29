@@ -106,11 +106,11 @@ def test_queries_carry_the_parameters():
     assert "parameters" not in generate_query(ONE_HOP, "2.0.0")
 
 
-def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters):
-    """Run ``tests`` and return the parameters of every query sent."""
+def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters, env="ci"):
+    """Run ``tests`` in ``env`` and return the parameters of every query sent."""
     httpx_mock.add_response(url="http://localhost:8080/query", json=kp_response)
     httpx_mock.add_response(
-        url=f"{NODE_NORM_URL[next(iter(tests.values())).test_env]}/get_normalized_nodes",
+        url=f"{NODE_NORM_URL[env]}/get_normalized_nodes",
         # nothing normalizes, so every curie is kept as is
         json={
             curie: None
@@ -135,6 +135,7 @@ def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters):
         logger=logger,
         args={
             "suite": "testing",
+            "env": env,
             "trapi_version": "2.0.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
@@ -151,7 +152,7 @@ def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters):
 
 
 def test_every_query_sent_carries_them(httpx_mock: HTTPXMock):
-    # the example tests are CI's, so their queries also bypass the caches
+    # run in CI, so the queries also bypass the caches
     sent = _sent_parameters(httpx_mock, example_test_cases, {"timeout": 300.0})
     assert all(p == {"timeout": 300.0, "bypass_cache": True} for p in sent)
 
@@ -162,11 +163,8 @@ def test_ci_queries_bypass_the_cache_unless_told_not_to(httpx_mock: HTTPXMock):
 
 
 def test_other_environments_keep_the_cache(httpx_mock: HTTPXMock):
-    prod_tests = {
-        key: test.model_copy(update={"test_env": "prod"})
-        for key, test in example_test_cases.items()
-    }
-    assert all(p is None for p in _sent_parameters(httpx_mock, prod_tests, None))
+    sent = _sent_parameters(httpx_mock, example_test_cases, None, env="prod")
+    assert all(p is None for p in sent)
 
 
 def test_environment_query_parameters():
@@ -187,6 +185,7 @@ def _main_args(tmp_path, **extra):
     return {
         "tests": example_test_cases,
         "suite": "testing",
+        "env": "ci",
         "save_to_dashboard": False,
         "json_output": False,
         "log_level": "ERROR",

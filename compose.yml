@@ -74,9 +74,9 @@ services:
     volumes:
       - ./logs:/app/logs
     # A small local suite by default; set HARNESS_ARGS in .env to run another,
-    # eg HARNESS_ARGS="download sprint_4_tests". It still queries the real
+    # eg HARNESS_ARGS="download mvp_tests". It still queries the real
     # Translator services, so expect a run to take a few minutes.
-    command: test-harness ${HARNESS_ARGS:-load local_acceptance}
+    command: test-harness --env ${HARNESS_ENV:-ci} ${HARNESS_ARGS:-load local_acceptance}
     environment:
       RADIATOR_URL: http://radiator:8000
       RADIATOR_PUBLIC_URL: http://localhost:${RADIATOR_PORT:-8000}

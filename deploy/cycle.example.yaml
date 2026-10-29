@@ -12,7 +12,7 @@
 # it posts the Information Radiator's board for the whole cycle.
 #
 # This file is the dev CronJob in full. For the others, copy it and change the
-# four lines marked CHANGE PER ENVIRONMENT:
+# five lines marked CHANGE PER ENVIRONMENT:
 #
 #   name                     schedule (America/New_York)   ARS
 #   test-harness-cycle-dev   "52 1 * * 1"  Monday          https://ars.dev.transltr.io
@@ -20,10 +20,9 @@
 #   test-harness-cycle-test  "52 1 * * 3"  Wednesday       https://ars.test.transltr.io
 #   test-harness-cycle-prod  "52 1 * * 4"  Thursday        https://ars.transltr.io
 #
-# and the suites: the environment comes from the test cases, so each
-# environment runs the suites written for it.
+# and --env. The suites are the same in every environment.
 #
-# The image tag, namespace, secret names and suite names are placeholders.
+# The image tag, namespace and secret names are placeholders.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -54,13 +53,15 @@ spec:
               imagePullPolicy: IfNotPresent
               command: ["test-harness-cycle"]
               args:
+                - "--env"
+                - "dev"                             # CHANGE PER ENVIRONMENT
                 - "--download"
                 - "--acceptance"
-                - "sprint_4_tests"                  # CHANGE PER ENVIRONMENT: its acceptance suite
+                - "mvp_tests"
                 - "--pathfinder"
-                - "pathfinder_tests"                # its pathfinder suite
+                - "pathfinder_tests"
                 - "--performance"
-                - "performance_tests"               # its performance suite
+                - "performance_tests"
                 - "--performance_target"
                 - "ars=https://ars.dev.transltr.io" # CHANGE PER ENVIRONMENT
                 # The only profile with pass/fail checkpoints.
