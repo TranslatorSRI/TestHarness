@@ -7,7 +7,7 @@
 # arithmetic. test_harness/performance_test_runner.py only drives its CLI.
 # Pinned to a release tag (not @main) so the image is reproducible and an
 # upgrade is a reviewable one-line change; bump it when HelmsDeep tags a release.
-helmsdeep @ git+https://github.com/TranslatorSRI/HelmsDeep@v0.2.0
+helmsdeep @ git+https://github.com/TranslatorSRI/HelmsDeep@v0.4.0
 # HelmsDeep brings locust in; pinned here so the harness's image is
 # reproducible rather than tracking whatever HelmsDeep's floor resolves to.
 locust==2.38.1

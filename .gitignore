@@ -12,3 +12,4 @@ test_report.json
 deploy/helm/*/values.*.yaml
 !deploy/helm/*/values.example.yaml
 .pytest_cache/
+venv/
