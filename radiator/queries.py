@@ -691,6 +691,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "run_id": str(run.id),
         "number": run.number,
         "suite": run.suite,
+        "source_suite": run.source_suite,
         "env": run.env,
         "target": run.target,
         "query_type": run.query_type,

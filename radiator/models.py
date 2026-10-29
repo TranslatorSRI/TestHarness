@@ -52,6 +52,9 @@ class Run(Base):
         Integer, RUN_NUMBER_SEQ, server_default=RUN_NUMBER_SEQ.next_value(), unique=True
     )
     suite: Mapped[str] = mapped_column(String(255))
+    # the suite's old name, when the run was recorded under one (see
+    # radiator.suites)
+    source_suite: Mapped[Optional[str]] = mapped_column(String(255))
     env: Mapped[Optional[str]] = mapped_column(String(32))
     target: Mapped[Optional[str]] = mapped_column(String(255))
     target_url: Mapped[Optional[str]] = mapped_column(Text)

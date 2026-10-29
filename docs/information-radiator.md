@@ -81,6 +81,12 @@ deploy/
 - **What changed**: against the previous run *of the same series* (same suite,
   env, target override, and query type): regressions, fixes, other status
   changes, skips, rank moves of 5+ places, and assets added or dropped.
+- **Renamed suites**: the Tests repo used to keep a copy of each suite per
+  environment (eg `prod_integration` was `sprint_6_tests` for prod); now one
+  suite runs in every environment. Runs recorded under an old name are filed
+  under the shared suite (`mvp_tests`, `pathfinder_tests`), so its history,
+  trends and diffs carry on from them in each environment; the run's page says
+  what it was recorded as. The names are in `radiator/suites.py`.
 - **TRAPI version**: each run records the TRAPI version it spoke (shown on the
   run and in the runs list). A run whose version differs from its previous
   run's says so on its page, in What changed, in the cycle board's flags and
