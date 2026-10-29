@@ -39,9 +39,13 @@ The fields that usually matter:
 
 - **`test_env`** (`dev`/`ci`/`test`/`prod`) and **`components`** decide which
   deployed service the queries go to. `--target_url` / `--target` override both.
-- **`input_id`** / **`output_id`** are the CURIEs under test. They must be ones
+- **`input_id`** / **`output_ids`** are the CURIEs under test. They must be ones
   the target environment actually knows about, or you'll get empty results that
-  look like failures.
+  look like failures. `output_ids` is a list: give more than one CURIE when the
+  expected answer can come back under any of them (eg a chemical's ChEBI and
+  PubChem ids, if node normalization keeps them apart). A TopAnswer or
+  Acceptable asset passes if any of them does; a BadButForgivable or NeverShow
+  asset fails if any of them does.
 - **`expected_output`** (`TopAnswer`, `Acceptable`, `BadButForgivable`,
   `NeverShow`) is what the asset is asserting, and drives pass/fail. Assets with
   any other value are skipped, so a typo here silently drops the asset.

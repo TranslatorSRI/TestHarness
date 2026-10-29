@@ -28,7 +28,7 @@ def _asset(asset_id, predicate, input_id, input_category, output_id):
         "input_category": input_category,
         "predicate_id": predicate,
         "predicate_name": predicate.split(":")[-1],
-        "output_id": output_id,
+        "output_ids": [output_id],
         "output_name": output_id,
         "output_category": None,
         "association": None,

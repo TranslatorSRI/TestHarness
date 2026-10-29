@@ -214,6 +214,7 @@ class ResultCollector:
                     message=agent_report.message,
                     http_status=agent_report.http_status,
                     found=found,
+                    found_curies=(agent_report.actual_output or {}).get("found_curies"),
                     rank=rank,
                     score=score,
                     n_results=agent_report.n_results,
@@ -228,11 +229,11 @@ class ResultCollector:
         if isinstance(asset, PathfinderTestAsset):
             kind = "pathfinder"
             input_curie = asset.source_input_id
-            output_curie = asset.target_input_id
+            output_curies = [asset.target_input_id] if asset.target_input_id else []
         else:
             kind = "acceptance"
             input_curie = asset.input_id
-            output_curie = asset.output_id
+            output_curies = list(asset.output_ids or [])
         return AssetResult(
             test_case_id=test.id,
             asset_id=asset.id,
@@ -241,7 +242,7 @@ class ResultCollector:
             expected_output=asset.expected_output,
             predicate=asset.predicate_id,
             input_curie=input_curie,
-            output_curie=output_curie,
+            output_curies=output_curies,
             status=status.value,
             parent_pk=parent_pk or None,
             agents=agents,

@@ -7,7 +7,7 @@
   <div class="crumbs"><a href="/">Runs</a> / {{ history.test_case_id }} / {{ history.asset_id }}</div>
   <h1>{{ a.name or a.asset_id }}</h1>
   <div class="meta">
-    <span class="mono">{{ a.input_curie or '' }}{% if a.output_curie %} → {{ a.output_curie }}{% endif %}</span>
+    <span class="mono">{{ a.input_curie or '' }}{% if a.output_curies %} → {{ a.output_curies | join(', ') }}{% endif %}</span>
     {% if a.predicate %}<span class="mono">{{ a.predicate }}</span>{% endif %}
     {% if a.expected_output %}<span>expected: <strong>{{ a.expected_output }}</strong></span>{% endif %}
     <span>{{ a.kind }}</span>

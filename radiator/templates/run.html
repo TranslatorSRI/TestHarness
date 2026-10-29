@@ -206,7 +206,7 @@
       {% set by_agent = {} %}{% for r in asset.agents %}{% set _ = by_agent.update({r.agent: r}) %}{% endfor %}
       <tr>
         <td><a href="/assets/{{ asset.test_case_id }}/{{ asset.asset_id }}?env={{ run.env or NO_ENV }}">{{ asset.name or asset.asset_id }}</a>
-          <div class="muted mono">{{ asset.input_curie or '' }}{% if asset.output_curie %} → {{ asset.output_curie }}{% endif %}</div></td>
+          <div class="muted mono">{{ asset.input_curie or '' }}{% if asset.output_curies %} → {{ asset.output_curies | join(', ') }}{% endif %}</div></td>
         <td class="nowrap">{{ asset.expected_output or '–' }}</td>
         <td>{{ status_badge(asset.status) }}</td>
         {% for a in agents %}{% set r = by_agent.get(a) %}

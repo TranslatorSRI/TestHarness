@@ -41,7 +41,7 @@ def _asset(predicate, input_id, input_category, qualifiers=(), inferred=True):
             "input_id": input_id,
             "input_category": input_category,
             "predicate_id": predicate,
-            "output_id": "NCBIGene:1",
+            "output_ids": ["NCBIGene:1"],
             "qualifiers": [
                 {"parameter": parameter, "value": value}
                 for parameter, value in qualifiers
@@ -226,11 +226,12 @@ class TestBindings:
             },
         ]
         report = run_acceptance_pass_fail_analysis(
-            self._report("ara"), "ara", results, "CHEBI:2", "TopAnswer"
+            self._report("ara"), "ara", results, ["CHEBI:2"], "TopAnswer"
         )
         assert report["ara"].status == AgentStatus.PASSED
         assert report["ara"].actual_output == {
             "found": True,
+            "found_curies": ["CHEBI:2"],
             "ars_score": None,
             "ars_rank": None,
             "ara_score": 0.4,
@@ -240,7 +241,7 @@ class TestBindings:
     def test_acceptance_never_show_with_2_0_bindings(self):
         results = [{"node_bindings": {"SN": {"ids": ["CHEBI:2"]}}, "analyses": []}]
         report = run_acceptance_pass_fail_analysis(
-            self._report("ara"), "ara", results, "CHEBI:2", "NeverShow"
+            self._report("ara"), "ara", results, ["CHEBI:2"], "NeverShow"
         )
         assert report["ara"].status == AgentStatus.FAILED
         assert report["ara"].message is None

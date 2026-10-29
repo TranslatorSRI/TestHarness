@@ -39,7 +39,7 @@ class _Asset:
     expected_output = "TopAnswer"
     predicate_id = "biolink:treats"
     input_id = "MONDO:1"
-    output_id = "CHEBI:2"
+    output_ids = ["CHEBI:2"]
 
 
 class _Case:
@@ -115,7 +115,7 @@ def test_collector_builds_structured_asset_result():
     assert result.asset_id == "asset-1"
     assert result.kind == "acceptance"
     assert result.input_curie == "MONDO:1"
-    assert result.output_curie == "CHEBI:2"
+    assert result.output_curies == ["CHEBI:2"]
     # derived from the ARS, as run_tests does
     assert result.status == "PASSED"
     assert result.parent_pk == "parent"

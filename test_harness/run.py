@@ -34,6 +34,7 @@ from test_harness.utils import (
     AgentStatus,
     TestReport,
     hash_test_asset,
+    normalized_output_ids,
 )
 
 
@@ -224,11 +225,7 @@ def run_tests(
                                     report.result,
                                     agent,
                                     response["response"]["message"]["results"],
-                                    (
-                                        normalized_curies.get(asset.output_id, "")
-                                        if asset.output_id is not None
-                                        else ""
-                                    ),
+                                    normalized_output_ids(asset, normalized_curies),
                                     asset.expected_output,
                                 )
                         except Exception as e:

@@ -120,7 +120,7 @@ def test_csv_reports_expected_answer_rank_and_score():
             _ars_result("MONDO:1", 0.9),
             _ars_result("CHEBI:2", 0.8),
         ],
-        "CHEBI:2",
+        ["CHEBI:2"],
         "TopAnswer",
     )
     report.result["shepherd-aragorn"] = AgentReport(AgentStatus.SKIPPED, None, None)
@@ -132,7 +132,7 @@ def test_csv_reports_expected_answer_rank_and_score():
             _ara_result("MONDO:3", 0.6),
             _ara_result("CHEBI:2", 0.5),
         ],
-        "CHEBI:2",
+        ["CHEBI:2"],
         "TopAnswer",
     )
     report.result["shepherd-arax"] = AgentReport(AgentStatus.SKIPPED, None, None)
@@ -140,7 +140,7 @@ def test_csv_reports_expected_answer_rank_and_score():
         report.result,
         "shepherd-arax",
         [_ara_result("MONDO:1", 0.7)],
-        "CHEBI:2",
+        ["CHEBI:2"],
         "TopAnswer",
     )
 
@@ -210,14 +210,14 @@ def test_ars_results_ranked_by_confidence():
         _ars_result("CHEBI:2", 0.9, sugeno=0.1, rank=3),
     ]
     report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
-    run_acceptance_pass_fail_analysis(report, "ars", results, "CHEBI:2", "Acceptable")
+    run_acceptance_pass_fail_analysis(report, "ars", results, ["CHEBI:2"], "Acceptable")
     # Top 50% after sorting is just CHEBI:2, so it passes.
     assert report["ars"].status == AgentStatus.PASSED
     assert report["ars"].actual_output["ars_rank"] == 1
     assert report["ars"].actual_output["ars_score"] == 0.9
 
     report = {"ars": AgentReport(AgentStatus.SKIPPED, None, None)}
-    run_acceptance_pass_fail_analysis(report, "ars", results, "MONDO:1", "Acceptable")
+    run_acceptance_pass_fail_analysis(report, "ars", results, ["MONDO:1"], "Acceptable")
     assert report["ars"].status == AgentStatus.FAILED
     assert report["ars"].actual_output["ars_rank"] == 3
     assert report["ars"].actual_output["ars_score"] == 0.2
@@ -231,7 +231,7 @@ def test_analysis_records_expected_answer_found_flag():
         report,
         "ars",
         [_ara_result("MONDO:1", 0.7)],
-        "CHEBI:2",
+        ["CHEBI:2"],
         "NeverShow",
     )
     assert report["ars"].status == AgentStatus.PASSED
@@ -242,7 +242,7 @@ def test_analysis_records_expected_answer_found_flag():
         report,
         "ars",
         [_ara_result("CHEBI:2", 0.7)],
-        "CHEBI:2",
+        ["CHEBI:2"],
         "NeverShow",
     )
     assert report["ars"].status == AgentStatus.FAILED
@@ -505,7 +505,7 @@ def _performance_test_case():
                 "input_category": "biolink:Disease",
                 "predicate_id": "biolink:treats",
                 "predicate_name": "treats",
-                "output_id": "PUBCHEM.COMPOUND:23925",
+                "output_ids": ["PUBCHEM.COMPOUND:23925"],
                 "output_name": "Iron",
                 "output_category": "biolink:ChemicalEntity",
                 "association": None,

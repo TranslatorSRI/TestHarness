@@ -711,13 +711,14 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                 "kind": asset.kind,
                 "expected_output": asset.expected_output,
                 "input_curie": asset.input_curie,
-                "output_curie": asset.output_curie,
+                "output_curies": asset.output_curies,
                 "status": asset.status,
                 "agents": [
                     {
                         "agent": agent.agent,
                         "status": agent.status,
                         "found": agent.found,
+                        "found_curies": agent.found_curies,
                         "rank": agent.rank,
                         "score": agent.score,
                         "n_results": agent.n_results,

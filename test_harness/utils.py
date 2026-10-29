@@ -46,7 +46,9 @@ class AgentReport:
     message: Optional[str]
     # Where the expected answer landed in this agent's response: a "found"
     # flag plus the ARS/ARA rank (int) and score (float) when it was found.
-    actual_output: Optional[dict[str, Union[bool, int, float, None]]]
+    # found_curies lists which of the expected output's CURIEs came back, best
+    # ranked first; the rank and score are those of the first.
+    actual_output: Optional[dict[str, Union[bool, int, float, List[str], None]]]
     # About the response itself rather than the analysis of it. None when it
     # isn't known: no response, or (for response_time_s) one fanned out by the
     # ARS, which the harness only sees through its 10s polling.
@@ -90,7 +92,9 @@ def normalize_curies(
             ]
         )
     else:
-        curies = set([asset.output_id for asset in test.test_assets])
+        curies = set(
+            [curie for asset in test.test_assets for curie in asset.output_ids or []]
+        )
         curies.update([asset.input_id for asset in test.test_assets])
         curies.add(test.test_case_input_id)
 
@@ -120,6 +124,22 @@ def normalize_curies(
             for curie in curies:
                 normalized_curies[curie] = curie
     return normalized_curies
+
+
+def normalized_output_ids(
+    asset: TestAsset, normalized_curies: Dict[str, str]
+) -> List[str]:
+    """The asset's expected output CURIEs, normalized, without duplicates.
+
+    Two of an asset's CURIEs normalize to the same one when node normalization
+    merges them, so they're only counted once.
+    """
+    normalized = []
+    for curie in asset.output_ids or []:
+        curie = normalized_curies.get(curie, curie)
+        if curie not in normalized:
+            normalized.append(curie)
+    return normalized
 
 
 def filter_tests_by_query_type(

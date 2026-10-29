@@ -13,7 +13,7 @@ The Test Harness incorporates Test Runners that run analyses on the responses of
 - query_type: type of query to test. (treats(creative), upregulates, downregulates)
 - expected_output: whether the output curie is good or bad. (TopAnswer, Acceptable, BadButForgivable, NeverShow)
 - input_curie: curie used in the initial query.
-- output_curie: curie checked for in the results
+- output_ids: curies checked for in the results; any one of them counts as the expected answer
 
 ## How to use:
 The Test Harness is a CLI that you need to install:

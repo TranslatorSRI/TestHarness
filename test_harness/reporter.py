@@ -140,7 +140,8 @@ class Reporter:
                     },
                     {
                         "key": "OutputCurie",
-                        "value": asset.output_id,
+                        # one label: several CURIEs are comma-separated
+                        "value": ",".join(asset.output_ids or []),
                     },
                 ]
             )

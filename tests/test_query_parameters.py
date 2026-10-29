@@ -34,7 +34,7 @@ ONE_HOP = TestAsset.model_validate(
         "input_id": "MONDO:0004979",
         "input_category": "biolink:Disease",
         "predicate_id": "biolink:treats",
-        "output_id": "CHEBI:31690",
+        "output_ids": ["CHEBI:31690"],
         "expected_output": "TopAnswer",
         "qualifiers": [],
     }

@@ -34,7 +34,7 @@ def asset(
         expected_output="TopAnswer",
         predicate="biolink:treats",
         input_curie="MONDO:0004979",
-        output_curie="CHEBI:31690",
+        output_curies=["CHEBI:31690"],
     )
     defaults.update(kwargs)
     return schema.AssetResult(
