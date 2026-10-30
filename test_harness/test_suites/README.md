@@ -47,6 +47,10 @@ The fields that usually matter:
   PubChem ids, if node normalization keeps them apart). A TopAnswer or
   Acceptable asset passes if any of them does; a BadButForgivable or NeverShow
   asset fails if any of them does.
+- **`skip`** / **`skip_reason`** turn a test off until the issue behind it is
+  fixed: on an asset, or on a test case for all of its assets. Skipped tests
+  aren't run but are reported as `SKIPPED`, with the reason; pass
+  `--include_skipped` to run them anyway.
 - **`expected_output`** (`TopAnswer`, `Acceptable`, `BadButForgivable`,
   `NeverShow`) is what the asset is asserting, and drives pass/fail. Assets with
   any other value are skipped, so a typo here silently drops the asset.

@@ -173,6 +173,8 @@ class PerformanceResult(Base):
     profile: Mapped[Optional[str]] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32))
     error: Mapped[Optional[str]] = mapped_column(Text)
+    # eg why the suite skips the test
+    message: Mapped[Optional[str]] = mapped_column(Text)
     exit_code: Mapped[Optional[int]] = mapped_column(Integer)
     max_sustainable_concurrency: Mapped[Optional[float]] = mapped_column(Float)
     knee_unsupported: Mapped[Optional[bool]] = mapped_column(Boolean)

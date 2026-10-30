@@ -204,6 +204,7 @@ def _performance_summary(session: Session, run: Run) -> list[dict]:
                 "profile": perf.profile,
                 "status": perf.status,
                 "error": perf.error,
+                "message": perf.message,
                 "max_sustainable_concurrency": perf.max_sustainable_concurrency,
                 "knee_unsupported": perf.knee_unsupported,
                 "checkpoints_passed": perf.checkpoints_passed,
@@ -593,6 +594,8 @@ def performance_series(
                     perf.helmsdeep_target
                 ),
                 PerformanceResult.profile.is_not_distinct_from(perf.profile),
+                # a skipped test measured nothing to compare against
+                PerformanceResult.status != "SKIPPED",
                 Run.env.is_not_distinct_from(run.env),
                 Run.started_at < run.started_at,
                 Run.ended_at.is_not(None),
@@ -741,6 +744,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                 "max_sustainable_concurrency": perf.max_sustainable_concurrency,
                 "checkpoints_passed": perf.checkpoints_passed,
                 "error": perf.error,
+                "message": perf.message,
             }
             for perf in run.performance
         ]

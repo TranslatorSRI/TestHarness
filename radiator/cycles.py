@@ -153,6 +153,8 @@ class Row:
     @property
     def detail_text(self) -> str:
         if self.perf is not None:
+            if self.perf.status == "SKIPPED":
+                return self.perf.message or "skipped"
             if self.perf.error:
                 return f"run failed: {self.perf.error}"
             if self.perf.checkpoints_passed is True:
@@ -334,7 +336,7 @@ def performance_flags(
     run: Run, perf: PerformanceResult, previous: Optional[PerformanceResult]
 ) -> list[Flag]:
     """Oddities in a performance result against the previous one."""
-    if previous is None:
+    if previous is None or perf.status == "SKIPPED":
         return []
     name = _perf_name(perf)
     was = previous.max_sustainable_concurrency

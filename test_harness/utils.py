@@ -131,6 +131,25 @@ def normalize_curies(
     return normalized_curies
 
 
+def skipped_because(
+    test: Union[TestCase, PathfinderTestCase],
+    asset: Union[TestAsset, PathfinderTestAsset],
+    include_skipped: bool = False,
+) -> Optional[str]:
+    """Why the suite skips this asset, for the reports, or None to run it.
+
+    An asset is skipped when it or its test case has ``skip`` set, unless the
+    run includes skipped tests (``--include_skipped``).
+    """
+    if include_skipped:
+        return None
+    for entity in (asset, test):
+        if getattr(entity, "skip", False):
+            reason = getattr(entity, "skip_reason", None)
+            return "Skipped in the suite" + (f": {reason}" if reason else "")
+    return None
+
+
 def normalized_output_ids(
     asset: TestAsset, normalized_curies: Dict[str, str]
 ) -> List[str]:

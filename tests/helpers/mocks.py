@@ -87,6 +87,7 @@ class MockResultCollector(ResultCollector):
         url: str,
         force_skipped: bool = False,
         status=None,
+        message=None,
     ):
         return super().collect_acceptance_result(
             test,
@@ -96,6 +97,7 @@ class MockResultCollector(ResultCollector):
             url,
             force_skipped=force_skipped,
             status=status,
+            message=message,
         )
 
     def collect_performance_result(

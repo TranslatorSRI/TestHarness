@@ -44,6 +44,8 @@
     <div class="value">{{ conc(v.perf.max_sustainable_concurrency) }}</div>
     {% if v.msc_delta is not none %}
       <div class="delta {{ 'up' if v.msc_delta > 0.05 else ('down' if v.msc_delta < -0.05 else '') }}">{{ '%+.1f'|format(v.msc_delta) }} vs previous run</div>
+    {% elif v.perf.status == 'SKIPPED' %}
+      <div class="delta">not load tested</div>
     {% elif v.perf.max_sustainable_concurrency is none and not v.perf.error %}
       <div class="delta down">no stage met the SLO</div>
     {% else %}
@@ -130,6 +132,9 @@
     <div>{{ status_badge(perf.status) }}</div>
   </div>
 
+  {% if perf.status == 'SKIPPED' %}
+  <div class="callout" role="note"><b>Not load tested.</b> {{ perf.message or 'The suite skips this test.' }}</div>
+  {% endif %}
   {% if perf.error %}
   <div class="callout bad" role="alert"><b>The load test didn't produce a result.</b> {{ perf.error }}{% if perf.exit_code is not none %} <span class="muted">(exit code {{ perf.exit_code }})</span>{% endif %}</div>
   {% endif %}
@@ -140,7 +145,7 @@
   <div class="callout" role="note"><b>Read the headline with care:</b> HelmsDeep flagged the knee stage's measurement as not trustworthy (see the stage notes below).</div>
   {% endif %}
 
-  {% if not perf.error %}
+  {% if not perf.error and perf.status != 'SKIPPED' %}
   <div class="figures">
     <div class="figure">
       <div class="label">Max sustainable concurrency</div>
@@ -201,7 +206,7 @@
     </tbody>
   </table>
   </div>
-  {% elif not perf.error %}
+  {% elif not perf.error and perf.status != 'SKIPPED' %}
   <p class="sub">HelmsDeep didn't report per-stage numbers for this run.</p>
   {% endif %}
 
