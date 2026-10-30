@@ -97,8 +97,10 @@ Then:
 - **See the dashboard with made-up history** instead (eg to look around without
   waiting for real runs): `docker compose run --rm radiator python -m radiator.demo`.
   Don't do this in a radiator you'll keep: the demo runs mix in with real ones.
-- **Stop it**: `docker compose down` keeps the results (in the `radiator-db`
-  volume) for next time; `docker compose down -v` wipes them.
+- **Stop it**: `docker compose down` (or `down -v`, or restarting Docker)
+  keeps the results for next time: Postgres stores them on the host, in
+  `./data/radiator-db` (set `RADIATOR_DB_DIR` in `.env` to put them
+  elsewhere). To wipe them, `docker compose down` and delete that directory.
 
 If the harness warns `Can't write ./logs/harness.log` (a Linux host where
 `./logs` isn't writable by the container's user), it logs to the console only;
