@@ -229,6 +229,22 @@ whenever `--query_type` is given. Saved result filenames are prefixed with the
 query type (eg `MVP1_test_report.json`) so runs of different slices stay
 distinguishable.
 
+### Skipped tests
+A test that always fails for a known reason can be turned off in the suite
+until the issue behind it is fixed: set `skip: true` on the test asset, or on
+the test case to skip all of its assets, with a `skip_reason` saying why (eg
+the issue it waits on).
+
+A skipped test isn't run: its query isn't sent (unless other assets in the same
+test case still need it), and a skipped performance test doesn't start
+HelmsDeep. It is still reported, as `SKIPPED` with the reason, in Slack, the
+CSV, Zebrunner and the Information Radiator, which leaves skips out of pass
+rates. To see whether the issue is fixed, run the skipped tests too:
+- `test-harness --env ci --include_skipped download <suite>`
+
+`test-harness-cycle` and `test-harness-sweep` pass `--include_skipped` on to
+every run when it's given after the `--`.
+
 ### TRAPI version
 The harness speaks **TRAPI 2.0 and 1.6**. Queries are built with
 [`translator_tom`](https://github.com/NCATSTranslator/TRAPIObjectModeling)

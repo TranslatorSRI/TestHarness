@@ -112,6 +112,7 @@ class ResultCollector:
         url: str,
         force_skipped: bool = False,
         status: Optional[AgentStatus] = None,
+        message: Optional[str] = None,
     ):
         """Add a single report to the total output.
 
@@ -123,6 +124,9 @@ class ResultCollector:
         ``status`` is the test's overall status, for the radiator. Without it,
         it is worked out the way ``run_tests`` does: from the ARS, or from the
         single agent when an override target narrowed the roster to one.
+
+        ``message`` goes with every agent's SKIPPED result when the test is
+        skipped, eg why the suite skips it.
         """
         self.has_acceptance_results = True
         # add result to stats
@@ -170,7 +174,7 @@ class ResultCollector:
             # the run its results.
             try:
                 record = self._asset_result(
-                    test, asset, report, parent_pk, status, force_skipped
+                    test, asset, report, parent_pk, status, force_skipped, message
                 )
             except Exception as e:
                 self.logger.error(
@@ -188,6 +192,7 @@ class ResultCollector:
         parent_pk: Optional[str],
         status: AgentStatus,
         force_skipped: bool,
+        message: Optional[str] = None,
     ) -> AssetResult:
         """The radiator's record of one asset, with a row for every agent.
 
@@ -203,7 +208,12 @@ class ResultCollector:
             agent_report = None if force_skipped else report.result.get(agent)
             if agent_report is None:
                 agents.append(
-                    AgentResult(agent=agent, status=AgentStatus.SKIPPED.value, pk=pk)
+                    AgentResult(
+                        agent=agent,
+                        status=AgentStatus.SKIPPED.value,
+                        message=message,
+                        pk=pk,
+                    )
                 )
                 continue
             found, rank, score = self._expected_answer(agent_report)
@@ -427,6 +437,26 @@ class ResultCollector:
                 host=host_url,
                 status=AgentStatus.FAILED.value,
                 error=error,
+            )
+        )
+
+    def record_performance_skip(
+        self,
+        test: Union[TestCase, PathfinderTestCase],
+        asset: Union[TestAsset, PathfinderTestAsset],
+        host_url: str,
+        message: str,
+    ):
+        """Record, for the radiator, a performance test the suite skips."""
+        if self.radiator is None:
+            return
+        self.radiator.add_performance(
+            PerformanceResult(
+                test_case_id=test.id,
+                asset_id=asset.id,
+                host=host_url,
+                status=AgentStatus.SKIPPED.value,
+                message=message,
             )
         )
 

@@ -161,6 +161,8 @@ class PerformanceResult(BaseModel):
     status: Status
     # Set when the run never produced a summary at all.
     error: Optional[str] = None
+    # Anything else worth saying, eg why the suite skips the test.
+    message: Optional[str] = None
     exit_code: Optional[int] = None
     max_sustainable_concurrency: Optional[float] = None
     knee_unsupported: Optional[bool] = None

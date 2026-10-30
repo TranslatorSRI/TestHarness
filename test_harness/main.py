@@ -655,6 +655,16 @@ def cli():
     )
 
     parser.add_argument(
+        "--include_skipped",
+        action="store_true",
+        help=(
+            "Run the tests the suite skips too (skip: true on an asset or test "
+            "case), eg to see whether the issue behind them is fixed. Without "
+            "it they're reported as SKIPPED, with the reason, and not run."
+        ),
+    )
+
+    parser.add_argument(
         "--reporter_url",
         type=url_type,
         help="URL of the Testing Dashboard",

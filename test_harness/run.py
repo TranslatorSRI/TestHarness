@@ -35,6 +35,7 @@ from test_harness.utils import (
     TestReport,
     hash_test_asset,
     normalized_output_ids,
+    skipped_because,
 )
 
 
@@ -87,6 +88,7 @@ def run_tests(
     status_agent = "ars"
     if target_url is not None and target is not None:
         status_agent = target.split("infores:")[-1]
+    include_skipped = bool(args.get("include_skipped"))
     # loop over all tests
     for test in tqdm(list(tests.values())):
         # check if acceptance test
@@ -100,7 +102,22 @@ def run_tests(
 
         query_responses = {}
         if test.test_case_objective == "AcceptanceTest":
-            query_responses, normalized_curies = query_runner.run_queries(test)
+            # Assets the suite skips aren't queried, but are still reported,
+            # as SKIPPED with the reason.
+            skips = {
+                asset.id: skipped_because(test, asset, include_skipped)
+                for asset in test.test_assets
+            }
+            to_run = [asset for asset in test.test_assets if not skips[asset.id]]
+            if to_run:
+                query_responses, normalized_curies = query_runner.run_queries(
+                    test
+                    if len(to_run) == len(test.test_assets)
+                    else test.model_copy(update={"test_assets": to_run})
+                )
+            else:
+                logger.info(f"[{test.id}] every asset is skipped; not querying")
+                normalized_curies = {}
             test_ids = []
 
             for asset in test.test_assets:
@@ -125,10 +142,15 @@ def run_tests(
                     logger.error(f"Failed to create test: {test.id}")
                     asset_reporter = LocalReporter(logger=logger)
 
+                skip_message = skips[asset.id]
                 test_asset_hash = hash_test_asset(asset)
-                test_query = query_responses.get(test_asset_hash)
+                test_query = (
+                    None if skip_message else query_responses.get(test_asset_hash)
+                )
                 if test_query is not None:
                     message = json.dumps(test_query["query"], indent=4)
+                elif skip_message:
+                    message = skip_message
                 else:
                     message = "Unable to retrieve response for test asset."
                 asset_reporter.upload_log(
@@ -306,15 +328,19 @@ def run_tests(
                         test_id, json.dumps(asdict(report), indent=4)
                     )
                 else:
-                    # No query response for this asset (eg query generation
-                    # failed). Record it as skipped across every agent so it
-                    # still appears in the per-agent stats, CSV, and radiator
-                    # labels as SKIPPED instead of being dropped entirely.
-                    logger.warning(
-                        f"[{test.id}] asset {asset.id}: no query response (its "
-                        "query couldn't be built or sent; see the errors above), "
-                        "so it's recorded as SKIPPED"
-                    )
+                    # Skipped by the suite, or no query response for this asset
+                    # (eg query generation failed). Record it as skipped across
+                    # every agent so it still appears in the per-agent stats,
+                    # CSV, and radiator labels as SKIPPED instead of being
+                    # dropped entirely.
+                    if skip_message:
+                        logger.info(f"[{test.id}] asset {asset.id}: {skip_message}")
+                    else:
+                        logger.warning(
+                            f"[{test.id}] asset {asset.id}: no query response (its "
+                            "query couldn't be built or sent; see the errors "
+                            "above), so it's recorded as SKIPPED"
+                        )
                     status = AgentStatus.SKIPPED
                     collector.collect_acceptance_result(
                         test,
@@ -324,6 +350,7 @@ def run_tests(
                         f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
                         force_skipped=True,
                         status=status,
+                        message=skip_message,
                     )
                     try:
                         asset_reporter.upload_labels(
@@ -366,6 +393,19 @@ def run_tests(
                             test.components[0]
                         ][0]["url"]
                         perf_target = None
+                    skip_message = skipped_because(test, asset, include_skipped)
+                    if skip_message:
+                        # no load test, but the radiator and Zebrunner still
+                        # get the test, as SKIPPED with the reason
+                        logger.info(
+                            f"[{test.id}] {skip_message}; not running HelmsDeep"
+                        )
+                        asset_reporter.upload_log(test_id, skip_message)
+                        collector.record_performance_skip(
+                            test, asset, host, skip_message
+                        )
+                        asset_reporter.finish_test(test_id, AgentStatus.SKIPPED.value)
+                        continue
                     # HelmsDeep sends its own varied corpus, so the asset's
                     # TRAPI query is not what goes under load. Log the run plan
                     # -- layer, ramp, SLO, checkpoints -- which is what the

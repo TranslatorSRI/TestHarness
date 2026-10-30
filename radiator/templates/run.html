@@ -138,7 +138,7 @@
     {% for perf in run.performance %}
       <tr>
         <td>{{ perf.host }}</td><td>{{ perf.helmsdeep_target or '–' }}</td><td>{{ perf.profile or 'default' }}</td>
-        <td>{{ status_badge(perf.status) }}{% if perf.error %} <span class="muted">{{ perf.error }}</span>{% endif %}</td>
+        <td>{{ status_badge(perf.status) }}{% if perf.error %} <span class="muted">{{ perf.error }}</span>{% endif %}{% if perf.message %} <span class="muted">{{ perf.message }}</span>{% endif %}</td>
         <td class="num">{{ '%.1f'|format(perf.max_sustainable_concurrency) if perf.max_sustainable_concurrency is not none else '–' }}{% if perf.knee_unsupported %} <span class="badge" title="HelmsDeep flagged the measurement">unsupported</span>{% endif %}</td>
         <td>{% if perf.checkpoints_passed is none %}<span class="muted">none configured</span>{% else %}{{ status_badge('PASSED' if perf.checkpoints_passed else 'FAILED') }}{% endif %}</td>
       </tr>
