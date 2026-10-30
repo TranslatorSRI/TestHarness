@@ -28,8 +28,10 @@ services:
       POSTGRES_USER: radiator
       POSTGRES_PASSWORD: radiator
       POSTGRES_DB: radiator
+    # Kept on the host in ./data/radiator-db (RADIATOR_DB_DIR to put it
+    # elsewhere), so it survives restarts, `down -v` and volume prunes
     volumes:
-      - radiator-db:/var/lib/postgresql/data
+      - ${RADIATOR_DB_DIR:-./data/radiator-db}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "radiator"]
       interval: 2s
@@ -98,6 +100,3 @@ services:
     depends_on:
       radiator:
         condition: service_healthy
-
-volumes:
-  radiator-db:
