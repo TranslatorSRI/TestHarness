@@ -709,7 +709,9 @@ def cli():
         type=str,
         help=(
             "The infores identifier of the service at --target_url, with or "
-            "without the 'infores:' prefix, e.g. aragorn or infores:aragorn. "
+            "without the 'infores:' prefix, e.g. shepherd-aragorn or "
+            "infores:shepherd-aragorn -- the one it is registered under in "
+            "SmartAPI, which --trapi_version auto reads. "
             "Anything other than ars is queried directly as a single service "
             "(POST to <target_url>/query); ars uses the normal ARS "
             "submit/poll flow. Must be used with --target_url."

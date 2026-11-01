@@ -97,9 +97,9 @@ spec:
                 - name: PERFORMANCE_TARGETS
                   value: >-
                     ars=https://ars.ci.transltr.io,
-                    aragorn=https://aragorn.ci.transltr.io,
-                    arax=https://arax.ci.transltr.io,
-                    bte=https://bte.ci.transltr.io
+                    shepherd-aragorn=https://aragorn.ci.transltr.io,
+                    shepherd-arax=https://arax.ci.transltr.io,
+                    shepherd-bte=https://bte.ci.transltr.io
 
                 # Without this, Python buffers stdout when it isn't a terminal
                 # and `kubectl logs` shows nothing for hours.

@@ -401,15 +401,23 @@ sweep:
 ```bash
 test-harness-sweep --suite performance_tests --env ci --download \
     ars=https://ars.ci.transltr.io \
-    aragorn=https://aragorn.ci.transltr.io \
-    arax=https://arax.ci.transltr.io \
-    bte=https://bte.ci.transltr.io \
+    shepherd-aragorn=https://aragorn.ci.transltr.io \
+    shepherd-arax=https://arax.ci.transltr.io \
+    shepherd-bte=https://bte.ci.transltr.io \
     -- --performance_profile mixed
 ```
 
 Each `NAME=URL` pair becomes one `test-harness --env ENV --target_url URL --target NAME`
 invocation, in the order given, and the sweep waits for each to finish before
 starting the next. Anything after `--` is passed through to every invocation.
+
+`NAME` must be the infores the service is registered under in SmartAPI. The
+Shepherd-hosted ARAs are `infores:shepherd-aragorn`, `infores:shepherd-arax` and
+`infores:shepherd-bte`, not the bare `aragorn`/`arax`/`bte`. `--trapi_version
+auto` (the default) looks the TRAPI version up by that name, and an unregistered
+name falls back to 2.0.0 with only a log warning. `NAME` also labels the
+results (each target's output directory and filename prefix, and the agent the
+Information Radiator reports them under).
 
 Pass `--tests_url` (and `--tests_dir`) to the **sweep**, not through the `--`.
 They belong to the harness's `download`/`load` subcommands, and passthrough
