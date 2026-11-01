@@ -1,6 +1,6 @@
 {{- if .Values.sweep.enabled }}
 {{- if not .Values.sweep.targets }}
-{{- fail "sweep.targets is required when the sweep is enabled, eg [\"aragorn=https://aragorn.ci.transltr.io\"]" }}
+{{- fail "sweep.targets is required when the sweep is enabled, eg [\"shepherd-aragorn=https://aragorn.ci.transltr.io\"]" }}
 {{- end }}
 apiVersion: batch/v1
 kind: CronJob

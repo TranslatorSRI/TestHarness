@@ -76,6 +76,6 @@ sweep:
   schedule: "0 2 * * 0"
   env: ci
   targets:
-    - aragorn=https://aragorn.ci.transltr.io
-    - arax=https://arax.ci.transltr.io
-    - bte=https://bte.ci.transltr.io
+    - shepherd-aragorn=https://aragorn.ci.transltr.io
+    - shepherd-arax=https://arax.ci.transltr.io
+    - shepherd-bte=https://bte.ci.transltr.io

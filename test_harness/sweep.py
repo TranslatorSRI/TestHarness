@@ -21,9 +21,9 @@ the binary missing from the image.
 
     test-harness-sweep --suite performance_tests --env ci --download \\
         ars=https://ars.ci.transltr.io \\
-        aragorn=https://aragorn.ci.transltr.io \\
-        arax=https://arax.ci.transltr.io \\
-        bte=https://bte.ci.transltr.io \\
+        shepherd-aragorn=https://aragorn.ci.transltr.io \\
+        shepherd-arax=https://arax.ci.transltr.io \\
+        shepherd-bte=https://bte.ci.transltr.io \\
         -- --performance_profile mixed
 
 Targets can also come from the PERFORMANCE_TARGETS environment variable as a
@@ -240,7 +240,7 @@ def cli(argv: Sequence[str] = None) -> int:
             "harness invocation, e.g.:\n\n"
             "  test-harness-sweep --suite performance_tests --env ci --download \\\n"
             "      ars=https://ars.ci.transltr.io \\\n"
-            "      aragorn=https://aragorn.ci.transltr.io \\\n"
+            "      shepherd-aragorn=https://aragorn.ci.transltr.io \\\n"
             "      -- --performance_profile mixed --log_level INFO\n"
         ),
     )
@@ -251,8 +251,11 @@ def cli(argv: Sequence[str] = None) -> int:
         help=(
             "The services to run against, in order, e.g. "
             "ars=https://ars.ci.transltr.io. NAME is the infores identifier "
-            f"passed to --target. Defaults to the {TARGETS_ENV} environment "
-            "variable, as a comma-separated list of the same pairs."
+            "passed to --target, and must be the one the service is registered "
+            "under in SmartAPI (shepherd-aragorn, not aragorn): --trapi_version "
+            "auto looks the version up by it. Defaults to the "
+            f"{TARGETS_ENV} environment variable, as a comma-separated list of "
+            "the same pairs."
         ),
     )
     parser.add_argument(
