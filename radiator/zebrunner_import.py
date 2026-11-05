@@ -559,7 +559,14 @@ def convert_test(test: dict, report: Optional[dict]) -> Optional[schema.AssetRes
         name=test.get("name"),
         expected_output=labels.get("ExpectedOutput"),
         input_curie=labels.get("SourceInputCurie" if pathfinder else "InputCurie"),
-        output_curie=labels.get("TargetInputCurie" if pathfinder else "OutputCurie"),
+        # the harness comma-separates an asset's several output CURIEs
+        output_curies=[
+            curie
+            for curie in (
+                labels.get("TargetInputCurie" if pathfinder else "OutputCurie") or ""
+            ).split(",")
+            if curie
+        ],
         status=status,
         parent_pk=None if parent_pk in (None, "", "None") else str(parent_pk),
         agents=agents,

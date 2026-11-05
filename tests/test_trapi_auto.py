@@ -118,3 +118,21 @@ def test_auto_falls_back_when_smartapi_answers_garbage(monkeypatch, caplog):
     args = {"trapi_version": "auto"}
     assert resolve_trapi_version(args, "ci", logging.getLogger("t")) == "2.0.0"
     assert "couldn't read the SmartAPI registry" in caplog.text
+
+
+def test_auto_with_a_target_url_says_where_the_version_came_from(registry, caplog):
+    """The registry describes the deployed service, not the one at
+    --target_url, so auto says so rather than quietly using it."""
+    args = {
+        "trapi_version": "auto",
+        "target": "ars",
+        "target_url": "https://shepherd.example.org",
+    }
+    assert resolve_trapi_version(args, "prod", logging.getLogger("t")) == "1.6.0"
+    assert "not the service at https://shepherd.example.org" in caplog.text
+
+
+def test_auto_without_a_target_url_has_no_such_warning(registry, caplog):
+    args = {"trapi_version": "auto", "target": None}
+    resolve_trapi_version(args, "prod", logging.getLogger("t"))
+    assert "not the service at" not in caplog.text

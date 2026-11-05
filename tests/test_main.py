@@ -19,6 +19,7 @@ def test_main(mocker):
         {
             "tests": example_test_cases,
             "suite": "testing",
+            "env": "ci",
             "save_to_dashboard": False,
             "json_output": False,
             "log_level": "ERROR",

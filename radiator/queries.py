@@ -204,6 +204,7 @@ def _performance_summary(session: Session, run: Run) -> list[dict]:
                 "profile": perf.profile,
                 "status": perf.status,
                 "error": perf.error,
+                "message": perf.message,
                 "max_sustainable_concurrency": perf.max_sustainable_concurrency,
                 "knee_unsupported": perf.knee_unsupported,
                 "checkpoints_passed": perf.checkpoints_passed,
@@ -593,6 +594,8 @@ def performance_series(
                     perf.helmsdeep_target
                 ),
                 PerformanceResult.profile.is_not_distinct_from(perf.profile),
+                # a skipped test measured nothing to compare against
+                PerformanceResult.status != "SKIPPED",
                 Run.env.is_not_distinct_from(run.env),
                 Run.started_at < run.started_at,
                 Run.ended_at.is_not(None),
@@ -602,6 +605,19 @@ def performance_series(
         ).all()
         out.append((perf, [tuple(row) for row in reversed(earlier)] + [(run, perf)]))
     return out
+
+
+def is_performance_run(run: Run) -> bool:
+    """Whether a run is a load test rather than an acceptance run.
+
+    A run with performance results is one. Before the first arrives (HelmsDeep
+    reports only when a load test ends, tens of minutes in), a run with no
+    asset results either is taken to be one when its suite is a performance
+    suite.
+    """
+    if run.performance:
+        return True
+    return not run.assets and "performance" in run.suite.lower()
 
 
 # --- live updates ---------------------------------------------------------------
@@ -678,6 +694,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "run_id": str(run.id),
         "number": run.number,
         "suite": run.suite,
+        "source_suite": run.source_suite,
         "env": run.env,
         "target": run.target,
         "query_type": run.query_type,
@@ -698,13 +715,14 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                 "kind": asset.kind,
                 "expected_output": asset.expected_output,
                 "input_curie": asset.input_curie,
-                "output_curie": asset.output_curie,
+                "output_curies": asset.output_curies,
                 "status": asset.status,
                 "agents": [
                     {
                         "agent": agent.agent,
                         "status": agent.status,
                         "found": agent.found,
+                        "found_curies": agent.found_curies,
                         "rank": agent.rank,
                         "score": agent.score,
                         "n_results": agent.n_results,
@@ -726,6 +744,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                 "max_sustainable_concurrency": perf.max_sustainable_concurrency,
                 "checkpoints_passed": perf.checkpoints_passed,
                 "error": perf.error,
+                "message": perf.message,
             }
             for perf in run.performance
         ]

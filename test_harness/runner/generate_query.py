@@ -200,7 +200,7 @@ if __name__ == "__main__":
             "input_category": "biolink:ChemicalEntity",
             "predicate_id": "biolink:affects",
             "predicate_name": "affects",
-            "output_id": "NCBIGene:4314",
+            "output_ids": ["NCBIGene:4314"],
             "output_name": "MMP3",
             "output_category": "biolink:Gene",
             "association": None,

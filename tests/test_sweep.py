@@ -149,7 +149,7 @@ def test_an_unlaunchable_harness_is_reported_per_target():
 
 def test_cli_requires_targets(capsys):
     with pytest.raises(SystemExit):
-        cli(["--suite", "perf"])
+        cli(["--suite", "perf", "--env", "ci"])
     assert TARGETS_ENV in capsys.readouterr().err
 
 
@@ -159,6 +159,8 @@ def test_cli_passes_through_args_after_the_separator():
             [
                 "--suite",
                 "local_performance",
+                "--env",
+                "ci",
                 "ars=http://a",
                 "--",
                 "--performance_profile",
@@ -166,8 +168,14 @@ def test_cli_passes_through_args_after_the_separator():
             ]
         )
     kwargs = sweep.call_args.kwargs
-    # the `--` separator itself must not reach the harness
-    assert kwargs["harness_args"] == ["--performance_profile", "mixed"]
+    # the `--` separator itself must not reach the harness; the environment
+    # goes to every run
+    assert kwargs["harness_args"] == [
+        "--env",
+        "ci",
+        "--performance_profile",
+        "mixed",
+    ]
 
 
 def test_passthrough_splits_at_the_separator():
@@ -195,7 +203,7 @@ def test_a_subcommand_flag_after_the_separator_is_rejected_with_guidance(capsys)
     problem, and this is edited by hand in a YAML manifest."""
     for arg in ("--tests_url=https://x/y.zip", "--tests_url", "--tests_dir=/suites"):
         with pytest.raises(SystemExit):
-            cli(["--suite", "s", "ars=http://a", "--", arg])
+            cli(["--suite", "s", "--env", "ci", "ars=http://a", "--", arg])
         err = capsys.readouterr().err
         assert "cannot be passed through after `--`" in err
         assert "before the `--`" in err

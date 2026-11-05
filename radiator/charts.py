@@ -227,3 +227,135 @@ def line_chart(
     return Markup(
         f'<div class="chart-wrap" data-hover="{data}">{"".join(parts)}</div>{legend}'
     )
+
+
+def stage_chart(
+    stages: list[dict],
+    *,
+    slo_ms: Optional[float] = None,
+    knee_stage: Optional[int] = None,
+    width: int = WIDTH_HALF,
+    height: int = 220,
+    label: str = "",
+) -> Markup:
+    """A load test's p99 latency at each stage of its ramp, against its SLO.
+
+    The x-axis is the ramp (each stage's concurrent users), not time: stages
+    are discrete load levels, so they are drawn as points joined by a line.
+    A stage that kept inside the SLO is filled; one over it is hollow. The
+    knee, the highest stage that met the SLO, carries a label.
+    """
+    points = [
+        (i, s.get("p99_ms"))
+        for i, s in enumerate(stages)
+        if s.get("p99_ms") is not None
+    ]
+    if not points:
+        return Markup('<p class="empty">No stage measurements.</p>')
+
+    def seconds(ms: float) -> str:
+        return f"{ms / 1000:,.0f}s" if ms >= 10000 or ms == 0 else f"{ms / 1000:,.1f}s"
+
+    values = [v for _, v in points] + ([slo_ms] if slo_ms else [])
+    ticks = nice_ticks(0, max(values))
+    lo, hi = 0, ticks[-1]
+    left, right, top, bottom = 52, 16, 14, 30
+    plot_w, plot_h = width - left - right, height - top - bottom
+    n = len(stages)
+
+    def sx(i: int) -> float:
+        return left + plot_w * ((i + 0.5) / n)
+
+    def sy(y: float) -> float:
+        return top + plot_h - (y - lo) / (hi - lo) * plot_h if hi != lo else top
+
+    parts = [
+        f'<svg class="chart" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="{escape(label)}" data-chart="stages">'
+    ]
+    for tick in ticks:
+        y = sy(tick)
+        parts.append(
+            f'<line class="grid" x1="{left}" x2="{width - right}" y1="{y:.1f}" y2="{y:.1f}"/>'
+            f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end">{escape(seconds(tick))}</text>'
+        )
+    base_y = top + plot_h
+    parts.append(
+        f'<line class="baseline" x1="{left}" x2="{width - right}" y1="{base_y}" y2="{base_y}"/>'
+    )
+    for i, s in enumerate(stages):
+        users = s.get("users")
+        parts.append(
+            f'<text x="{sx(i):.1f}" y="{height - 10}" text-anchor="middle">'
+            f'{escape(str(users) if users is not None else "?")}</text>'
+        )
+    if slo_ms:
+        y = sy(slo_ms)
+        parts.append(
+            f'<line class="slo" x1="{left}" x2="{width - right}" y1="{y:.1f}" y2="{y:.1f}"/>'
+            f'<text class="slo-label" x="{width - right}" y="{y - 5:.1f}" '
+            f'text-anchor="end">p99 SLO {escape(seconds(slo_ms))}</text>'
+        )
+    d = " ".join(f"{sx(i):.1f},{sy(v):.1f}" for i, v in points)
+    if len(points) > 1:
+        parts.append(
+            f'<polyline class="series" points="{d}" style="stroke:var(--agent-1)"/>'
+        )
+    for i, v in points:
+        over = slo_ms is not None and v > slo_ms
+        parts.append(
+            f'<circle class="dot{" over" if over else ""}" cx="{sx(i):.1f}" '
+            f'cy="{sy(v):.1f}" r="4.5"/>'
+        )
+        if knee_stage is not None and stages[i].get("stage") == knee_stage:
+            parts.append(
+                f'<text class="knee-label" x="{sx(i):.1f}" y="{sy(v) - 10:.1f}" '
+                f'text-anchor="middle">knee</text>'
+            )
+    parts.append(
+        f'<line class="crosshair" x1="0" x2="0" y1="{top}" y2="{base_y}" visibility="hidden"/>'
+        f'<rect class="hit" x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" fill="transparent"/>'
+        "</svg>"
+    )
+
+    def fmt(value, f):
+        return None if value is None else f(value)
+
+    hover = {
+        "width": width,
+        "xs": [round(sx(i), 1) for i in range(n)],
+        "titles": [f"{s.get('users', '?')} users" for s in stages],
+        "series": [
+            {
+                "name": "p99",
+                "color": "var(--agent-1)",
+                "values": [fmt(s.get("p99_ms"), seconds) for s in stages],
+            },
+            {
+                "name": "p50",
+                "color": None,
+                "values": [fmt(s.get("p50_ms"), seconds) for s in stages],
+            },
+            {
+                "name": "errors",
+                "color": None,
+                "values": [
+                    fmt(s.get("error_rate"), lambda v: f"{v * 100:.1f}%")
+                    for s in stages
+                ],
+            },
+            {
+                "name": "requests/s",
+                "color": None,
+                "values": [fmt(s.get("rps"), lambda v: f"{v:.2f}") for s in stages],
+            },
+        ],
+    }
+    data = escape(json.dumps(hover))
+    return Markup(
+        f'<div class="chart-wrap" data-hover="{data}">{"".join(parts)}</div>'
+        '<div class="legend"><span class="key"><span class="line" style="background:var(--agent-1)"></span>p99 latency</span>'
+        '<span class="key"><span class="ring"></span>over the SLO</span>'
+        '<span class="key"><span class="line dashed"></span>p99 SLO</span>'
+        '<span class="key muted">x-axis: concurrent users at each stage</span></div>'
+    )

@@ -39,7 +39,7 @@ class _Asset:
     expected_output = "TopAnswer"
     predicate_id = "biolink:treats"
     input_id = "MONDO:1"
-    output_id = "CHEBI:2"
+    output_ids = ["CHEBI:2"]
 
 
 class _Case:
@@ -115,7 +115,7 @@ def test_collector_builds_structured_asset_result():
     assert result.asset_id == "asset-1"
     assert result.kind == "acceptance"
     assert result.input_curie == "MONDO:1"
-    assert result.output_curie == "CHEBI:2"
+    assert result.output_curies == ["CHEBI:2"]
     # derived from the ARS, as run_tests does
     assert result.status == "PASSED"
     assert result.parent_pk == "parent"
@@ -230,6 +230,7 @@ def test_run_tests_records_response_metadata(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
@@ -398,6 +399,7 @@ def test_run_tests_still_collects_when_zebrunner_fails(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",
@@ -410,6 +412,7 @@ def _main_args(tmp_path):
     return {
         "tests": example_test_cases,
         "suite": "testing",
+        "env": "ci",
         "save_to_dashboard": False,
         "json_output": False,
         "log_level": "ERROR",
@@ -668,6 +671,7 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "1.6.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",

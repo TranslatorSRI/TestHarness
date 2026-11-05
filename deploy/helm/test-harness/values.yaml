@@ -65,6 +65,7 @@ cycles:
   enabled: true
   # Applied to every environment unless the environment sets its own.
   defaults:
+    acceptance: mvp_tests
     pathfinder: pathfinder_tests
     performance: performance_tests
     performanceProfile: mixed
@@ -76,9 +77,11 @@ cycles:
       requests: {cpu: "2", memory: "2Gi"}
       limits: {cpu: "2", memory: "4Gi"}
   # Each: name, schedule, acceptance, performanceTargets (NAME=URL, in
-  # order), and optionally pathfinder, performance, performanceProfile,
+  # order), and optionally env, pathfinder, performance, performanceProfile,
   # harnessArgs, suspend, activeDeadlineSeconds, resources. See
-  # values.example.yaml.
+  # values.example.yaml. The environment tested is env, or else the name, so
+  # name an entry dev, ci, test or prod (or give it an env): the suites are
+  # the same in every environment.
   environments: []
 
 # The Monday digest: every environment's latest runs, posted to Slack.
@@ -98,6 +101,8 @@ sweep:
   schedule: "0 2 * * 0"
   suspend: false
   suite: performance_tests
+  # The environment to test: dev, ci, test or prod.
+  env: ""
   profile: mixed
   # NAME=URL, in the order they're loaded.
   targets: []

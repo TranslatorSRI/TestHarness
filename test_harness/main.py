@@ -31,11 +31,16 @@ from test_harness.runner.smart_api_registry import registered_trapi_versions
 from test_harness.trapi import (
     AUTO_TRAPI_VERSION,
     DEFAULT_TRAPI_VERSION,
+    environment_query_parameters,
     parse_query_parameters,
     trapi_minor_version,
     validate_query_parameters,
 )
-from test_harness.utils import QUERY_TYPE_PREDICATES, filter_tests_by_query_type
+from test_harness.utils import (
+    QUERY_TYPE_PREDICATES,
+    TEST_ENVS,
+    filter_tests_by_query_type,
+)
 
 setproctitle("TestHarness")
 setup_logger()
@@ -254,6 +259,11 @@ def main(args):
     if bool(args.get("target_url")) != bool(args.get("target")):
         logger.error("--target_url and --target must be provided together.")
         return EXIT_COULD_NOT_RUN
+    # Suites are the same in every environment; the run says which to test.
+    test_env = args.get("env")
+    if test_env not in TEST_ENVS:
+        logger.error(f"--env must be one of {', '.join(TEST_ENVS)}.")
+        return EXIT_COULD_NOT_RUN
     tests = []
     if "tests_url" in args:
         tests = download_tests(args["suite"], args["tests_url"], logger)
@@ -280,7 +290,6 @@ def main(args):
 
     # The TRAPI version: given, or (auto) what this environment's services are
     # registered with, while environments are on different versions.
-    test_env = next(iter(tests.values())).test_env
     args["trapi_version"] = resolve_trapi_version(args, test_env, logger)
     # Check the query parameters against the TRAPI version now, so a typo
     # stops the run before any query goes out rather than failing every one.
@@ -291,10 +300,13 @@ def main(args):
     except ValueError as e:
         logger.error(str(e))
         return EXIT_COULD_NOT_RUN
-    if args["query_parameters"]:
+    # what this environment's queries go out with, eg CI's bypass_cache, for
+    # the log and the reports (the query runner adds them per test)
+    sent_parameters = environment_query_parameters(args["query_parameters"], test_env)
+    if sent_parameters:
         logger.info(
             f"Sending these parameters with every query: "
-            f"{json.dumps(args['query_parameters'])}"
+            f"{json.dumps(sent_parameters)}"
         )
 
     output_dir = args.get("output_dir") or "test_results"
@@ -366,7 +378,7 @@ def main(args):
             target=args.get("target"),
             target_url=args.get("target_url"),
             query_type=query_type,
-            query_parameters=args.get("query_parameters"),
+            query_parameters=sent_parameters,
             cycle_id=args.get("cycle_id"),
             trapi_version=args["trapi_version"],
             expected_assets=sum(len(test.test_assets) for test in tests.values()),
@@ -388,8 +400,8 @@ def main(args):
             "`test-harness-radiator push`."
         )
     params_note = (
-        f"\nQuery parameters: `{json.dumps(args['query_parameters'])}`"
-        if args.get("query_parameters")
+        f"\nQuery parameters: `{json.dumps(sent_parameters)}`"
+        if sent_parameters
         else ""
     )
     # Only link to Zebrunner when the run went there: the local stand-in's
@@ -443,9 +455,7 @@ def main(args):
     collector = ResultCollector(
         test_env, logger, target=args.get("target"), radiator=radiator
     )
-    queried_envs = set()
-    for test in tests.values():
-        queried_envs.add(test.test_env)
+    queried_envs = {test_env}
     for channel, links, _, best_effort in channels:
         post(
             lambda: channel.post_notification(
@@ -548,6 +558,14 @@ def resolve_trapi_version(args, test_env, logger) -> str:
             f"TRAPI {versions[0]}: what {infores} is registered with for "
             f"{test_env} in SmartAPI{others}"
         )
+        if args.get("target_url"):
+            # the registry describes the deployed service, not the one at
+            # --target_url, which may well be on a different version
+            logger.warning(
+                f"--trapi_version auto read {infores}'s {test_env} SmartAPI "
+                f"entry, not the service at {args['target_url']}. If that "
+                "service is on another TRAPI version, pass --trapi_version."
+            )
         return versions[0]
     logger.warning(
         f"--trapi_version auto: {why}; using {DEFAULT_TRAPI_VERSION}. Pass "
@@ -627,6 +645,26 @@ def cli():
     )
 
     parser.add_argument(
+        "--env",
+        required=True,
+        choices=TEST_ENVS,
+        help=(
+            "The environment to test: every query goes to its services. "
+            "Suites are the same in every environment."
+        ),
+    )
+
+    parser.add_argument(
+        "--include_skipped",
+        action="store_true",
+        help=(
+            "Run the tests the suite skips too (skip: true on an asset or test "
+            "case), eg to see whether the issue behind them is fixed. Without "
+            "it they're reported as SKIPPED, with the reason, and not run."
+        ),
+    )
+
+    parser.add_argument(
         "--reporter_url",
         type=url_type,
         help="URL of the Testing Dashboard",
@@ -671,7 +709,9 @@ def cli():
         type=str,
         help=(
             "The infores identifier of the service at --target_url, with or "
-            "without the 'infores:' prefix, e.g. aragorn or infores:aragorn. "
+            "without the 'infores:' prefix, e.g. shepherd-aragorn or "
+            "infores:shepherd-aragorn -- the one it is registered under in "
+            "SmartAPI, which --trapi_version auto reads. "
             "Anything other than ars is queried directly as a single service "
             "(POST to <target_url>/query); ars uses the normal ARS "
             "submit/poll flow. Must be used with --target_url."
@@ -737,7 +777,8 @@ def cli():
             '\'{"timeout": 300, "bypass_cache": true}\'. TRAPI 2.0 queries carry '
             "them in their parameters object (timeout, log_level, bypass_cache, "
             "and any a service defines); TRAPI 1.6 queries carry them as "
-            "top-level fields. Defaults to $QUERY_PARAMETERS. Not used by "
+            "top-level fields. Queries to CI always add bypass_cache: true "
+            "unless it is given here. Defaults to $QUERY_PARAMETERS. Not used by "
             "performance tests, which send HelmsDeep's own queries."
         ),
     )

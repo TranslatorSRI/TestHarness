@@ -9,11 +9,10 @@ The Test Harness incorporates Test Runners that run analyses on the responses of
 
 ### Test Schema
 *_WARNING:_* This schema is likely to change as the Test Cases are finalized
-- env: the environment to run the queries against. (dev, ci, test, prod)
 - query_type: type of query to test. (treats(creative), upregulates, downregulates)
 - expected_output: whether the output curie is good or bad. (TopAnswer, Acceptable, BadButForgivable, NeverShow)
 - input_curie: curie used in the initial query.
-- output_curie: curie checked for in the results
+- output_ids: curies checked for in the results; any one of them counts as the expected answer
 
 ## How to use:
 The Test Harness is a CLI that you need to install:
@@ -24,11 +23,17 @@ The Test Harness is a CLI that you need to install:
 Once everything is installed, you can call
 - `test-harness -h` to see available options
 
+Every run says which environment it tests with `--env` (`dev`, `ci`, `test`
+or `prod`): the suites are the same in every environment, so the same suite,
+eg `test-harness --env prod download mvp_tests`, tests whichever one you name.
+`test-harness-cycle` and `test-harness-sweep` take `--env` too, and pass it to
+every run.
+
 ### Running locally
 By default the Test Harness reports results to an Information Radiator and
 posts them to Slack. To run everything locally without those services (for
 example while developing), pass `--local`:
-- `test-harness --local download <suite>`
+- `test-harness --env ci --local download <suite>`
 
 In local mode the harness makes no network calls to the Information Radiator or
 Slack. The test results (CSV and JSON) and any performance artifacts are saved
@@ -72,7 +77,8 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 
 | Setting | Default | |
 | --- | --- | --- |
-| `HARNESS_ARGS` | `load local_acceptance` | What the harness runs, eg `download sprint_4_tests`, or `--query_type MVP1 download sprint_4_tests` |
+| `HARNESS_ENV` | `ci` | The environment the harness tests: `dev`, `ci`, `test` or `prod` |
+| `HARNESS_ARGS` | `load local_acceptance` | What the harness runs, eg `download mvp_tests`, or `--query_type MVP1 download mvp_tests` |
 | `RADIATOR_USERNAME` / `RADIATOR_PASSWORD` | `translator` / `radiator` | The login |
 | `RADIATOR_TOKEN` | `local-dev-token` | The API token the harness uploads with |
 | `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
@@ -83,16 +89,18 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 
 Then:
 - **Run another suite** against the same radiator, without restarting it:
-  `docker compose run --rm harness test-harness download sprint_4_tests`
+  `docker compose run --rm harness test-harness --env ci download mvp_tests`
 - **Run a cycle** (acceptance, then pathfinder, then performance) and get its
-  board: `docker compose run --rm harness test-harness-cycle --download
-  --acceptance sprint_4_tests --pathfinder pathfinder_tests` (see
+  board: `docker compose run --rm harness test-harness-cycle --env ci --download
+  --acceptance mvp_tests --pathfinder pathfinder_tests` (see
   [Run cycles](#run-cycles-and-the-weekly-digest)).
 - **See the dashboard with made-up history** instead (eg to look around without
   waiting for real runs): `docker compose run --rm radiator python -m radiator.demo`.
   Don't do this in a radiator you'll keep: the demo runs mix in with real ones.
-- **Stop it**: `docker compose down` keeps the results (in the `radiator-db`
-  volume) for next time; `docker compose down -v` wipes them.
+- **Stop it**: `docker compose down` (or `down -v`, or restarting Docker)
+  keeps the results for next time: Postgres stores them on the host, in
+  `./data/radiator-db` (set `RADIATOR_DB_DIR` in `.env` to put them
+  elsewhere). To wipe them, `docker compose down` and delete that directory.
 
 If the harness warns `Can't write ./logs/harness.log` (a Linux host where
 `./logs` isn't writable by the container's user), it logs to the console only;
@@ -175,12 +183,12 @@ history from Zebrunner, see
 [Importing from Zebrunner](docs/information-radiator.md#importing-from-zebrunner).
 
 ### Running local test files
-`test-harness download <suite>` fetches the suites from
+`test-harness --env ci download <suite>` fetches the suites from
 [NCATSTranslator/Tests](https://github.com/NCATSTranslator/Tests) every run,
 which is no good when you want to change a CURIE and see what happens. A few
 small, editable suites ship in `test_harness/test_suites/`; run one with `load`
 instead of `download`:
-- `test-harness --local load local_acceptance`
+- `test-harness --env ci --local load local_acceptance`
 
 | Suite | What it is |
 | --- | --- |
@@ -194,7 +202,7 @@ suites are named, so the same name works with either subcommand.
 The harness reads `test_suites/` in the working directory when that exists —
 so a suite you're editing in your checkout is found without a flag — and
 otherwise the copy shipped with the package. `--tests_dir` overrides both:
-- `test-harness --local load my_suite --tests_dir ~/scratch/suites`
+- `test-harness --env ci --local load my_suite --tests_dir ~/scratch/suites`
 
 These are ordinary Translator Testing Model `TestSuite` documents, identical in
 shape to the downloaded ones. Copy one, change the CURIEs, run it. See
@@ -207,7 +215,7 @@ owns the ramp and the corpus (see [Performance tests](#performance-tests)).
 A suite normally mixes the MVP query types. To run just one of them — handy
 for a local evaluation run of a change that only affects one — pass
 `--query_type`:
-- `test-harness --local --query_type MVP1 download <suite>`
+- `test-harness --env ci --local --query_type MVP1 download <suite>`
 
 - `MVP1` runs the drug treats disease queries (test assets with a
   `biolink:treats` predicate).
@@ -220,6 +228,22 @@ dropped. Pathfinder test cases don't generate an MVP query, so they're skipped
 whenever `--query_type` is given. Saved result filenames are prefixed with the
 query type (eg `MVP1_test_report.json`) so runs of different slices stay
 distinguishable.
+
+### Skipped tests
+A test that always fails for a known reason can be turned off in the suite
+until the issue behind it is fixed: set `skip: true` on the test asset, or on
+the test case to skip all of its assets, with a `skip_reason` saying why (eg
+the issue it waits on).
+
+A skipped test isn't run: its query isn't sent (unless other assets in the same
+test case still need it), and a skipped performance test doesn't start
+HelmsDeep. It is still reported, as `SKIPPED` with the reason, in Slack, the
+CSV, Zebrunner and the Information Radiator, which leaves skips out of pass
+rates. To see whether the issue is fixed, run the skipped tests too:
+- `test-harness --env ci --include_skipped download <suite>`
+
+`test-harness-cycle` and `test-harness-sweep` pass `--include_skipped` on to
+every run when it's given after the `--`.
 
 ### TRAPI version
 The harness speaks **TRAPI 2.0 and 1.6**. Queries are built with
@@ -256,11 +280,15 @@ with an `id` — since the ARS can return either.
 ### Sending parameters with every query
 To send the same parameters with every query of a run, such as a longer
 timeout or a request to skip caches, pass them as a JSON object:
-- `test-harness --query_parameters '{"timeout": 300, "bypass_cache": true}' download <suite>`
+- `test-harness --env ci --query_parameters '{"timeout": 300, "bypass_cache": true}' download <suite>`
 
 or keep them in a file and pass `--query_parameters @params.json`. The
 `QUERY_PARAMETERS` environment variable does the same, which is handier in
 `.env` for Docker Compose or in a CronJob; the flag wins if both are set.
+
+Tests run against the CI environment always send `"bypass_cache": true`, so
+a CI run tests what is deployed rather than what an earlier run cached. Pass
+`'{"bypass_cache": false}'` to use the caches there anyway.
 
 Where they go depends on the TRAPI version:
 - **TRAPI 2.0**: in the query's `parameters` object. The
@@ -338,7 +366,7 @@ available:
 Select one with `--performance_profile`, or per test case with a `mixed` /
 `pathfinder` entry in its `test_runner_settings`; the flag wins over the test
 case.
-- `test-harness --local --performance_profile mixed download <suite>`
+- `test-harness --env ci --local --performance_profile mixed download <suite>`
 
 #### What gets reported
 Two artifacts per run are uploaded to Slack (or saved to `--output_dir`):
@@ -371,17 +399,25 @@ lets a single Kubernetes Job (or `docker run`, or a local shell) do the whole
 sweep:
 
 ```bash
-test-harness-sweep --suite performance_tests --download \
+test-harness-sweep --suite performance_tests --env ci --download \
     ars=https://ars.ci.transltr.io \
-    aragorn=https://aragorn.ci.transltr.io \
-    arax=https://arax.ci.transltr.io \
-    bte=https://bte.ci.transltr.io \
+    shepherd-aragorn=https://aragorn.ci.transltr.io \
+    shepherd-arax=https://arax.ci.transltr.io \
+    shepherd-bte=https://bte.ci.transltr.io \
     -- --performance_profile mixed
 ```
 
-Each `NAME=URL` pair becomes one `test-harness --target_url URL --target NAME`
+Each `NAME=URL` pair becomes one `test-harness --env ENV --target_url URL --target NAME`
 invocation, in the order given, and the sweep waits for each to finish before
 starting the next. Anything after `--` is passed through to every invocation.
+
+`NAME` must be the infores the service is registered under in SmartAPI. The
+Shepherd-hosted ARAs are `infores:shepherd-aragorn`, `infores:shepherd-arax` and
+`infores:shepherd-bte`, not the bare `aragorn`/`arax`/`bte`. `--trapi_version
+auto` (the default) looks the TRAPI version up by that name, and an unregistered
+name falls back to 2.0.0 with only a log warning. `NAME` also labels the
+results (each target's output directory and filename prefix, and the agent the
+Information Radiator reports them under).
 
 Pass `--tests_url` (and `--tests_dir`) to the **sweep**, not through the `--`.
 They belong to the harness's `download`/`load` subcommands, and passthrough
@@ -439,8 +475,8 @@ the `mixed` profile). The intended schedule is one environment a day: dev on
 Monday, ci on Tuesday, test on Wednesday, prod on Thursday.
 
 ```
-test-harness-cycle --download \
-    --acceptance sprint_4_tests --pathfinder pathfinder_tests \
+test-harness-cycle --env ci --download \
+    --acceptance mvp_tests --pathfinder pathfinder_tests \
     --performance performance_tests \
     --performance_target ars=https://ars.ci.transltr.io \
     --performance_profile mixed \
@@ -481,7 +517,7 @@ harness normally resolves those components to deployed services through the
 SmartAPI registry. To run the tests against a service that isn't deployed yet —
 for example a locally running ARA you want to check before releasing — you can
 override the target with `--target_url` and `--target`:
-- `test-harness --local --target_url http://localhost:8080 --target aragorn download <suite>`
+- `test-harness --env ci --local --target_url http://localhost:8080 --target aragorn download <suite>`
 
 With an override in place:
 - Every query is sent directly to `--target_url`, regardless of the `components`

@@ -105,6 +105,7 @@ def test_main_local_flag_uses_local_stand_ins(mocker, monkeypatch, tmp_path):
         {
             "tests": example_test_cases,
             "suite": "testing",
+            "env": "ci",
             "save_to_dashboard": False,
             "json_output": False,
             "log_level": "ERROR",
@@ -133,6 +134,7 @@ def test_target_override_prefixes_saved_filenames(mocker, tmp_path):
         {
             "tests": example_test_cases,
             "suite": "testing",
+            "env": "ci",
             "save_to_dashboard": False,
             "json_output": True,
             "log_level": "ERROR",
@@ -159,6 +161,7 @@ def test_target_override_requires_both_flags(mocker, tmp_path):
     args = {
         "tests": example_test_cases,
         "suite": "testing",
+        "env": "ci",
         "save_to_dashboard": False,
         "json_output": False,
         "log_level": "ERROR",

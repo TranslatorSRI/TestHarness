@@ -37,7 +37,7 @@
           "input_category": "biolink:Disease",
           "predicate_id": "biolink:treats",
           "predicate_name": "treats",
-          "output_id": "PUBCHEM.COMPOUND:5865",
+          "output_ids": ["PUBCHEM.COMPOUND:5865"],
           "output_name": "prednisone",
           "output_category": "biolink:ChemicalEntity",
           "association": null,
@@ -75,7 +75,7 @@
           "input_category": "biolink:Disease",
           "predicate_id": "biolink:treats",
           "predicate_name": "treats",
-          "output_id": "PUBCHEM.COMPOUND:5665",
+          "output_ids": ["PUBCHEM.COMPOUND:5665"],
           "output_name": "vigabatrin",
           "output_category": "biolink:ChemicalEntity",
           "association": null,
@@ -117,8 +117,7 @@
       ],
       "input_category": "biolink:Disease",
       "output_category": "biolink:ChemicalEntity",
-      "components": ["ars"],
-      "test_env": "ci"
+      "components": ["ars"]
     },
     "TestCase_2": {
       "id": "TestCase_2",
@@ -139,7 +138,7 @@
           "input_category": "biolink:Gene",
           "predicate_id": "biolink:affects",
           "predicate_name": "affects",
-          "output_id": "PUBCHEM.COMPOUND:41774",
+          "output_ids": ["PUBCHEM.COMPOUND:41774"],
           "output_name": "Acarbose",
           "output_category": "biolink:ChemicalEntity",
           "association": null,
@@ -181,8 +180,7 @@
       ],
       "input_category": "biolink:Gene",
       "output_category": "biolink:ChemicalEntity",
-      "components": ["ars"],
-      "test_env": "ci"
+      "components": ["ars"]
     }
   }
 }

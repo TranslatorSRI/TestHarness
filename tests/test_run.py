@@ -23,7 +23,7 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
     # This article is awesome: https://nedbatchelder.com/blog/201908/why_your_mock_doesnt_work.html
     mocker.patch(
         "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger),
+        return_value=MockQueryRunner(logger, "ci"),
     )
     httpx_mock.add_response(
         url="http://tester/query",
@@ -53,6 +53,7 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "2.0.0",
         },
     )
@@ -96,6 +97,7 @@ def test_run_tests_with_target_override(httpx_mock: HTTPXMock):
         logger=logger,
         args={
             "suite": "testing",
+            "env": "ci",
             "trapi_version": "2.0.0",
             "target_url": "http://localhost:8080",
             "target": "aragorn",

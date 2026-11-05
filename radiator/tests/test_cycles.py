@@ -187,6 +187,35 @@ def test_performance_verdicts_and_flags(app):
     assert "run failed: boom (was 8.0)" in row.flags[0].text
 
 
+def test_a_skipped_performance_test(app, browser):
+    """Reported with its reason, raising no flags, and never the baseline the
+    next real run is compared with."""
+    _cycle(app, T0, msc=10.0)
+    skipped_cycle = uuid.uuid4()
+    skipped = _perf_run(T0 + timedelta(days=7), None, cycle_id=skipped_cycle)
+    skipped.performance[0] = skipped.performance[0].model_copy(
+        update={
+            "status": schema.Status("SKIPPED"),
+            "message": "Skipped in the suite: ARS is being rebuilt",
+            "checkpoints_passed": None,
+        }
+    )
+    _load(app, skipped)
+    row = _get_cycle(app, skipped_cycle).rows[0]
+    assert row.verdict == cycles.NO_DATA
+    assert row.flags == []
+    assert row.detail_text == "Skipped in the suite: ARS is being rebuilt"
+    page = browser.get(f"/runs/{skipped.run.run_id}").text
+    assert "Not load tested." in page
+    assert "ARS is being rebuilt" in page
+    assert "no stage met the SLO" not in page
+
+    # the next run is compared with the last one that measured something
+    row = _get_cycle(app, _cycle(app, T0 + timedelta(days=14), msc=10.5)).rows[0]
+    assert row.previous == 10.0
+    assert row.verdict == cycles.STEADY
+
+
 def _flags(app, before, after, at=T0):
     """The flags between two runs. ``before`` and ``after`` give aragorn's
     status and fields per asset; the ARS passes throughout."""

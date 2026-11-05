@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 import radiator_schema as schema
 from radiator.models import AgentResult, AssetResult, PerformanceResult, Run, utcnow
+from radiator.suites import current_suite
 
 
 class RunNotFound(LookupError):
@@ -22,6 +23,9 @@ class RunNotFound(LookupError):
 
 def upsert_run(session: Session, run: schema.RunCreate) -> None:
     values = run.model_dump(exclude={"run_id"})
+    # a run of a suite under its old name joins the suite's history
+    values["suite"] = current_suite(run.suite)
+    values["source_suite"] = run.suite if values["suite"] != run.suite else None
     stmt = pg_insert(Run).values(id=run.run_id, counts={}, **values)
     session.execute(stmt.on_conflict_do_update(index_elements=[Run.id], set_=values))
 
