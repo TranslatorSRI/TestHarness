@@ -46,6 +46,7 @@ from test_harness.sweep import (
     _passes_env,
     build_command,
     parse_targets,
+    say_why_on_sigterm,
     split_passthrough,
 )
 from test_harness.utils import TEST_ENVS
@@ -432,6 +433,7 @@ def cli(argv: Sequence[str] = None) -> int:
         tests_dir=args.tests_dir,
     )
     print(f"Run cycle {cycle_id}: {len(steps)} steps", flush=True)
+    say_why_on_sigterm("The cycle")
     run_steps(steps)
 
     _banner("CYCLE SUMMARY")

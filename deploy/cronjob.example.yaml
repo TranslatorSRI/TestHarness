@@ -41,15 +41,18 @@ spec:
       # run (bad config, a missing suite, a crash, an OOM kill).
       backoffLimit: 0
 
-      # Hard ceiling, comfortably above the expected duration. With the `mixed`
-      # profile a sweep is roughly 70 min (ARS) + 61 min per ARA ~= 4.2 h; the
-      # single-class default profile is ~2.7 h. 6 h leaves room without letting
-      # a wedged run hold the schedule indefinitely.
-      activeDeadlineSeconds: 21600
-
       template:
         spec:
           restartPolicy: Never
+
+          # Hard ceiling, comfortably above the expected duration. With the
+          # `mixed` profile a sweep is roughly 70 min (ARS) + 61 min per ARA
+          # ~= 4.2 h; the single-class default profile is ~2.7 h. 6 h leaves
+          # room without letting a wedged run hold the schedule indefinitely.
+          # It's the pod's deadline, not the Job's: at a Job deadline
+          # Kubernetes deletes the pod, and its logs with it; at a pod deadline
+          # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
+          activeDeadlineSeconds: 21600
 
           # HelmsDeep drains in-flight queries at the end of a run (the ARS
           # completion sidecar keeps polling past the failure threshold). Give

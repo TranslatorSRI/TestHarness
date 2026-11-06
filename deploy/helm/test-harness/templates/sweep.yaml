@@ -20,7 +20,6 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 0
-      activeDeadlineSeconds: {{ .Values.sweep.activeDeadlineSeconds }}
       template:
         metadata:
           labels:
@@ -28,6 +27,9 @@ spec:
             app.kubernetes.io/instance: {{ .Release.Name }}
             app.kubernetes.io/component: sweep
         spec:
+          # The pod's deadline, not the Job's, so the pod and its logs stay
+          # (see cycles.yaml).
+          activeDeadlineSeconds: {{ .Values.sweep.activeDeadlineSeconds }}
           terminationGracePeriodSeconds: 120
           {{- $container := include "harness.sweepContainer" . }}
           {{- include "harness.podSpec" (dict "root" . "container" $container) | nindent 10 }}

@@ -32,6 +32,7 @@ knob in a CronJob spec: the target list changes without rebuilding the image.
 """
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -138,6 +139,29 @@ def _passes_env(harness_args: Sequence[str]) -> bool:
 def _banner(text: str) -> None:
     """Print a delimiter that's findable in a multi-hour Job log."""
     print(f"\n{'=' * 72}\n{text}\n{'=' * 72}", flush=True)
+
+
+def say_why_on_sigterm(what: str) -> None:
+    """At SIGTERM, say so in the log and stop, killing the step that's running.
+
+    In a pod this entrypoint is PID 1, which the kernel spares the default
+    SIGTERM action: without a handler it would ignore the SIGTERM sent when
+    the pod's activeDeadlineSeconds runs out, and the log would simply stop
+    when the SIGKILL comes, with nothing to say why.
+    """
+    started = time.time()
+
+    def stop(signum, frame):
+        print(
+            f"\n{what} got SIGTERM after {(time.time() - started) / 60:.1f} min: "
+            "the pod's activeDeadlineSeconds ran out, or the pod is being "
+            "stopped. Stopping, and killing the step that's running.",
+            flush=True,
+        )
+        # subprocess.run kills its child on the way out
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, stop)
 
 
 def run_sweep(

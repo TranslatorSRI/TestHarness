@@ -7,6 +7,10 @@ Job still fails when any target failed.
 """
 
 import os
+import signal
+import subprocess
+import sys
+import time
 from unittest import mock
 
 import pytest
@@ -230,3 +234,40 @@ def test_tests_dir_goes_after_the_load_subcommand():
     )
     assert cmd.index("--tests_dir") > cmd.index("load")
     assert cmd[cmd.index("--tests_dir") + 1] == "/suites"
+
+
+# Stands in for the cycle or sweep in a pod: it runs a long step, and the
+# step writes its pid so the test can see it go.
+SIGTERM_SCRIPT = """
+import subprocess, sys
+from test_harness.sweep import say_why_on_sigterm
+say_why_on_sigterm("The cycle")
+print("started", flush=True)
+subprocess.run([sys.executable, "-c",
+    "import os, sys, time; open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(60)",
+    sys.argv[1]])
+"""
+
+
+def test_at_sigterm_the_log_says_why_and_the_step_is_killed(tmp_path):
+    pid_file = tmp_path / "step.pid"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", SIGTERM_SCRIPT, str(pid_file)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout.readline().strip() == "started"
+    deadline = time.time() + 10
+    while not (pid_file.exists() and pid_file.read_text()):
+        assert time.time() < deadline, "the step never started"
+        time.sleep(0.05)
+    step_pid = int(pid_file.read_text())
+
+    proc.send_signal(signal.SIGTERM)
+    out, _ = proc.communicate(timeout=10)
+
+    assert proc.returncode == 128 + signal.SIGTERM
+    assert "The cycle got SIGTERM after" in out
+    assert "activeDeadlineSeconds" in out
+    with pytest.raises(ProcessLookupError):
+        os.kill(step_pid, 0)

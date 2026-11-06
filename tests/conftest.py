@@ -1,5 +1,7 @@
 """Fixtures shared by every test."""
 
+import signal
+
 import pytest
 
 from test_harness.radiator_client import RadiatorClient
@@ -25,3 +27,12 @@ def isolate_radiator(monkeypatch, tmp_path):
         return save(self, output_dir, prefix)
 
     monkeypatch.setattr(RadiatorClient, "save", save_to_tmp)
+
+
+@pytest.fixture(autouse=True)
+def restore_sigterm():
+    """The cycle and sweep CLIs install a SIGTERM handler; don't leave it in
+    pytest."""
+    handler = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, handler)
