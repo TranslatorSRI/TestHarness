@@ -152,6 +152,7 @@ class AgentResult(Base):
     response_time_s: Mapped[Optional[float]] = mapped_column(Float)
     pk: Mapped[Optional[str]] = mapped_column(String(255))
     expected_nodes_found: Mapped[Optional[str]] = mapped_column(Text)
+    ndcg: Mapped[Optional[float]] = mapped_column(Float)
 
     asset: Mapped[AssetResult] = relationship(back_populates="agents")
 

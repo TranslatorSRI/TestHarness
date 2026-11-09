@@ -233,6 +233,7 @@ class ResultCollector:
                     expected_nodes_found=getattr(
                         agent_report, "expected_nodes_found", None
                     ),
+                    ndcg=getattr(agent_report, "ndcg", None),
                 )
             )
 

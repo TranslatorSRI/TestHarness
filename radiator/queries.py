@@ -728,6 +728,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
                         "n_results": agent.n_results,
                         "http_status": agent.http_status,
                         "response_time_s": agent.response_time_s,
+                        "ndcg": agent.ndcg,
                         "pk": agent.pk,
                     }
                     for agent in asset.agents

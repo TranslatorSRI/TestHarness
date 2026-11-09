@@ -18,7 +18,10 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
-from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
+from test_harness.pathfinder_test_runner import (
+    pathfinder_ndcg,
+    pathfinder_pass_fail_analysis,
+)
 from test_harness.performance_test_runner import (
     describe_run,
     helmsdeep_target,
@@ -32,6 +35,7 @@ from test_harness.trapi import DEFAULT_TRAPI_VERSION
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
+    PathfinderReport,
     TestReport,
     hash_test_asset,
     normalized_output_ids,
@@ -118,6 +122,19 @@ def run_tests(
             else:
                 logger.info(f"[{test.id}] every asset is skipped; not querying")
                 normalized_curies = {}
+            # NDCG is scored per query, against the expected nodes of every
+            # asset that shares it. A CURIE the node normalizer didn't return
+            # is matched as given.
+            query_path_nodes = {}
+            for asset in to_run:
+                if isinstance(asset, PathfinderTestAsset):
+                    query_path_nodes.setdefault(hash_test_asset(asset), []).extend(
+                        [
+                            normalized_curies.get(path_node_id, path_node_id)
+                            for path_node_id in path_node.ids
+                        ]
+                        for path_node in asset.path_nodes
+                    )
             test_ids = []
 
             for asset in test.test_assets:
@@ -182,7 +199,11 @@ def run_tests(
                             ),
                         }
                     for agent, response in test_query["responses"].items():
-                        report.result[agent] = AgentReport(
+                        report.result[agent] = (
+                            PathfinderReport
+                            if isinstance(asset, PathfinderTestAsset)
+                            else AgentReport
+                        )(
                             status=AgentStatus.SKIPPED,
                             message=None,
                             actual_output=None,
@@ -226,6 +247,11 @@ def run_tests(
                             ):
                                 agent_report.status = AgentStatus.NO_RESULTS
                                 agent_report.message = "No results"
+                                if isinstance(asset, PathfinderTestAsset) and (
+                                    query_path_nodes.get(test_asset_hash)
+                                ):
+                                    # no paths, so none of them are relevant
+                                    agent_report.ndcg = 0.0
                                 continue
                             if isinstance(test, PathfinderTestCase) and isinstance(
                                 asset, PathfinderTestAsset
@@ -243,6 +269,18 @@ def run_tests(
                                     ],
                                     asset.minimum_required_path_nodes,
                                 )
+                                # NDCG is extra to pass/fail: a response it
+                                # can't score mustn't fail the test.
+                                try:
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        query_path_nodes[test_asset_hash],
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"[{test.id}] couldn't score the NDCG of "
+                                        f"{agent}'s paths for {asset.id}: {e!r}"
+                                    )
                             elif isinstance(asset, TestAsset):
                                 run_acceptance_pass_fail_analysis(
                                     report.result,

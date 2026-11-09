@@ -113,6 +113,10 @@ class AgentResult(BaseModel):
     pk: Optional[str] = None
     # Pathfinder only: which expected path nodes were found.
     expected_nodes_found: Optional[str] = None
+    # Pathfinder only: NDCG of the agent's top 500 paths, from 0 to 1, against
+    # every expected node of the query. Every asset sharing the query gets the
+    # same score.
+    ndcg: Optional[float] = None
 
 
 class AssetResult(BaseModel):
