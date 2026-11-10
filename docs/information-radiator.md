@@ -120,9 +120,11 @@ report it always got, and everything below goes to the radiator's own channel
 without one (see the README's
 [A Slack channel for the new radiator](../README.md#a-slack-channel-for-the-new-radiator)).
 
-When the radiator has the run, the harness's Slack report gains a headline
-against the previous run of the same series, and a chart of the series up to
-this run is posted under it:
+Each report is one message to read at a glance, with its chart, and a thread
+under it with the details: the performance numbers per service, any second
+chart, and the result files. When the radiator has the run, the harness's
+Slack report gains a headline against the previous run of the same series, and
+a chart of the series up to this run is attached to it:
 
 - **Acceptance runs:** pass rate and its change, regressions, fixes, and a link
   to what changed; the chart is each agent's pass rate over the last 30 runs.
@@ -143,10 +145,12 @@ the radiator, or if it can't be reached, the report is what it always was.
 
 `test-harness-cycle` runs acceptance, pathfinder and performance in one
 environment and marks their runs with a shared `cycle_id`. When it finishes, it
-posts the cycle's board (`/api/cycles/{id}/board.png`) and a message with each
-test's headline, the regressions and fixes by agent, and the flags. The
-digest, `test-harness-radiator digest`, posts `/api/digest.png` and the same
-kind of message for every environment. See the README's
+posts the cycle's board (`/api/cycles/{id}/board.png`) with a short message
+(the steps that ran, a count of each verdict, the number of flags, and a link),
+and in its thread each test's headline, the regressions and fixes by agent,
+and the flags. The digest, `test-harness-radiator digest`, posts
+`/api/digest.png` the same way: a line per environment at a glance, and each
+environment's tests and flags in the thread. See the README's
 [Run cycles](../README.md#run-cycles-and-the-weekly-digest) for the command and
 the flags.
 

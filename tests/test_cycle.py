@@ -169,22 +169,37 @@ REPORT = {
 
 
 def test_the_cycle_message():
-    message = cycle_message(REPORT, _ran(0, 2, 0), "https://r/cycles/x")
-    assert message.startswith("*CI run cycle finished* · 2 of 3 steps ran · 1 h 30 min")
-    assert "• step 1: couldn't run (exit 2)" in message
-    assert (
-        "• *Acceptance (sprint_4_tests)*: 80.6% pass rate, ▼2.8 pts · "
-        "3 regressions · 1 fixed · *Regressed*" in message
-    )
-    assert "• *Performance · ars*: 14.5 max concurrency" in message
-    assert (
-        "arax: 6 regressions (Asset 0, Asset 1, Asset 2, Asset 3 and 2 more); "
-        "1 fixed (A9)" in message
-    )
-    assert "*⚑ Flags*\n• arax: no results on 5 assets" in message
-    assert message.endswith(
+    summary, thread = cycle_message(REPORT, _ran(0, 2, 0), "https://r/cycles/x")
+    # at a glance: what ran, the verdicts, the flags, and the link
+    assert summary == (
+        "*CI run cycle finished* · 2 of 3 steps ran · 1 h 30 min\n"
+        "> 1 Regressed · 1 Steady · ⚑ 1 flag\n"
         "<https://r/cycles/x|Open the run cycle in the Information Radiator>"
     )
+    results, changes, flags = thread
+    assert results.startswith("*Results*\n• step 1: couldn't run (exit 2)")
+    assert (
+        "• *Acceptance (sprint_4_tests)*: 80.6% pass rate, ▼2.8 pts · "
+        "3 regressions · 1 fixed · *Regressed*" in results
+    )
+    assert "• *Performance · ars*: 14.5 max concurrency" in results
+    assert changes.startswith("*Regressions and fixes by agent*")
+    assert (
+        "arax: 6 regressions (Asset 0, Asset 1, Asset 2, Asset 3 and 2 more); "
+        "1 fixed (A9)" in changes
+    )
+    assert (
+        flags == "*⚑ Flags*\n• arax: no results on 5 assets that had results last run"
+    )
+
+
+def test_a_quiet_cycle_has_a_short_thread():
+    report = {"env": "ci", "rows": [REPORT["rows"][1]]}
+    summary, thread = cycle_message(report, _ran(0), None)
+    assert summary == (
+        "*CI run cycle finished* · 1 of 1 steps ran · 0 h 30 min\n> 1 Steady"
+    )
+    assert len(thread) == 1 and thread[0].startswith("*Results*")
 
 
 def test_the_digest_message():
@@ -193,23 +208,28 @@ def test_the_digest_message():
         "until": "2026-10-12T12:00:00+00:00",
         "envs": [{"env": "ci", "rows": REPORT["rows"]}],
     }
-    message = digest_message(digest, "https://r/weekly")
-    assert message.startswith("*Weekly test status* · 2026-10-05 to 2026-10-12")
-    assert "*CI* · ⚑ 1\n    Acceptance: 80.6%, ▼2.8 pts · Regressed" in message
-    assert "• CI: arax: no results on 5 assets" in message
-    empty = digest_message({**digest, "envs": []}, None)
+    summary, thread = digest_message(digest, "https://r/weekly")
+    assert summary == (
+        "*Weekly test status* · 2026-10-05 to 2026-10-12\n"
+        "> *CI*: 1 Regressed · 1 Steady · ⚑ 1\n"
+        "<https://r/weekly|Open the weekly page in the Information Radiator>"
+    )
+    rows, flags = thread
+    assert rows.startswith("*CI*\n    Acceptance: 80.6%, ▼2.8 pts · Regressed")
+    assert "• CI: arax: no results on 5 assets" in flags
+    empty, thread = digest_message({**digest, "envs": []}, None)
     assert "No finished runs this week." in empty
+    assert thread == []
 
 
 class _Slack:
     def __init__(self):
-        self.messages, self.files = [], []
+        self.messages, self.files, self.threads = [], [], []
 
-    def post_notification(self, messages=[]):
-        self.messages.extend(messages)
-
-    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
-        self.files.append(filename)
+    def post_thread(self, summary, image=None, details=(), files=()):
+        self.messages.append(summary)
+        self.threads.append(list(details))
+        self.files += [f.filename for f in ([image] if image else []) + list(files)]
 
 
 def test_posting_the_board():
@@ -219,8 +239,10 @@ def test_posting_the_board():
     radiator.cycle_url.return_value = "https://r/cycles/x"
     slack = _Slack()
     assert cycle.post_cycle_report("x", _ran(0), radiator, slack, mock.Mock())
-    assert "*CI run cycle finished*" in slack.messages[0]
-    assert slack.files == ["ci_run_cycle.png"]
+    [message] = slack.messages
+    assert message.startswith("*CI run cycle finished*")
+    assert slack.files == ["ci_run_cycle.png"]  # with the top message
+    assert slack.threads[0][0].startswith("*Results*")
 
     radiator.cycle.return_value = None
     assert not cycle.post_cycle_report("x", _ran(0), radiator, _Slack(), mock.Mock())

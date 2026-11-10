@@ -466,14 +466,23 @@ class _RecordingSlacker(MockSlacker):
         self.files = []
         self.results = []
 
+        self.threads = []
+        self.image = None
+
     def post_notification(self, messages=[]):
         self.messages.extend(messages)
 
-    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
-        self.files.append((filename, content, initial_comment))
-
-    def upload_test_results_file(self, filename, extension, results):
-        self.results.append(extension)
+    def post_thread(self, summary, image=None, details=(), files=()):
+        """The report: its top message, its image, and its thread (messages
+        and files). Charts go in ``files``, wherever they were posted."""
+        self.messages.append(summary)
+        self.image = image
+        self.threads.append(list(details))
+        for f in ([image] if image else []) + list(files):
+            if f.filename.endswith(".png"):
+                self.files.append((f.filename, f.content, f.comment))
+            else:
+                self.results.append(f.filename.rsplit(".", 1)[-1])
 
 
 def _main_with_slack(
@@ -541,6 +550,9 @@ def test_slack_report_carries_the_radiator_history(mocker, monkeypatch, tmp_path
     [(filename, content, comment)] = slacker.files
     assert filename == "pass_rate_history.png" and content == b"\x89PNG"
     assert "Open in the Information Radiator" in comment
+    # one message, with the chart; the result files go in its thread
+    assert slacker.image.filename == "pass_rate_history.png"
+    assert slacker.results == ["json", "csv"]
 
 
 def test_runs_of_a_cycle_carry_its_id(mocker, monkeypatch, tmp_path):
@@ -598,11 +610,17 @@ def test_slack_report_carries_each_services_concurrency(mocker, monkeypatch, tmp
         },
     )
     report = slacker.messages[-1]
+    assert "Pass rate" not in report
+    # each service's numbers are in the thread, not the top message
+    assert "max sustainable concurrency" not in report
+    [details] = slacker.threads[-1]
+    assert details.startswith("*Performance details*")
     assert (
         "arax (mixed): max sustainable concurrency 7.5 (+0.3 vs the previous run)"
-        " · checkpoints missed" in report
+        " · checkpoints missed" in details
     )
-    assert "Pass rate" not in report
+    # the only chart is the top message's
+    assert slacker.image.filename == "concurrency_history.png"
     [(filename, content, comment)] = slacker.files
     assert filename == "concurrency_history.png" and content == b"\x89PNG perf"
 
@@ -716,6 +734,9 @@ def test_a_failing_radiator_channel_never_costs_the_old_one(
 ):
     class Broken(_RecordingSlacker):
         def post_notification(self, messages=[]):
+            raise RuntimeError("channel_not_found")
+
+        def post_thread(self, summary, image=None, details=(), files=()):
             raise RuntimeError("channel_not_found")
 
     old = _main_with_slack(

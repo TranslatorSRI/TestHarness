@@ -5,6 +5,9 @@ import logging
 import os
 import re
 import tempfile
+import time
+from dataclasses import dataclass
+from typing import List, Optional, Sequence
 
 import httpx
 from slack_sdk import WebClient
@@ -39,8 +42,42 @@ def _chunk_text(text, limit=SLACK_SECTION_TEXT_LIMIT):
     return chunks
 
 
+@dataclass
+class Attachment:
+    """A file to post: a chart, a result file or a performance artifact."""
+
+    filename: str
+    content: bytes
+    comment: Optional[str] = None
+    title: Optional[str] = None
+
+
+def _blocks(text: str) -> List[dict]:
+    """Section blocks for ``text``, split to stay under Slack's limit."""
+    return [
+        {"type": "section", "text": {"type": "mrkdwn", "text": chunk}}
+        for chunk in _chunk_text(text)
+    ]
+
+
+def text_attachment(filename: str, extension: str, results) -> Attachment:
+    """A CSV or JSON results file, as an Attachment."""
+    if extension == "json":
+        body = json.dumps(results, indent=2)
+    else:
+        body = results if isinstance(results, str) else str(results)
+    return Attachment(
+        f"{filename}.{extension}", body.encode("utf-8"), "Test Results:", filename
+    )
+
+
 class Slacker:
     """Slack notification poster."""
+
+    # How long to wait for Slack to share an uploaded image into the channel,
+    # so its message can carry a thread.
+    SHARE_ATTEMPTS = 10
+    SHARE_DELAY_SECONDS = 1.0
 
     def __init__(self, url=None, token=None, slack_channel=None):
         self.channel = (
@@ -95,6 +132,96 @@ class Slacker:
                     res.status_code,
                     res.text,
                 )
+
+    def post_thread(
+        self,
+        summary: str,
+        image: Optional[Attachment] = None,
+        details: Sequence[str] = (),
+        files: Sequence[Attachment] = (),
+    ) -> Optional[str]:
+        """Post one message to read at a glance -- ``summary``, with ``image``
+        attached -- and put ``details`` (messages) and ``files`` in its thread.
+
+        Uses the bot token (chat:write, files:write, files:read). Returns the
+        parent message's ts, or None if Slack didn't give one; then the thread
+        goes under a short "Details" message instead, so it still stays out of
+        the channel.
+        """
+        ts = None
+        if image is not None:
+            try:
+                ts = self._upload(image, initial_comment=summary)
+            except Exception as e:
+                self.logger.warning(f"Couldn't post {image.filename}: {e}")
+                image = None
+        if image is None:
+            ts = self._post_message(summary)
+        if ts is None and (details or files):
+            self.logger.warning(
+                "Couldn't find the Slack message to thread the details under; "
+                "posting them under a message of their own."
+            )
+            ts = self._post_message("Details for the report above :thread:")
+        for message in details:
+            if message and message.strip():
+                self._post_message(message, thread_ts=ts)
+        for attachment in files:
+            try:
+                self._upload(attachment, thread_ts=ts)
+            except Exception as e:
+                self.logger.warning(f"Couldn't upload {attachment.filename}: {e}")
+        return ts
+
+    def _post_message(self, text: str, thread_ts: Optional[str] = None):
+        response = self.client.chat_postMessage(
+            channel=self.channel,
+            text=text[:3000],
+            blocks=_blocks(text)[:50],
+            thread_ts=thread_ts,
+            unfurl_links=False,
+        )
+        return response.get("ts")
+
+    def _upload(
+        self,
+        attachment: Attachment,
+        initial_comment: Optional[str] = None,
+        thread_ts: Optional[str] = None,
+    ) -> Optional[str]:
+        """Upload ``attachment``; returns the ts of the message it was shared
+        in, when it is a new message (not one in a thread)."""
+        kwargs = {"thread_ts": thread_ts} if thread_ts else {}
+        response = self.client.files_upload_v2(
+            channel=self.channel,
+            file=attachment.content,
+            filename=attachment.filename,
+            title=attachment.title or attachment.filename,
+            initial_comment=initial_comment or attachment.comment,
+            **kwargs,
+        )
+        if thread_ts:
+            return None
+        files = response.get("files") or [response.get("file") or {}]
+        file_id = files[0].get("id") if files else None
+        return self._share_ts(file_id) if file_id else None
+
+    def _share_ts(self, file_id: str) -> Optional[str]:
+        """The ts of the message a just-uploaded file was shared in. Slack
+        shares an upload asynchronously, so this waits a little for it."""
+        for attempt in range(self.SHARE_ATTEMPTS):
+            if attempt:
+                time.sleep(self.SHARE_DELAY_SECONDS)
+            try:
+                shares = self.client.files_info(file=file_id)["file"].get("shares")
+            except Exception as e:
+                self.logger.warning(f"Couldn't look up the uploaded file: {e}")
+                return None
+            for kind in ("public", "private"):
+                entries = (shares or {}).get(kind, {}).get(self.channel)
+                if entries:
+                    return entries[0].get("ts")
+        return None
 
     def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""
@@ -190,6 +317,18 @@ class LocalSlacker(Slacker):
         """Log notifications instead of posting them to Slack."""
         for message in messages:
             self.logger.info(message)
+
+    def post_thread(self, summary, image=None, details=(), files=()):
+        """Log the message and its thread, and save its image and files."""
+        self.logger.info(summary)
+        if image is not None:
+            self.upload_binary_file(image.filename, image.content)
+        for message in details:
+            if message and message.strip():
+                self.logger.info(message)
+        for attachment in files:
+            self.upload_binary_file(attachment.filename, attachment.content)
+        return None
 
     def upload_test_results_file(self, filename, extension, results):
         """Save a results file locally instead of uploading it to Slack."""

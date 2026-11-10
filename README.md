@@ -125,6 +125,14 @@ Uploads are idempotent, so pushing a run that partly made it is safe. The
 radiator never depends on Zebrunner or Slack: if either fails, the run still
 reaches the radiator (or is saved for it).
 
+Each Slack report is one message to read at a glance (what ran, the verdict,
+and a link), with its chart attached when there is one; the details (each
+service's performance numbers, any other chart, and the result files) go in
+that message's thread. The bot needs the `chat:write`, `files:write` and
+`files:read` scopes for this, and must be in the channel. If Slack doesn't say
+where it shared the chart, the details go under a short "Details" message
+instead, so they still stay out of the channel.
+
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass
 rate, regressions, and fixes, charted per agent; for performance runs, each
@@ -377,8 +385,9 @@ Two artifacts per run are uploaded to Slack (or saved to `--output_dir`):
 - `<host>_<run_type>_report.html` — locust's own HTML report: charts and
   request/failure tables.
 
-Both are uploaded with a comment carrying the run's checkpoint verdict, and the
-Slack summary message leads with the overall pass/fail. A run with no
+Both are uploaded, in the report's thread, with a comment carrying the run's
+checkpoint verdict, and the Slack report's top message gives the overall
+pass/fail; each run's checkpoints and knee are in the thread. A run with no
 checkpoints reports its knee and says so explicitly rather than claiming a pass
 it never tested for. A missed checkpoint, or a HelmsDeep run that never produced
 a summary at all, is reported as `FAILED` in the Information Radiator too, so

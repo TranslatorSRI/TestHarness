@@ -11,6 +11,7 @@ import time
 from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
+from typing import List, Tuple
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
@@ -25,7 +26,13 @@ from test_harness.radiator_client import RadiatorClient
 from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
-from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
+from test_harness.slacker import (
+    Attachment,
+    LocalSlacker,
+    Slacker,
+    radiator_slacker,
+    text_attachment,
+)
 from test_harness.runner.query_runner import env_map
 from test_harness.runner.smart_api_registry import registered_trapi_versions
 from test_harness.trapi import (
@@ -98,16 +105,18 @@ def save_radiator_run(radiator, output_dir, prefix, logger, force=False):
         )
 
 
-def radiator_headline(radiator, collector) -> str:
-    """Lines for Slack: this run against the previous one in its series (the
-    acceptance pass rate, each service's top concurrency), linking to what
-    changed. Empty when the radiator doesn't have the run."""
+def radiator_headline(radiator, collector) -> Tuple[List[str], List[str]]:
+    """What the radiator says about this run against the previous one in its
+    series, for Slack: (lines for the top message -- the acceptance pass rate,
+    linking to what changed, and any TRAPI version change -- and each
+    service's top concurrency, for the thread). Empty when the radiator
+    doesn't have the run."""
     if not (collector.has_acceptance_results or collector.has_performance_results):
-        return ""
+        return [], []
     summary = radiator.summary()
     if not summary:
-        return ""
-    lines = []
+        return [], []
+    glance, details = [], []
     if collector.has_acceptance_results and summary.get("pass_rate") is not None:
         line = f"Pass rate {summary['pass_rate']:.0%}"
         if summary.get("previous_pass_rate") is not None:
@@ -117,18 +126,18 @@ def radiator_headline(radiator, collector) -> str:
                 f" · {summary['regressions']} regressions · {summary['fixed']} fixed"
                 f" · <{radiator.diff_url}|What changed>"
             )
-        lines.append(line)
+        glance.append(line)
     if collector.has_performance_results:
-        lines.extend(_performance_line(p) for p in summary.get("performance") or [])
+        details.extend(_performance_line(p) for p in summary.get("performance") or [])
     change = _trapi_change(
         summary.get("previous_trapi_version"), summary.get("trapi_version")
     )
-    if lines and change:
-        lines.append(
+    if (glance or details) and change:
+        glance.append(
             f"TRAPI {change[0]} → {change[1]} since the previous run: some of "
             "these changes may come from the version change"
         )
-    return "".join(f"\n> {line}" for line in lines) + ("\n" if lines else "")
+    return glance, details
 
 
 def _trapi_change(before, after):
@@ -165,57 +174,81 @@ def _performance_line(perf: dict) -> str:
     return line
 
 
+def _fmt_duration(seconds: float) -> str:
+    minutes, seconds = divmod(int(round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours} h {minutes:02d} min"
+    if minutes:
+        return f"{minutes} min {seconds:02d} s"
+    return f"{seconds} s"
+
+
+def report_summary(suite, duration, queried_envs, links, collector, headline=()) -> str:
+    """The top message of a finished run's Slack report: what ran, the
+    verdict at a glance, and where to read more."""
+    envs = ", ".join(env.upper() for env in sorted(queried_envs))
+    lines = [f"*{suite}* finished · {envs} · {_fmt_duration(duration)}"]
+    glance = [collector.acceptance_glance(), *headline, collector.performance_glance()]
+    lines += [f"> {line}" for line in glance if line]
+    return "\n".join(lines) + links
+
+
 def post_report(
     slacker,
     suite,
     duration,
     queried_envs,
     links,
-    result_summary,
     radiator,
     collector,
     reporter,
     prefix,
     logger,
 ):
-    """A finished run's report in one channel: the summary, the radiator's
-    charts (with ``radiator``), and the result files."""
-    slacker.post_notification(
-        messages=[
-            f"Test Suite: {suite}\nDuration: {duration} | Environment(s): "
-            f"{','.join(list(queried_envs))}{links}\n{result_summary}"
-        ]
+    """A finished run's report in one channel: a message to read at a glance,
+    with the radiator's history chart (with ``radiator``), and in its thread
+    the details, any other chart and the result files."""
+    glance, details = (
+        radiator_headline(radiator, collector) if radiator is not None else ([], [])
     )
-    if radiator is not None:
-        post_history_charts(radiator, slacker, collector, suite, prefix, logger)
+    performance = collector.performance_details()
+    thread = []
+    if details or performance:
+        thread.append(
+            "*Performance details*\n"
+            + "".join(f"> {line}\n" for line in details)
+            + performance
+        )
+    charts = (
+        history_charts(radiator, collector, suite, prefix)
+        if radiator is not None
+        else []
+    )
+    files = charts[1:]
     if collector.has_acceptance_results:
-        slacker.upload_test_results_file(
-            f"{prefix}{reporter.test_name}",
-            "json",
-            collector.acceptance_stats,
-        )
-        slacker.upload_test_results_file(
-            f"{prefix}{reporter.test_name}",
-            "csv",
-            collector.acceptance_csv,
-        )
+        name = f"{prefix}{reporter.test_name}"
+        files.append(text_attachment(name, "json", collector.acceptance_stats))
+        files.append(text_attachment(name, "csv", collector.acceptance_csv))
     if collector.has_performance_results:
         # HelmsDeep's own summary.json is the authoritative result, so it is
         # uploaded verbatim alongside its HTML report rather than being
         # reformatted into a second, divergent JSON. Each carries the run's
         # checkpoint pass/fail as its comment.
         for filename, content, comment in collector.render_performance_artifacts():
-            filename = f"{prefix}{filename}"
-            try:
-                slacker.upload_binary_file(filename, content, initial_comment=comment)
-            except Exception as e:
-                logger.warning(f"Failed to upload perf artifact {filename}: {e}")
+            files.append(Attachment(f"{prefix}{filename}", content, comment))
+    slacker.post_thread(
+        report_summary(suite, duration, queried_envs, links, collector, glance),
+        image=charts[0] if charts else None,
+        details=thread,
+        files=files,
+    )
 
 
-def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
-    """Post the run's history charts, from the radiator, under the report:
-    the acceptance pass rate and each service's top concurrency. Best effort:
-    the report stands without them."""
+def history_charts(radiator, collector, suite, prefix) -> List[Attachment]:
+    """The run's history charts, from the radiator: the acceptance pass rate
+    and each service's top concurrency. Best effort: the report stands
+    without them."""
     charts = []
     if collector.has_acceptance_results:
         charts.append(
@@ -235,21 +268,19 @@ def post_history_charts(radiator, slacker, collector, suite, prefix, logger):
                 "Max sustainable concurrency history up to this run",
             )
         )
+    attachments = []
     for fetch, filename, title, comment in charts:
         png = fetch()
-        if not png:
-            continue
-        try:
-            slacker.upload_binary_file(
-                f"{prefix}{filename}",
-                png,
-                initial_comment=(
-                    f"{comment} · <{radiator.run_url}|Open in the Information Radiator>"
-                ),
-                title=title,
+        if png:
+            attachments.append(
+                Attachment(
+                    f"{prefix}{filename}",
+                    png,
+                    f"{comment} · <{radiator.run_url}|Open in the Information Radiator>",
+                    title,
+                )
             )
-        except Exception as e:
-            logger.warning(f"Failed to post the {title.lower()} chart: {e}")
+    return attachments
 
 
 def main(args):
@@ -483,8 +514,6 @@ def main(args):
     save_radiator_run(radiator, output_dir, target_prefix, logger)
 
     duration = round(time.time() - start_time, 2)
-    summary = collector.dump_result_summary()
-    headline = radiator_headline(radiator, collector)
     for channel, links, with_radiator, best_effort in channels:
         post(
             lambda: post_report(
@@ -493,7 +522,6 @@ def main(args):
                 duration,
                 queried_envs,
                 links,
-                (headline if with_radiator else "") + summary,
                 radiator if with_radiator else None,
                 collector,
                 reporter,

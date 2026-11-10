@@ -60,6 +60,9 @@ class MockSlacker(Slacker):
     def upload_test_results_file(self, filename, extension, results):
         pass
 
+    def post_thread(self, summary, image=None, details=(), files=()):
+        print(f"posting a thread: {summary}")
+
 
 class MockQueryRunner(QueryRunner):
     def retrieve_registry(self, trapi_version: str):

@@ -535,6 +535,43 @@ class ResultCollector:
             f"({passed}/{len(checkpoints)} passed)"
         )
 
+    def acceptance_glance(self) -> str:
+        """The acceptance counts on one line, for the top of the Slack report."""
+        if not self.has_acceptance_results:
+            return ""
+        r = self.acceptance_report
+        return (
+            f"Acceptance: {r['PASSED']} passed · {r['FAILED']} failed · "
+            f"{r['SKIPPED']} skipped · {r['NO_RESULTS']} no results · "
+            f"{r['ERROR']} errors"
+        )
+
+    def performance_glance(self) -> str:
+        """The overall checkpoint verdict on one line, for the top of the Slack
+        report; the per-run detail is in ``performance_details``."""
+        if not self.has_performance_results:
+            return ""
+        overall = self.performance_checkpoints_passed
+        if overall is None:
+            verdict = "no checkpoints configured"
+        else:
+            verdict = "*PASS*" if overall else "*FAIL*"
+        runs = self.performance_report["stats"]
+        failed = sum(1 for stats in runs.values() if stats.get("error"))
+        line = f"Performance (HelmsDeep) checkpoints: {verdict}"
+        if failed:
+            line += f" · {failed} of {len(runs)} runs failed to complete"
+        return line
+
+    def performance_details(self) -> str:
+        """Each HelmsDeep run's section, for the Slack report's thread."""
+        if not self.has_performance_results:
+            return ""
+        return "".join(
+            self._format_performance_run(run_key, run_stats)
+            for run_key, run_stats in self.performance_report["stats"].items()
+        ).lstrip("\n")
+
     def dump_result_summary(self):
         """Format test results summary for Slack."""
         results_formatted = ""

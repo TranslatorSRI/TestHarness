@@ -31,12 +31,12 @@ import sys
 import time
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 from test_harness.radiator_client import RadiatorClient
 from test_harness.reporter import Reporter
-from test_harness.slacker import LocalSlacker, Slacker, radiator_slacker
+from test_harness.slacker import Attachment, LocalSlacker, Slacker, radiator_slacker
 from test_harness.sweep import (
     DEFAULT_OUTPUT_DIR,
     HARNESS,
@@ -190,66 +190,94 @@ def _count_names(assets: list, word: str, limit: int) -> str:
     return f"{n} {label} ({names})"
 
 
-def cycle_message(report: dict, steps: List[Step], url: Optional[str]) -> str:
-    """The Slack message for a finished cycle, from the radiator's report."""
+def _verdict_counts(rows: List[dict]) -> str:
+    """eg "2 Steady · 1 Regressed", in the order the verdicts first appear."""
+    counts: Dict[str, int] = {}
+    for row in rows:
+        counts[row["verdict_label"]] = counts.get(row["verdict_label"], 0) + 1
+    return " · ".join(f"{n} {label}" for label, n in counts.items())
+
+
+def cycle_message(
+    report: dict, steps: List[Step], url: Optional[str]
+) -> Tuple[str, List[str]]:
+    """The Slack message for a finished cycle, from the radiator's report:
+    (the top message, to read at a glance with the board, and the messages
+    for its thread)."""
     env = (report.get("env") or "mixed environments").upper()
     total = sum(step.minutes for step in steps)
     ran = [step for step in steps if step.code == 0]
-    lines = [
+    rows = report.get("rows", [])
+    flags = [flag for row in rows for flag in row.get("flags", [])]
+    glance = [
         f"*{env} run cycle finished* · {len(ran)} of {len(steps)} steps ran · "
         f"{int(total // 60)} h {int(total % 60):02d} min"
     ]
-    for step in steps:
-        if step.code != 0:
-            lines.append(f"• {step.name}: couldn't run (exit {step.code})")
-    rows = report.get("rows", [])
-    lines += [_row_line(row) for row in rows]
+    verdicts = _verdict_counts(rows)
+    if flags:
+        verdicts += f" · {FLAG} {len(flags)} flag{'' if len(flags) == 1 else 's'}"
+    glance.append(f"> {verdicts}")
+    if url:
+        glance.append(f"<{url}|Open the run cycle in the Information Radiator>")
+
+    results = [
+        f"• {step.name}: couldn't run (exit {step.code})"
+        for step in steps
+        if step.code != 0
+    ]
+    results += [_row_line(row) for row in rows]
+    thread = ["*Results*\n" + "\n".join(results)]
     changed = [row for row in rows if row.get("changes")]
     if changed:
-        lines.append("")
-        lines.append("*Regressions and fixes by agent*")
+        lines = ["*Regressions and fixes by agent*"]
         for row in changed:
             lines.append(f"  {row['label']}:")
             lines += _changes_lines(row)
-    flags = [flag for row in rows for flag in row.get("flags", [])]
+        thread.append("\n".join(lines))
     if flags:
-        lines.append("")
-        lines.append(f"*{FLAG} Flags*")
-        lines += [f"• {flag['text']}" for flag in flags]
-    if url:
-        lines.append(f"\n<{url}|Open the run cycle in the Information Radiator>")
-    return "\n".join(lines)
+        thread.append(
+            f"*{FLAG} Flags*\n" + "\n".join(f"• {flag['text']}" for flag in flags)
+        )
+    return "\n".join(glance), thread
 
 
-def digest_message(digest: dict, url: Optional[str]) -> str:
-    """The Slack message for the weekly digest."""
+def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
+    """The Slack message for the weekly digest: (the top message, to read at
+    a glance with the image, and the messages for its thread)."""
     since, until = digest["since"][:10], digest["until"][:10]
-    lines = [f"*Weekly test status* · {since} to {until}"]
-    if not digest.get("envs"):
-        lines.append("No finished runs this week.")
-    for env in digest.get("envs", []):
+    glance = [f"*Weekly test status* · {since} to {until}"]
+    envs = digest.get("envs", [])
+    if not envs:
+        glance.append("No finished runs this week.")
+    for env in envs:
         name = (env.get("env") or "no environment").upper()
+        line = f"> *{name}*: {_verdict_counts(env['rows']) or 'no runs'}"
         flags = sum(len(row["flags"]) for row in env["rows"])
-        lines.append(f"*{name}*" + (f" · {FLAG} {flags}" if flags else ""))
+        if flags:
+            line += f" · {FLAG} {flags}"
+        glance.append(line)
+    if url:
+        glance.append(f"<{url}|Open the weekly page in the Information Radiator>")
+
+    thread = []
+    for env in envs:
+        name = (env.get("env") or "no environment").upper()
+        lines = [f"*{name}*"]
         for row in env["rows"]:
             lines.append(
                 f"    {row['label']}: {row['value_text']}, {row['change_text']} · "
                 f"{row['verdict_label']}"
             )
+        thread.append("\n".join(lines))
     flagged = [
-        env for env in digest.get("envs", []) if any(r["flags"] for r in env["rows"])
+        (env.get("env") or "no environment").upper() + ": " + flag["text"]
+        for env in envs
+        for row in env["rows"]
+        for flag in row["flags"]
     ]
     if flagged:
-        lines.append("")
-        lines.append(f"*{FLAG} Flags*")
-        for env in flagged:
-            name = (env.get("env") or "no environment").upper()
-            for row in env["rows"]:
-                for flag in row["flags"]:
-                    lines.append(f"• {name}: {flag['text']}")
-    if url:
-        lines.append(f"\n<{url}|Open the weekly page in the Information Radiator>")
-    return "\n".join(lines)
+        thread.append(f"*{FLAG} Flags*\n" + "\n".join(f"• {flag}" for flag in flagged))
+    return "\n".join(glance), thread
 
 
 def _slacker(output_dir: str, logger):
@@ -289,17 +317,18 @@ def post_cycle_report(
             "only the per-run reports were posted."
         )
         return False
-    message = cycle_message(report, steps, radiator.cycle_url(cycle_id))
-    slacker.post_notification(messages=[message])
+    summary, thread = cycle_message(report, steps, radiator.cycle_url(cycle_id))
     board = radiator.cycle_board_png(cycle_id)
-    if board:
-        env = report.get("env") or "cycle"
-        slacker.upload_binary_file(
-            f"{env}_run_cycle.png",
-            board,
-            initial_comment=f"{env.upper()} run cycle: each test against its previous run",
-            title="Run cycle board",
-        )
+    env = report.get("env") or "cycle"
+    slacker.post_thread(
+        summary,
+        image=(
+            Attachment(f"{env}_run_cycle.png", board, title="Run cycle board")
+            if board
+            else None
+        ),
+        details=thread,
+    )
     return True
 
 
@@ -310,15 +339,17 @@ def post_digest(
     if digest is None:
         logger.error("Couldn't get the weekly digest from the Information Radiator.")
         return False
-    slacker.post_notification(messages=[digest_message(digest, radiator.weekly_url)])
+    summary, thread = digest_message(digest, radiator.weekly_url)
     image = radiator.digest_png(days)
-    if image:
-        slacker.upload_binary_file(
-            "weekly_status.png",
-            image,
-            initial_comment="Each environment's latest runs this week",
-            title="Weekly test status",
-        )
+    slacker.post_thread(
+        summary,
+        image=(
+            Attachment("weekly_status.png", image, title="Weekly test status")
+            if image
+            else None
+        ),
+        details=thread,
+    )
     return True
 
 
