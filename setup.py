@@ -1,6 +1,6 @@
 """Setup file for SRI Test Harness package."""
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", encoding="utf-8") as readme_file:
     readme = readme_file.read()
@@ -16,7 +16,8 @@ setup(
     long_description=readme,
     # radiator_schema is the API contract shared with the Information
     # Radiator; it ships with the harness so the two can't drift apart.
-    packages=["test_harness", "radiator_schema"],
+    # find_packages so subpackages like test_harness.runner are installed too.
+    packages=find_packages(include=["test_harness*", "radiator_schema*"]),
     include_package_data=True,
     # The editable local test suites ship with the package so `test-harness
     # load <suite>` works from a plain (non-editable) install too, not just

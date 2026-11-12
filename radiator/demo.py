@@ -156,6 +156,7 @@ def agent_result(agent, spec, run_index, n_runs, rng, skill_offset=0.0):
             n_results=0,
             found=False,
             response_time_s=response_time_s,
+            ndcg=0.0 if spec["expected_output"] is None else None,
         )
     expected = spec["expected_output"]
     good = rng.random() < skill + 0.25 - spec["difficulty"] * 0.4
@@ -169,6 +170,7 @@ def agent_result(agent, spec, run_index, n_runs, rng, skill_offset=0.0):
             n_results=n_results,
             response_time_s=response_time_s,
             expected_nodes_found="3/3" if good else f"{rng.randint(0, 2)}/3",
+            ndcg=round(rng.uniform(0.5, 1.0) if good else rng.uniform(0.0, 0.4), 3),
             pk=str(uuid.UUID(int=rng.getrandbits(128))),
         )
     if expected == "NeverShow":

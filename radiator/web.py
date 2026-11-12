@@ -233,6 +233,8 @@ def cell_tip(asset, agent) -> str:
         lines.append(f"rank {agent.rank}")
     if agent.score is not None:
         lines.append(f"score {agent.score:.3g}")
+    if agent.ndcg is not None:
+        lines.append(f"NDCG {agent.ndcg:.3g}")
     if agent.n_results is not None:
         lines.append(f"{agent.n_results:,} results")
     if agent.response_time_s is not None:

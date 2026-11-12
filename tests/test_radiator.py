@@ -19,7 +19,7 @@ from test_harness.main import main
 from test_harness.radiator_client import RadiatorClient, push
 from test_harness.result_collector import ResultCollector
 from test_harness.run import record_response_meta, run_tests
-from test_harness.utils import AgentReport, AgentStatus, TestReport
+from test_harness.utils import AgentReport, AgentStatus, PathfinderReport, TestReport
 
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
@@ -171,6 +171,30 @@ def test_collector_force_skipped_skips_every_agent():
     assert {agent.status for agent in result.agents} == {"SKIPPED"}
     # the query runner's "None" placeholder is not a pk
     assert all(agent.pk is None for agent in result.agents)
+
+
+def test_collector_force_skipped_drops_ndcg():
+    """A skipped agent's NDCG (here the 0.0 a NO_RESULTS response gets) isn't
+    sent, so a SKIPPED row never reads like a real score."""
+    client = _recording_client()
+    collector = ResultCollector("dev", logger, radiator=client)
+    report = TestReport(
+        pks={},
+        result={
+            "ars": PathfinderReport(AgentStatus.NO_RESULTS, "No results", None, ""),
+            "aragorn": PathfinderReport(AgentStatus.PASSED, None, None, "KIT"),
+        },
+        test_details=None,
+    )
+    report.result["ars"].ndcg = 0.0
+    report.result["aragorn"].ndcg = 1.0
+    collector.collect_acceptance_result(
+        _Case(), _Asset(), report, None, "url", force_skipped=True
+    )
+
+    [result] = client.payload.results
+    assert {agent.status for agent in result.agents} == {"SKIPPED"}
+    assert all(agent.ndcg is None for agent in result.agents)
 
 
 def test_collector_records_failed_performance_checkpoint():
