@@ -19,6 +19,7 @@ from translator_testing_model.datamodel.pydanticmodel import (
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
 from test_harness.pathfinder_test_runner import (
+    expected_path_nodes,
     pathfinder_ndcg,
     pathfinder_pass_fail_analysis,
 )
@@ -122,19 +123,6 @@ def run_tests(
             else:
                 logger.info(f"[{test.id}] every asset is skipped; not querying")
                 normalized_curies = {}
-            # NDCG is scored per query, against the expected nodes of every
-            # asset that shares it. A CURIE the node normalizer didn't return
-            # is matched as given.
-            query_path_nodes = {}
-            for asset in to_run:
-                if isinstance(asset, PathfinderTestAsset):
-                    query_path_nodes.setdefault(hash_test_asset(asset), []).extend(
-                        [
-                            normalized_curies.get(path_node_id, path_node_id)
-                            for path_node_id in path_node.ids
-                        ]
-                        for path_node in asset.path_nodes
-                    )
             test_ids = []
 
             for asset in test.test_assets:
@@ -187,15 +175,10 @@ def run_tests(
                         report.test_details = {
                             "minimum_required_path_nodes": asset.minimum_required_path_nodes,
                             "expected_path_nodes": "; ".join(
-                                [
-                                    ",".join(
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                    )
-                                    for path_node in asset.path_nodes
-                                ]
+                                ",".join(curies)
+                                for curies in expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                             ),
                         }
                     for agent, response in test_query["responses"].items():
@@ -247,26 +230,25 @@ def run_tests(
                             ):
                                 agent_report.status = AgentStatus.NO_RESULTS
                                 agent_report.message = "No results"
-                                if isinstance(asset, PathfinderTestAsset) and (
-                                    query_path_nodes.get(test_asset_hash)
-                                ):
+                                if isinstance(asset, PathfinderTestAsset):
                                     # no paths, so none of them are relevant
-                                    agent_report.ndcg = 0.0
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        expected_path_nodes(asset, normalized_curies),
+                                        asset.minimum_required_path_nodes,
+                                    )
                                 continue
                             if isinstance(test, PathfinderTestCase) and isinstance(
                                 asset, PathfinderTestAsset
                             ):
+                                path_nodes = expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                                 pathfinder_pass_fail_analysis(
                                     report.result,
                                     agent,
                                     response["response"]["message"],
-                                    [
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                        for path_node in asset.path_nodes
-                                    ],
+                                    path_nodes,
                                     asset.minimum_required_path_nodes,
                                 )
                                 # NDCG is extra to pass/fail: a response it
@@ -274,7 +256,8 @@ def run_tests(
                                 try:
                                     agent_report.ndcg = pathfinder_ndcg(
                                         response["response"]["message"],
-                                        query_path_nodes[test_asset_hash],
+                                        path_nodes,
+                                        asset.minimum_required_path_nodes,
                                     )
                                 except Exception as e:
                                     logger.warning(

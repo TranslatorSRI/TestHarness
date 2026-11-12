@@ -66,8 +66,8 @@ class PathfinderReport(AgentReport):
     """Dictionary for single Pathfinder agent report."""
 
     expected_nodes_found: Optional[str] = None
-    # How well the paths are ranked, against every expected node of the query
-    # (see pathfinder_ndcg).
+    # How high the first path with the asset's minimum required expected nodes
+    # ranks (see pathfinder_ndcg).
     ndcg: Optional[float] = None
 
 
