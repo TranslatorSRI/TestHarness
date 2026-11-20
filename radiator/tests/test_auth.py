@@ -1,4 +1,4 @@
-"""Nothing is reachable without logging in or a token."""
+"""The dashboard needs a login and uploads need the token; reading is open."""
 
 import pytest
 
@@ -18,10 +18,22 @@ def test_pages_redirect_to_login(client, path):
     assert res.headers["location"] == f"/login?next={path}"
 
 
-def test_read_api_needs_token_or_login(client, api, browser):
-    assert client.get("/api/runs").status_code == 401
+def test_read_api_is_open(client, api, browser):
+    assert client.get("/api/runs").status_code == 200
+    # a token or a session still works, so existing scripts keep running
     assert api.get("/api/runs").status_code == 200
     assert browser.get("/api/runs").status_code == 200
+    # and a stale or wrong token doesn't lock anyone out of reading
+    stale = client.get("/api/runs", headers={"Authorization": "Bearer old"})
+    assert stale.status_code == 200
+
+
+def test_api_docs_are_open(client):
+    assert client.get("/api/docs").status_code == 200
+    spec = client.get("/api/openapi.json").json()
+    assert "/api/runs/{run_id}/pks" in spec["paths"]
+    # the dashboard's pages aren't API
+    assert "/" not in spec["paths"]
 
 
 def test_ingest_needs_the_token(client, browser):

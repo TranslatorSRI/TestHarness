@@ -56,13 +56,38 @@ def list_runs(
     env: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    origin: Optional[str] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    zebrunner_launch: Optional[str] = None,
 ) -> list[Run]:
     stmt = select(Run).order_by(Run.started_at.desc()).limit(limit).offset(offset)
     if suite:
         stmt = stmt.where(Run.suite == suite)
     if env:
         stmt = stmt.where(Run.env == env)
+    if origin:
+        stmt = stmt.where(Run.origin == origin)
+    if since:
+        stmt = stmt.where(Run.started_at >= since)
+    if until:
+        stmt = stmt.where(Run.started_at < until)
+    if zebrunner_launch:
+        stmt = stmt.where(
+            Run.origin == ZEBRUNNER_ORIGIN, Run.origin_ref == zebrunner_launch
+        )
     return list(session.scalars(stmt))
+
+
+def latest_run(
+    session: Session, suite: str, env: Optional[str] = None, finished: bool = True
+) -> Optional[Run]:
+    stmt = select(Run).where(Run.suite == suite)
+    if env:
+        stmt = stmt.where(Run.env == env)
+    if finished:
+        stmt = stmt.where(Run.ended_at.is_not(None))
+    return session.scalar(stmt.order_by(Run.started_at.desc()).limit(1))
 
 
 def count_runs(session: Session, suite=None, env=None) -> int:
@@ -689,6 +714,44 @@ def live_status(session: Session) -> dict:
 # --- JSON for the read API ---------------------------------------------------
 
 
+# The origin of runs brought over from Zebrunner; their origin_ref is the
+# Zebrunner launch id (its testRunId).
+ZEBRUNNER_ORIGIN = "zebrunner_import"
+
+
+def _agent_json(agent) -> dict:
+    return {
+        "agent": agent.agent,
+        "status": agent.status,
+        "message": agent.message,
+        "found": agent.found,
+        "found_curies": agent.found_curies,
+        "rank": agent.rank,
+        "score": agent.score,
+        "n_results": agent.n_results,
+        "http_status": agent.http_status,
+        "response_time_s": agent.response_time_s,
+        "pk": agent.pk,
+        "expected_nodes_found": agent.expected_nodes_found,
+    }
+
+
+def _asset_json(asset) -> dict:
+    return {
+        "test_case_id": asset.test_case_id,
+        "asset_id": asset.asset_id,
+        "name": asset.name,
+        "kind": asset.kind,
+        "expected_output": asset.expected_output,
+        "predicate": asset.predicate,
+        "input_curie": asset.input_curie,
+        "output_curies": asset.output_curies,
+        "status": asset.status,
+        "parent_pk": asset.parent_pk,
+        "details": asset.details,
+    }
+
+
 def run_json(run: Run, with_results: bool = False) -> dict:
     data = {
         "run_id": str(run.id),
@@ -702,6 +765,10 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "trapi_version": run.trapi_version,
         "harness_version": run.harness_version,
         "origin": run.origin,
+        "zebrunner_launch": (
+            run.origin_ref if run.origin == ZEBRUNNER_ORIGIN else None
+        ),
+        "cycle_id": str(run.cycle_id) if run.cycle_id else None,
         "started_at": run.started_at.isoformat(),
         "ended_at": run.ended_at.isoformat() if run.ended_at else None,
         "counts": run.counts,
@@ -709,43 +776,96 @@ def run_json(run: Run, with_results: bool = False) -> dict:
     if with_results:
         data["results"] = [
             {
-                "test_case_id": asset.test_case_id,
-                "asset_id": asset.asset_id,
-                "name": asset.name,
-                "kind": asset.kind,
-                "expected_output": asset.expected_output,
-                "input_curie": asset.input_curie,
-                "output_curies": asset.output_curies,
-                "status": asset.status,
-                "agents": [
-                    {
-                        "agent": agent.agent,
-                        "status": agent.status,
-                        "found": agent.found,
-                        "found_curies": agent.found_curies,
-                        "rank": agent.rank,
-                        "score": agent.score,
-                        "n_results": agent.n_results,
-                        "http_status": agent.http_status,
-                        "response_time_s": agent.response_time_s,
-                        "pk": agent.pk,
-                    }
-                    for agent in asset.agents
-                ],
+                **_asset_json(asset),
+                "agents": [_agent_json(agent) for agent in asset.agents],
             }
             for asset in run.assets
         ]
         data["performance"] = [
             {
+                "test_case_id": perf.test_case_id,
+                "asset_id": perf.asset_id,
                 "host": perf.host,
                 "helmsdeep_target": perf.helmsdeep_target,
                 "profile": perf.profile,
                 "status": perf.status,
                 "max_sustainable_concurrency": perf.max_sustainable_concurrency,
+                "knee_unsupported": perf.knee_unsupported,
                 "checkpoints_passed": perf.checkpoints_passed,
+                "exit_code": perf.exit_code,
                 "error": perf.error,
                 "message": perf.message,
+                "summary": perf.summary,
             }
             for perf in run.performance
         ]
     return data
+
+
+# --- Flat rows: one per asset and agent, for dataframes and CSV --------------
+
+RESULT_ROW_COLUMNS = [
+    "test_case_id",
+    "asset_id",
+    "name",
+    "kind",
+    "expected_output",
+    "predicate",
+    "input_curie",
+    "output_curies",
+    "asset_status",
+    "parent_pk",
+    "agent",
+    "status",
+    "message",
+    "found",
+    "found_curies",
+    "rank",
+    "score",
+    "n_results",
+    "http_status",
+    "response_time_s",
+    "pk",
+    "expected_nodes_found",
+]
+
+PK_ROW_COLUMNS = ["test_case_id", "asset_id", "parent_pk", "agent", "pk"]
+
+
+def _sorted_assets(run: Run) -> list:
+    return sorted(run.assets, key=lambda a: (a.test_case_id, a.asset_id))
+
+
+def result_rows(run: Run) -> list[dict]:
+    """A run's results, one row per asset and agent (an asset no agent was
+    asked about still gets a row, with ``agent`` empty)."""
+    rows = []
+    for asset in _sorted_assets(run):
+        base = _asset_json(asset)
+        base.pop("details")
+        base["asset_status"] = base.pop("status")
+        for agent in asset.agents or [None]:
+            row = dict(base)
+            if agent is None:
+                row.update({c: None for c in RESULT_ROW_COLUMNS if c not in row})
+            else:
+                row.update(_agent_json(agent))
+            rows.append(row)
+    return rows
+
+
+def pk_rows(run: Run) -> list[dict]:
+    """Every pk in a run, one row per asset and agent, with the parent pk."""
+    rows = []
+    for asset in _sorted_assets(run):
+        for agent in asset.agents or [None]:
+            rows.append(
+                {
+                    "test_case_id": asset.test_case_id,
+                    "asset_id": asset.asset_id,
+                    "parent_pk": asset.parent_pk,
+                    "agent": agent.agent if agent else None,
+                    "pk": agent.pk if agent else None,
+                }
+            )
+    return rows

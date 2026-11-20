@@ -65,7 +65,17 @@ def _safe_next(next_url: Optional[str]) -> str:
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     configure_logging()
     settings = settings or Settings.from_env()
-    app = FastAPI(title="Information Radiator", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Information Radiator",
+        description=(
+            "Results of the Translator test harness. Reading needs no "
+            "login or token; uploads (`/api/ingest`) need the bearer token. "
+            "See docs/api.md in TranslatorSRI/TestHarness for examples."
+        ),
+        docs_url="/api/docs",
+        redoc_url=None,
+        openapi_url="/api/openapi.json",
+    )
     app.state.settings = settings
     app.state.sessionmaker = make_sessionmaker(settings.database_url)
     app.state.login_throttle = LoginThrottle()
@@ -84,7 +94,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.include_router(api.ingest_router)
     app.include_router(api.read_router)
-    app.include_router(web.router)
+    app.include_router(web.router, include_in_schema=False)
 
     @app.exception_handler(RequestValidationError)
     async def rejected(request: Request, exc: RequestValidationError):

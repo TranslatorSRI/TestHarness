@@ -1,13 +1,10 @@
 """Authentication.
 
-Two ways in, and nothing is reachable without one of them (bar the health
-check and the login page itself):
-
 * the UI: one shared username/password for the consortium, which sets a
   signed session cookie;
-* the API: a bearer token, for the harness to upload with and for scripts.
+* uploads: a bearer token, for the harness.
 
-The JSON read API accepts either, so the UI's own pages could use it too.
+The JSON read API under /api is open: anyone may read the results.
 """
 
 import hmac
@@ -40,16 +37,6 @@ def require_token(request: Request) -> None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "A valid bearer token is required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-
-def require_token_or_login(request: Request) -> None:
-    """Dependency for the read API."""
-    if not (has_valid_token(request) or is_logged_in(request)):
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "Log in, or send a bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

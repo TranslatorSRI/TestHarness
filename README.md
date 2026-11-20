@@ -55,6 +55,8 @@ agent's status, whether the expected answer was found and its rank/score, the
 number of results, the HTTP status, and (for direct queries) the response
 time. Its dashboard shows each run, what changed since the previous one, each
 asset's history, agent pass-rate trends, and performance trends.
+Anyone can read its results through an open JSON API, no token needed: see
+[Reading results from the Information Radiator](docs/api.md).
 
 #### Trying it out with Docker Compose
 With Docker installed, from the repo root:
