@@ -110,6 +110,22 @@ still running (a Job created by hand ignores the CronJob's
 `suspend: true` on an environment (or `digest.suspend`, `sweep.suspend`) keeps
 its CronJob but stops it from running.
 
+### A run that hit its deadline
+
+A cycle stops at `activeDeadlineSeconds` (4 hours by default; a sweep at
+`sweep.activeDeadlineSeconds`). The deadline is on the pod, not the Job, so the
+pod stays after it, `Failed` with reason `DeadlineExceeded`, and its log ends
+with a line saying the cycle got SIGTERM and after how long. Its log is there
+until the Job is cleaned up, after the CronJob's three most recent failed Jobs:
+
+```
+kubectl -n translator get pods -l app.kubernetes.io/component=cycle
+kubectl -n translator logs <pod>
+```
+
+The files the run wrote (`/app/test_results`) go with the stopped container;
+what a step finished had already gone to the radiator and Slack.
+
 ## Importing Zebrunner's history
 
 Once the radiator is up, set `zebrunnerImport.enabled: true` with its

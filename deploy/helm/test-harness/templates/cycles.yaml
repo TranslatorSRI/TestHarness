@@ -39,7 +39,6 @@ spec:
       # Never retry: a retry re-runs every step and re-posts every report.
       # The Job only fails when a step couldn't run at all.
       backoffLimit: 0
-      activeDeadlineSeconds: {{ $pick.activeDeadlineSeconds }}
       template:
         metadata:
           labels:
@@ -47,6 +46,10 @@ spec:
             app.kubernetes.io/instance: {{ $.Release.Name }}
             app.kubernetes.io/component: cycle
         spec:
+          # The deadline is the pod's, not the Job's: at a Job deadline
+          # Kubernetes deletes the pod, and its logs with it. At a pod deadline
+          # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
+          activeDeadlineSeconds: {{ $pick.activeDeadlineSeconds }}
           terminationGracePeriodSeconds: 120
           {{- $container := include "harness.cycleContainer" (dict "root" $ "env" $env "testEnv" $testEnv "pick" $pick "targets" $targets) }}
           {{- include "harness.podSpec" (dict "root" $ "container" $container) | nindent 10 }}
