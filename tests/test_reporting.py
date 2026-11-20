@@ -16,6 +16,7 @@ Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
 """
 
 import json
+import re
 
 import pytest
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -338,6 +339,9 @@ def test_performance_checkpoint_failure_reaches_the_summary():
     assert "checkpoints: *FAIL*" in summary
     assert "45 users - headroom above peak: FAIL" in summary
     assert "Max sustainable concurrency: 42.5" in summary
+    # plain text for Slack: no emoji codes
+    details = collector.performance_details()
+    assert "* 30 users" in details and not re.search(r":[a-z_]+:", details)
 
 
 def test_performance_checkpoints_pass():

@@ -125,13 +125,19 @@ Uploads are idempotent, so pushing a run that partly made it is safe. The
 radiator never depends on Zebrunner or Slack: if either fails, the run still
 reaches the radiator (or is saved for it).
 
-Each Slack report is one message to read at a glance (what ran, the verdict,
-and a link), with its chart attached when there is one; the details (each
-service's performance numbers, any other chart, and the result files) go in
-that message's thread. The bot needs the `chat:write`, `files:write` and
-`files:read` scopes for this, and must be in the channel. If Slack doesn't say
-where it shared the chart, the details go under a short "Details" message
-instead, so they still stay out of the channel.
+Each finished run gets exactly one message in the channel, to read at a
+glance: the suite, the environment, the verdict and a link, with its chart
+shown in it when there is one. The details (each service's performance
+numbers, any other chart, and the result files) go in that message's thread.
+The bot needs the `chat:write` and `files:write` scopes for this, and must be
+in the channel. If Slack won't show the chart in the message, the message goes
+without it and the chart leads the thread.
+
+The pass rate is there whenever the radiator has the run. The change against
+the previous run, the regressions and fixes, and the *What changed* link need
+a previous finished run in the same series: the same suite, environment,
+`--target` and `--query_type`. The first run of a series shows the pass rate
+alone.
 
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass

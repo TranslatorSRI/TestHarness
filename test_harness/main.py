@@ -188,7 +188,7 @@ def report_summary(suite, duration, queried_envs, links, collector, headline=())
     """The top message of a finished run's Slack report: what ran, the
     verdict at a glance, and where to read more."""
     envs = ", ".join(env.upper() for env in sorted(queried_envs))
-    lines = [f"*{suite}* finished · {envs} · {_fmt_duration(duration)}"]
+    lines = [f"*{suite}* finished on *{envs}* · {_fmt_duration(duration)}"]
     glance = [collector.acceptance_glance(), *headline, collector.performance_glance()]
     lines += [f"> {line}" for line in glance if line]
     return "\n".join(lines) + links
@@ -491,7 +491,7 @@ def main(args):
         post(
             lambda: channel.post_notification(
                 messages=[
-                    f"Running {args['suite']} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries, TRAPI {args['trapi_version']})...{params_note}{links}"
+                    f"Running {args['suite']} on {test_env.upper()} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries, TRAPI {args['trapi_version']})...{params_note}{links}"
                 ]
             ),
             best_effort,

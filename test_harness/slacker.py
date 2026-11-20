@@ -74,10 +74,10 @@ def text_attachment(filename: str, extension: str, results) -> Attachment:
 class Slacker:
     """Slack notification poster."""
 
-    # How long to wait for Slack to share an uploaded image into the channel,
-    # so its message can carry a thread.
-    SHARE_ATTEMPTS = 10
-    SHARE_DELAY_SECONDS = 1.0
+    # Slack processes an upload before a message can show it; how long to keep
+    # trying to post the report with its image.
+    IMAGE_ATTEMPTS = 8
+    IMAGE_DELAY_SECONDS = 1.5
 
     def __init__(self, url=None, token=None, slack_channel=None):
         self.channel = (
@@ -141,28 +141,28 @@ class Slacker:
         files: Sequence[Attachment] = (),
     ) -> Optional[str]:
         """Post one message to read at a glance -- ``summary``, with ``image``
-        attached -- and put ``details`` (messages) and ``files`` in its thread.
+        shown in it -- and put ``details`` (messages) and ``files`` in its
+        thread. Always exactly one message in the channel itself.
 
-        Uses the bot token (chat:write, files:write, files:read). Returns the
-        parent message's ts, or None if Slack didn't give one; then the thread
-        goes under a short "Details" message instead, so it still stays out of
-        the channel.
+        Uses the bot token (chat:write, files:write). The image is uploaded
+        without sharing it, then shown in the message, so the message's ts
+        comes straight back from Slack to thread under. If Slack won't show
+        the image in the message, the message goes without it and the image
+        leads the thread.
         """
-        ts = None
+        file_id = None
         if image is not None:
             try:
-                ts = self._upload(image, initial_comment=summary)
+                file_id = self._upload_unshared(image)
             except Exception as e:
-                self.logger.warning(f"Couldn't post {image.filename}: {e}")
-                image = None
-        if image is None:
+                self.logger.warning(f"Couldn't upload {image.filename}: {e}")
+        ts = None
+        if file_id is not None:
+            ts = self._post_with_image(summary, image, file_id)
+        if ts is None:
             ts = self._post_message(summary)
-        if ts is None and (details or files):
-            self.logger.warning(
-                "Couldn't find the Slack message to thread the details under; "
-                "posting them under a message of their own."
-            )
-            ts = self._post_message("Details for the report above :thread:")
+            if image is not None:
+                files = [image, *files]
         for message in details:
             if message and message.strip():
                 self._post_message(message, thread_ts=ts)
@@ -173,55 +173,67 @@ class Slacker:
                 self.logger.warning(f"Couldn't upload {attachment.filename}: {e}")
         return ts
 
-    def _post_message(self, text: str, thread_ts: Optional[str] = None):
+    def _post_message(self, text: str, thread_ts: Optional[str] = None, blocks=None):
         response = self.client.chat_postMessage(
             channel=self.channel,
             text=text[:3000],
-            blocks=_blocks(text)[:50],
+            blocks=blocks if blocks is not None else _blocks(text)[:50],
             thread_ts=thread_ts,
             unfurl_links=False,
+            unfurl_media=False,
         )
         return response.get("ts")
 
-    def _upload(
-        self,
-        attachment: Attachment,
-        initial_comment: Optional[str] = None,
-        thread_ts: Optional[str] = None,
-    ) -> Optional[str]:
-        """Upload ``attachment``; returns the ts of the message it was shared
-        in, when it is a new message (not one in a thread)."""
-        kwargs = {"thread_ts": thread_ts} if thread_ts else {}
+    def _upload_unshared(self, attachment: Attachment) -> Optional[str]:
+        """Upload ``attachment`` without posting it anywhere; its file ID."""
         response = self.client.files_upload_v2(
+            file=attachment.content,
+            filename=attachment.filename,
+            title=attachment.title or attachment.filename,
+        )
+        files = response.get("files") or [response.get("file") or {}]
+        return files[0].get("id") if files else None
+
+    def _post_with_image(
+        self, summary: str, image: Attachment, file_id: str
+    ) -> Optional[str]:
+        """Post ``summary`` with the uploaded image in it; its ts, or None if
+        Slack wouldn't take it. Slack rejects the image until it has processed
+        the upload, so this retries for a little while."""
+        blocks = _blocks(summary)[:49] + [
+            {
+                "type": "image",
+                "slack_file": {"id": file_id},
+                "alt_text": image.title or image.filename,
+            }
+        ]
+        for attempt in range(self.IMAGE_ATTEMPTS):
+            if attempt:
+                time.sleep(self.IMAGE_DELAY_SECONDS)
+            try:
+                return self._post_message(summary, blocks=blocks)
+            except Exception as e:
+                error = e
+                # only "the file isn't ready yet" is worth waiting out
+                if "invalid_blocks" not in str(e):
+                    break
+        self.logger.warning(
+            f"Couldn't show {image.filename} in the report ({error}); "
+            "posting it in the thread instead."
+        )
+        return None
+
+    def _upload(self, attachment: Attachment, thread_ts: Optional[str] = None):
+        """Upload ``attachment`` into the channel, in a thread if given."""
+        kwargs = {"thread_ts": thread_ts} if thread_ts else {}
+        self.client.files_upload_v2(
             channel=self.channel,
             file=attachment.content,
             filename=attachment.filename,
             title=attachment.title or attachment.filename,
-            initial_comment=initial_comment or attachment.comment,
+            initial_comment=attachment.comment,
             **kwargs,
         )
-        if thread_ts:
-            return None
-        files = response.get("files") or [response.get("file") or {}]
-        file_id = files[0].get("id") if files else None
-        return self._share_ts(file_id) if file_id else None
-
-    def _share_ts(self, file_id: str) -> Optional[str]:
-        """The ts of the message a just-uploaded file was shared in. Slack
-        shares an upload asynchronously, so this waits a little for it."""
-        for attempt in range(self.SHARE_ATTEMPTS):
-            if attempt:
-                time.sleep(self.SHARE_DELAY_SECONDS)
-            try:
-                shares = self.client.files_info(file=file_id)["file"].get("shares")
-            except Exception as e:
-                self.logger.warning(f"Couldn't look up the uploaded file: {e}")
-                return None
-            for kind in ("public", "private"):
-                entries = (shares or {}).get(kind, {}).get(self.channel)
-                if entries:
-                    return entries[0].get("ts")
-        return None
 
     def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""

@@ -623,11 +623,8 @@ class ResultCollector:
             verdict = "PASS" if run_stats.get("checkpoints_passed") else "FAIL"
             lines.append(f"> - Checkpoints: *{verdict}*")
             for cp in checkpoints:
-                mark = {"PASS": ":white_check_mark:", "FAIL": ":x:"}.get(
-                    cp["verdict"], ":grey_question:"
-                )
                 lines.append(
-                    f">   * {mark} {cp['users']} users - {cp['goal']}: "
+                    f">   * {cp['users']} users - {cp['goal']}: "
                     f"{cp['verdict']} ({cp['detail']})"
                 )
                 if cp.get("p99_ms") is not None:

@@ -173,7 +173,7 @@ def test_the_cycle_message():
     # at a glance: what ran, the verdicts, the flags, and the link
     assert summary == (
         "*CI run cycle finished* · 2 of 3 steps ran · 1 h 30 min\n"
-        "> 1 Regressed · 1 Steady · ⚑ 1 flag\n"
+        "> 1 Regressed · 1 Steady · 1 flag\n"
         "<https://r/cycles/x|Open the run cycle in the Information Radiator>"
     )
     results, changes, flags = thread
@@ -188,9 +188,7 @@ def test_the_cycle_message():
         "arax: 6 regressions (Asset 0, Asset 1, Asset 2, Asset 3 and 2 more); "
         "1 fixed (A9)" in changes
     )
-    assert (
-        flags == "*⚑ Flags*\n• arax: no results on 5 assets that had results last run"
-    )
+    assert flags == "*Flags*\n• arax: no results on 5 assets that had results last run"
 
 
 def test_a_quiet_cycle_has_a_short_thread():
@@ -211,7 +209,7 @@ def test_the_digest_message():
     summary, thread = digest_message(digest, "https://r/weekly")
     assert summary == (
         "*Weekly test status* · 2026-10-05 to 2026-10-12\n"
-        "> *CI*: 1 Regressed · 1 Steady · ⚑ 1\n"
+        "> *CI*: 1 Regressed · 1 Steady · 1 flag\n"
         "<https://r/weekly|Open the weekly page in the Information Radiator>"
     )
     rows, flags = thread

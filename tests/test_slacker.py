@@ -9,12 +9,17 @@ from test_harness.slacker import Attachment, LocalSlacker, Slacker
 class _FakeClient:
     """Records what would have gone to Slack's Web API."""
 
-    def __init__(self, share_after=0):
+    def __init__(self, not_ready=0, image_error="invalid_blocks"):
         self.posts, self.uploads = [], []
-        self.share_after = share_after  # files.info calls before the share shows
-        self.info_calls = 0
+        self.not_ready = not_ready  # image posts rejected before the file is ready
+        self.image_error = image_error
 
     def chat_postMessage(self, **kwargs):
+        if any(b["type"] == "image" for b in kwargs["blocks"]) and self.not_ready:
+            self.not_ready -= 1
+            raise RuntimeError(
+                f"The request to the Slack API failed: {self.image_error}"
+            )
         self.posts.append(kwargs)
         return {"ts": f"msg{len(self.posts)}"}
 
@@ -22,17 +27,11 @@ class _FakeClient:
         self.uploads.append(kwargs)
         return {"files": [{"id": f"F{len(self.uploads)}"}]}
 
-    def files_info(self, file):
-        self.info_calls += 1
-        if self.info_calls <= self.share_after:
-            return {"file": {"shares": {}}}
-        return {"file": {"shares": {"public": {"C1": [{"ts": "img.1"}]}}}}
-
 
 def _slacker(client):
     slacker = Slacker(url="https://hooks.slack.com/x", token="xoxb", slack_channel="C1")
     slacker.client = client
-    slacker.SHARE_DELAY_SECONDS = 0
+    slacker.IMAGE_DELAY_SECONDS = 0
     return slacker
 
 
@@ -40,23 +39,29 @@ CHART = Attachment("chart.png", b"\x89PNG", title="Chart")
 RESULTS = Attachment("results.csv", b"a,b\n", "Test Results:")
 
 
-def test_the_image_carries_the_summary_and_the_details_go_in_its_thread():
-    client = _FakeClient(share_after=2)  # Slack shares the upload a bit later
+def _top_level(client):
+    return [p for p in client.posts if p["thread_ts"] is None]
+
+
+def test_one_message_with_the_image_and_the_details_in_its_thread():
+    client = _FakeClient(not_ready=2)  # Slack is still processing the upload
     ts = _slacker(client).post_thread(
         "*suite* finished", image=CHART, details=["details", " "], files=[RESULTS]
     )
-    assert ts == "img.1"
-    first, second = client.uploads
-    assert first["initial_comment"] == "*suite* finished"
-    assert first["file"] == b"\x89PNG" and "thread_ts" not in first
-    assert second["thread_ts"] == "img.1"
-    assert second["filename"] == "results.csv"
-    # blank details are dropped; the rest go in the thread
-    [post] = client.posts
-    assert (post["text"], post["thread_ts"]) == ("details", "img.1")
+    chart, results = client.uploads
+    # the image is uploaded unshared, and shown in the report itself
+    assert "channel" not in chart and chart["file"] == b"\x89PNG"
+    [top] = _top_level(client)
+    assert top["text"] == "*suite* finished"
+    assert top["blocks"][-1]["slack_file"] == {"id": "F1"}
+    assert ts == "msg1"
+    # blank details are dropped; the rest, and the files, go in its thread
+    [detail] = [p for p in client.posts if p["thread_ts"]]
+    assert (detail["text"], detail["thread_ts"]) == ("details", "msg1")
+    assert results["thread_ts"] == "msg1" and results["channel"] == "C1"
 
 
-def test_without_an_image_the_summary_is_a_message():
+def test_without_an_image_the_summary_is_a_plain_message():
     client = _FakeClient()
     assert _slacker(client).post_thread("*suite* finished", details=["d"]) == "msg1"
     top, detail = client.posts
@@ -64,13 +69,23 @@ def test_without_an_image_the_summary_is_a_message():
     assert detail["thread_ts"] == "msg1"
 
 
-def test_details_still_stay_out_of_the_channel_if_the_share_never_shows(caplog):
-    client = _FakeClient(share_after=100)
-    _slacker(client).post_thread("summary", image=CHART, details=["d"])
-    holder, detail = client.posts
-    assert holder["thread_ts"] is None and "Details" in holder["text"]
-    assert detail["thread_ts"] == "msg1"
-    assert "Couldn't find the Slack message" in caplog.text
+def test_an_image_slack_wont_show_leads_the_thread_instead(caplog):
+    client = _FakeClient(not_ready=100)
+    ts = _slacker(client).post_thread("summary", image=CHART, details=["d"])
+    # still exactly one message in the channel, with the details under it
+    [top] = _top_level(client)
+    assert top["text"] == "summary" and ts == "msg1"
+    assert all(b["type"] != "image" for b in top["blocks"])
+    chart = client.uploads[-1]
+    assert (chart["filename"], chart["thread_ts"]) == ("chart.png", "msg1")
+    assert "posting it in the thread instead" in caplog.text
+
+
+def test_only_an_unready_image_is_retried():
+    client = _FakeClient(not_ready=1, image_error="not_in_channel")
+    _slacker(client).post_thread("summary", image=CHART)
+    # gave up on the image at once, and posted the report without it
+    assert len(_top_level(client)) == 1 and client.not_ready == 0
 
 
 def test_long_details_are_split_into_blocks():

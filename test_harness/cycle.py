@@ -51,8 +51,6 @@ from test_harness.sweep import (
 )
 from test_harness.utils import TEST_ENVS
 
-FLAG = "⚑"
-
 
 @dataclass
 class Step:
@@ -216,7 +214,7 @@ def cycle_message(
     ]
     verdicts = _verdict_counts(rows)
     if flags:
-        verdicts += f" · {FLAG} {len(flags)} flag{'' if len(flags) == 1 else 's'}"
+        verdicts += f" · {len(flags)} flag{'' if len(flags) == 1 else 's'}"
     glance.append(f"> {verdicts}")
     if url:
         glance.append(f"<{url}|Open the run cycle in the Information Radiator>")
@@ -236,9 +234,7 @@ def cycle_message(
             lines += _changes_lines(row)
         thread.append("\n".join(lines))
     if flags:
-        thread.append(
-            f"*{FLAG} Flags*\n" + "\n".join(f"• {flag['text']}" for flag in flags)
-        )
+        thread.append("*Flags*\n" + "\n".join(f"• {flag['text']}" for flag in flags))
     return "\n".join(glance), thread
 
 
@@ -255,7 +251,7 @@ def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
         line = f"> *{name}*: {_verdict_counts(env['rows']) or 'no runs'}"
         flags = sum(len(row["flags"]) for row in env["rows"])
         if flags:
-            line += f" · {FLAG} {flags}"
+            line += f" · {flags} flag{'' if flags == 1 else 's'}"
         glance.append(line)
     if url:
         glance.append(f"<{url}|Open the weekly page in the Information Radiator>")
@@ -277,7 +273,7 @@ def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
         for flag in row["flags"]
     ]
     if flagged:
-        thread.append(f"*{FLAG} Flags*\n" + "\n".join(f"• {flag}" for flag in flagged))
+        thread.append("*Flags*\n" + "\n".join(f"• {flag}" for flag in flagged))
     return "\n".join(glance), thread
 
 
