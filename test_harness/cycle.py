@@ -280,7 +280,7 @@ def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
 def _slacker(output_dir: str, logger):
     """Where the radiator's board and digest go: its own channel
     (RADIATOR_SLACK_*) if it has one; else SLACK_CHANNEL, unless that is
-    still Zebrunner's (ZE_* set), which gets nothing of the new radiator's;
+    still Zebrunner's (ZE_* set), which gets nothing of the radiator's;
     then None."""
     own = radiator_slacker(logger)
     if own is not None:
@@ -289,7 +289,7 @@ def _slacker(output_dir: str, logger):
         logger.info(
             "SLACK_CHANNEL is Zebrunner's while ZE_* is set; set "
             "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
-            "new Information Radiator's board and digest to a channel of its own."
+            "Information Radiator's board and digest to a channel of its own."
         )
         return None
     if Slacker.is_configured():

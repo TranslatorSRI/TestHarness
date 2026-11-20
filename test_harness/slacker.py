@@ -271,11 +271,11 @@ def _slugify_filename(name):
     return slug or "test_results"
 
 
-# The new Information Radiator's own Slack channel, while it runs alongside
+# The Information Radiator's own Slack channel, while it runs alongside
 # Zebrunner. An incoming webhook posts to one channel only, so it needs its own;
 # the bot token can be the same one (invite the bot to both channels).
 def radiator_slacker(logger=None) -> "Slacker | None":
-    """A Slacker for the new radiator's own channel, from RADIATOR_SLACK_*, or
+    """A Slacker for the radiator's own channel, from RADIATOR_SLACK_*, or
     None when that isn't set up. Then SLACK_CHANNEL carries the radiator's
     messages too, unless Zebrunner (ZE_*) is configured: that channel stays
     Zebrunner's, and the radiator's messages aren't posted.

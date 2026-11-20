@@ -118,7 +118,7 @@ Zebrunner is configured (`ZE_*`), `SLACK_CHANNEL` stays Zebrunner's, with the
 report it always got, and everything below goes to the radiator's own channel
 (`RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL`), or isn't posted
 without one (see the README's
-[A Slack channel for the new radiator](../README.md#a-slack-channel-for-the-new-radiator)).
+[A Slack channel for the radiator](../README.md#a-slack-channel-for-the-radiator)).
 
 Each report is one message to read at a glance, with its chart, and a thread
 under it with the details: the performance numbers per service, any second

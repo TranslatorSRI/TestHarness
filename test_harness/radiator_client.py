@@ -1,6 +1,6 @@
 """Client for the Information Radiator's ingest API.
 
-Runs alongside the Zebrunner ``Reporter`` while the new radiator is brought up.
+Runs alongside the Zebrunner ``Reporter``, when that is configured.
 Unlike the Reporter, it never makes a call per test: results are buffered and
 posted in batches as structured records (see ``radiator_schema``).
 

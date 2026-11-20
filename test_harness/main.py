@@ -361,10 +361,10 @@ def main(args):
         refresh_token=args.get("reporter_access_token"),
     )
     if use_local_reporter:
-        logger.info("Running without the Information Radiator (local reporter).")
+        logger.info("Running without Zebrunner (local reporter).")
         reporter = LocalReporter(logger=logger)
     else:
-        # Create test run in the Information Radiator
+        # Create test run in Zebrunner
         reporter = Reporter(
             base_url=args.get("reporter_url"),
             refresh_token=args.get("reporter_access_token"),
@@ -375,11 +375,8 @@ def main(args):
         reporter.create_test_run(test_env, args["suite"])
     except Exception as e:
         # Zebrunner being down mustn't stop the run: the tests still run and
-        # still reach Slack and the new Information Radiator.
-        logger.error(
-            f"Couldn't open a run in the Zebrunner Information Radiator ({e}); "
-            "continuing without it."
-        )
+        # still reach Slack and the Information Radiator.
+        logger.error(f"Couldn't open a run in Zebrunner ({e}); continuing without it.")
         reporter = LocalReporter(logger=logger)
         reporter.create_test_run(test_env, args["suite"])
 
@@ -389,11 +386,11 @@ def main(args):
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    # With RADIATOR_SLACK_* set, the new radiator's reports go to their own
+    # With RADIATOR_SLACK_* set, the radiator's reports go to their own
     # channel, and SLACK_CHANNEL keeps getting the report it always did.
     new_slacker = None if local else radiator_slacker(logger)
-    # The new Information Radiator runs alongside Zebrunner until it takes
-    # over. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
+    # The Information Radiator runs alongside Zebrunner, if that is
+    # configured. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
     # --local, it only records, and the run is saved to --output_dir instead.
     radiator = RadiatorClient(
         base_url=args.get("radiator_url"),
@@ -440,20 +437,20 @@ def main(args):
     zebrunner_link = (
         ""
         if reporter.is_local
-        else f"\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in the Information Radiator>"
+        else f"\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in Zebrunner>"
     )
     radiator_link = (
-        f"\n<{radiator.run_url}|View in the new Information Radiator>"
+        f"\n<{radiator.run_url}|View in the Information Radiator>"
         if radiator.run_url
         else ""
     )
 
     # Where the reports go: (slacker, links, with the radiator's headline and
     # charts, best effort). While Zebrunner is configured, SLACK_CHANNEL is its
-    # channel and keeps the report it always got; the new radiator's report
+    # channel and keeps the report it always got; the radiator's report
     # goes only to a channel of its own (RADIATOR_SLACK_*). Without Zebrunner,
     # SLACK_CHANNEL is the radiator's. Configured, not reachable: a Zebrunner
-    # outage mustn't switch the old channel over to the new dashboard.
+    # outage mustn't switch Zebrunner's channel over to the radiator.
     zebrunner_configured = not use_local_reporter
     channels = []
     if zebrunner_configured or new_slacker is None:
@@ -471,13 +468,13 @@ def main(args):
         logger.info(
             "Reporting to Zebrunner, so SLACK_CHANNEL gets its report only; set "
             "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
-            "new Information Radiator's report to a channel of its own."
+            "Information Radiator's report to a channel of its own."
         )
 
     def post(action, best_effort):
         if not best_effort:
             return action()
-        # the new channel never costs the old one its report
+        # the radiator's channel never costs Zebrunner's its report
         try:
             action()
         except Exception as e:
@@ -707,13 +704,13 @@ def cli():
     parser.add_argument(
         "--radiator_url",
         type=url_type,
-        help="URL of the new Information Radiator (defaults to $RADIATOR_URL)",
+        help="URL of the Information Radiator (defaults to $RADIATOR_URL)",
     )
 
     parser.add_argument(
         "--radiator_token",
         type=str,
-        help="Ingest token for the new Information Radiator (defaults to $RADIATOR_TOKEN)",
+        help="Ingest token for the Information Radiator (defaults to $RADIATOR_TOKEN)",
     )
 
     parser.add_argument(

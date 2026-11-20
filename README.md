@@ -42,13 +42,12 @@ to a local directory instead (`test_results/` by default, configurable with
 
 You don't have to use `--local` to get local files: if Slack isn't configured
 (no `SLACK_WEBHOOK_URL` / `SLACK_TOKEN` / `SLACK_CHANNEL`), the results are
-saved to `--output_dir` automatically. Likewise, if the Information Radiator
-isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
-back to a local reporter.
+saved to `--output_dir` automatically. Likewise, if Zebrunner isn't
+configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls back to
+a local reporter.
 
-### The new Information Radiator
-A replacement for the Zebrunner-based Information Radiator lives in this repo,
-in `radiator/` (full details in
+### The Information Radiator
+The Information Radiator lives in this repo, in `radiator/` (full details in
 [`docs/information-radiator.md`](docs/information-radiator.md)). It gets
 structured results instead of labels and log lines: for each test asset, every
 agent's status, whether the expected answer was found and its rank/score, the
@@ -66,10 +65,10 @@ finishes, the harness container exits; the radiator keeps running at
 <http://localhost:8000>. Log in with `translator` / `radiator`.
 
 The suite queries the real Translator services (the ARS on ci), so the run
-needs internet access and takes a few minutes. It reports to the new radiator
+needs internet access and takes a few minutes. It reports to the radiator
 only, unless you put `ZE_BASE_URL` and `ZE_REFRESH_TOKEN` in `.env` to report
 to Zebrunner as well (see
-[A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)
+[A Slack channel for the radiator](#a-slack-channel-for-the-radiator)
 for where Slack posts go then).
 
 Everything is configurable from a `.env` file next to `compose.yml`; copy
@@ -85,7 +84,7 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 | `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
 | `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
 | `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets only Zebrunner's report, and the radiator's go to `RADIATOR_SLACK_*` (or nowhere, if that isn't set) |
-| `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)) |
+| `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the radiator](#a-slack-channel-for-the-radiator)) |
 
 Then:
 - **Run another suite** against the same radiator, without restarting it:
@@ -111,9 +110,8 @@ exists and isn't yours), then `docker compose up` again.
 Point the harness at a radiator with `RADIATOR_URL` and `RADIATOR_TOKEN` (or
 `--radiator_url` / `--radiator_token`). If people open the radiator at a
 different address than the harness uploads to (eg an in-cluster service name),
-set `RADIATOR_PUBLIC_URL` for the links in the logs and Slack. Until the new
-radiator takes over, the harness reports to it alongside Zebrunner, if that's
-configured too.
+set `RADIATOR_PUBLIC_URL` for the links in the logs and Slack. The harness
+reports to it alongside Zebrunner, if that's configured too.
 
 Results are posted in batches; an unreachable radiator never fails a run.
 Whenever a run isn't uploaded (`--local`, the radiator isn't configured, or an
@@ -152,38 +150,37 @@ over time, colored by whether the pass rate went up, down, or held. The `dev`
 environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
 on the radiator (comma-separated) to change which.
 
-#### A Slack channel for the new radiator
+#### A Slack channel for the radiator
 Which channel gets what depends on whether Zebrunner is still configured
 (`ZE_BASE_URL` and `ZE_REFRESH_TOKEN`):
 
 - **Zebrunner configured:** `SLACK_CHANNEL` is still Zebrunner's. It gets the
-  report it got before the new radiator (the Zebrunner link, the result summary
-  and the result files) and nothing of the new radiator's. The new radiator's
-  report goes to a channel of its own, if you give it one (below).
+  report it always got (the Zebrunner link, the result summary and the result
+  files) and nothing of the radiator's. The radiator's report goes to a channel of its own, if you give it one (below).
 - **No Zebrunner** (after the cutover, or in Docker Compose without `ZE_*` in
-  `.env`): `SLACK_CHANNEL` is the new radiator's and gets its report.
+  `.env`): `SLACK_CHANNEL` is the radiator's and gets its report.
 
 This keys off whether Zebrunner is *configured*, not whether it answered, so a
-Zebrunner outage never switches the old channel over to the new dashboard.
+Zebrunner outage never switches Zebrunner's channel over to the radiator.
 
-To give the new radiator its own channel while both run, set:
+To give the radiator its own channel while both run, set:
 
 | Setting | |
 |---|---|
-| `RADIATOR_SLACK_WEBHOOK_URL` | An incoming webhook for the new channel (a webhook posts to one channel only) |
-| `RADIATOR_SLACK_CHANNEL` | The new channel's ID, eg `C0456EFGH` |
-| `RADIATOR_SLACK_TOKEN` | Optional: defaults to `SLACK_TOKEN`. Invite that bot to the new channel too |
+| `RADIATOR_SLACK_WEBHOOK_URL` | An incoming webhook for the radiator's channel (a webhook posts to one channel only) |
+| `RADIATOR_SLACK_CHANNEL` | The radiator's channel's ID, eg `C0456EFGH` |
+| `RADIATOR_SLACK_TOKEN` | Optional: defaults to `SLACK_TOKEN`. Invite that bot to the radiator's channel too |
 
-That channel then gets the new radiator's report for each run (its link, the
+That channel then gets the radiator's report for each run (its link, the
 headline against the previous run, the history charts and the result files),
 the [run cycle boards and the weekly digest](#run-cycles-and-the-weekly-digest).
 Each run still runs once and reports to both dashboards. A failure posting to
-the new channel (eg the bot isn't in it) is logged and never costs the old
-channel its report. Without it, the new radiator still records every run; it
+the radiator's channel (eg the bot isn't in it) is logged and never costs
+Zebrunner's channel its report. Without it, the radiator still records every run; it
 just posts nothing to Slack while Zebrunner is configured.
 
 When you retire Zebrunner, drop the `ZE_*` settings, point `SLACK_*` at the
-new channel, and drop `RADIATOR_SLACK_*`.
+radiator's channel, and drop `RADIATOR_SLACK_*`.
 
 #### Deploying it
 To run it for real, in the same Kubernetes namespace as the harness, use the

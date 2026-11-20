@@ -1,4 +1,4 @@
-"""Tests for reporting to the new Information Radiator.
+"""Tests for reporting to the Information Radiator.
 
 Covers the structured records the collector builds (including the response
 metadata Zebrunner never got: n_results, HTTP status, response time), and the
@@ -668,13 +668,13 @@ def test_performance_line_variants():
 
 
 def test_slack_links_only_to_where_the_run_went(mocker, monkeypatch, tmp_path):
-    """Without Zebrunner, the report links to the new radiator only."""
+    """Without Zebrunner, the report links to the radiator only."""
     slacker = _main_with_slack(
         mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}
     )
     for message in slacker.messages:
         assert "/test-runs/local" not in message
-        assert "View in the new Information Radiator" in message
+        assert "View in the Information Radiator" in message
 
 
 def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPXMock):
@@ -725,7 +725,7 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
 
 
 def test_the_radiator_can_have_its_own_slack_channel(mocker, monkeypatch, tmp_path):
-    """Alongside Zebrunner: the old channel keeps the report it always got, and
+    """Alongside Zebrunner: Zebrunner's channel keeps the report it always got, and
     the radiator's report, with its headline and charts, goes to its own."""
     new = _RecordingSlacker()
     old = _main_with_slack(
@@ -742,13 +742,13 @@ def test_the_radiator_can_have_its_own_slack_channel(mocker, monkeypatch, tmp_pa
         zebrunner=True,
     )
     for message in old.messages:
-        assert "new Information Radiator" not in message
+        assert "View in the Information Radiator" not in message
         assert "Pass rate" not in message
     assert old.files == []  # no radiator charts
     # both channels get the result files
     assert old.results == new.results == ["json", "csv"]
 
-    assert all("View in the new Information Radiator" in m for m in new.messages)
+    assert all("View in the Information Radiator" in m for m in new.messages)
     assert "Pass rate 86% (-4.0 pts vs the previous run)" in new.messages[-1]
     assert [f for f, _, _ in new.files] == ["pass_rate_history.png"]
 
@@ -802,7 +802,7 @@ def test_alongside_zebrunner_the_old_channel_keeps_its_report(
     mocker, monkeypatch, tmp_path
 ):
     """No channel of the radiator's own: SLACK_CHANNEL is still Zebrunner's,
-    and gets nothing of the new radiator's."""
+    and gets nothing of the radiator's."""
     old = _main_with_slack(
         mocker,
         monkeypatch,
@@ -816,11 +816,8 @@ def test_alongside_zebrunner_the_old_channel_keeps_its_report(
         zebrunner=True,
     )
     for message in old.messages:
-        assert (
-            "zebrunner.example.org/test-runs/42|View in the Information Radiator"
-            in message
-        )
-        assert "new Information Radiator" not in message
+        assert "zebrunner.example.org/test-runs/42|View in Zebrunner" in message
+        assert "View in the Information Radiator" not in message
         assert "Pass rate" not in message
     assert old.files == []
     assert old.results == ["json", "csv"]
@@ -833,7 +830,7 @@ def test_without_zebrunner_the_radiator_has_slack_channel(
     slacker = _main_with_slack(
         mocker, monkeypatch, tmp_path, summary={"pass_rate": 0.5}
     )
-    assert all("View in the new Information Radiator" in m for m in slacker.messages)
+    assert all("View in the Information Radiator" in m for m in slacker.messages)
     assert "Pass rate 50%" in slacker.messages[-1]
 
 

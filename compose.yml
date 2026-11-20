@@ -1,4 +1,4 @@
-# Try the harness and the new Information Radiator together, locally:
+# Try the harness and the Information Radiator together, locally:
 #
 #   docker compose up --build
 #
@@ -7,7 +7,7 @@
 # harness exits; the radiator keeps running. Log in with RADIATOR_USERNAME /
 # RADIATOR_PASSWORD (translator / radiator unless set in .env).
 #
-# This reports to the new radiator, and also to Zebrunner if ZE_BASE_URL and
+# This reports to the radiator, and also to Zebrunner if ZE_BASE_URL and
 # ZE_REFRESH_TOKEN are in .env. Slack is off unless the SLACK_* settings are in
 # .env. The defaults below are for local use only.
 
@@ -88,12 +88,12 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
       SLACK_TOKEN: ${SLACK_TOKEN:-}
       SLACK_CHANNEL: ${SLACK_CHANNEL:-}
-      # a channel of the new radiator's own (see .env.example)
+      # a channel of the radiator's own (see .env.example)
       RADIATOR_SLACK_WEBHOOK_URL: ${RADIATOR_SLACK_WEBHOOK_URL:-}
       RADIATOR_SLACK_CHANNEL: ${RADIATOR_SLACK_CHANNEL:-}
       RADIATOR_SLACK_TOKEN: ${RADIATOR_SLACK_TOKEN:-}
-      # Zebrunner, alongside the new radiator: unset, the run reports to the
-      # new radiator only, and SLACK_CHANNEL gets its report
+      # Zebrunner, alongside the radiator: unset, the run reports to the
+      # radiator only, and SLACK_CHANNEL gets its report
       ZE_BASE_URL: ${ZE_BASE_URL:-}
       ZE_REFRESH_TOKEN: ${ZE_REFRESH_TOKEN:-}
       PYTHONUNBUFFERED: "1"

@@ -1,4 +1,4 @@
-"""Information Radiator Reporter."""
+"""Zebrunner Reporter."""
 
 import logging
 import os
