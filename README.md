@@ -42,13 +42,10 @@ to a local directory instead (`test_results/` by default, configurable with
 
 You don't have to use `--local` to get local files: if Slack isn't configured
 (no `SLACK_WEBHOOK_URL` / `SLACK_TOKEN` / `SLACK_CHANNEL`), the results are
-saved to `--output_dir` automatically. Likewise, if the Information Radiator
-isn't configured (no `ZE_BASE_URL` / `ZE_REFRESH_TOKEN`), the harness falls
-back to a local reporter.
+saved to `--output_dir` automatically.
 
-### The new Information Radiator
-A replacement for the Zebrunner-based Information Radiator lives in this repo,
-in `radiator/` (full details in
+### The Information Radiator
+The Information Radiator lives in this repo, in `radiator/` (full details in
 [`docs/information-radiator.md`](docs/information-radiator.md)). It gets
 structured results instead of labels and log lines: for each test asset, every
 agent's status, whether the expected answer was found and its rank/score, the
@@ -66,11 +63,7 @@ finishes, the harness container exits; the radiator keeps running at
 <http://localhost:8000>. Log in with `translator` / `radiator`.
 
 The suite queries the real Translator services (the ARS on ci), so the run
-needs internet access and takes a few minutes. It reports to the new radiator
-only, unless you put `ZE_BASE_URL` and `ZE_REFRESH_TOKEN` in `.env` to report
-to Zebrunner as well (see
-[A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)
-for where Slack posts go then).
+needs internet access and takes a few minutes.
 
 Everything is configurable from a `.env` file next to `compose.yml`; copy
 `.env.example` to `.env` to start from the Slack settings:
@@ -84,8 +77,6 @@ Everything is configurable from a `.env` file next to `compose.yml`; copy
 | `RADIATOR_PORT` | `8000` | Where the radiator is published on your machine |
 | `QUERY_PARAMETERS` | unset | Parameters sent with every query, eg `{"timeout": 300}` (see [Sending parameters with every query](#sending-parameters-with-every-query)) |
 | `SLACK_WEBHOOK_URL`, `SLACK_TOKEN`, `SLACK_CHANNEL` | unset | Set all three to also post the report, with the radiator's charts, to Slack |
-| `ZE_BASE_URL`, `ZE_REFRESH_TOKEN` | unset | Also report to Zebrunner; `SLACK_CHANNEL` then gets only Zebrunner's report, and the radiator's go to `RADIATOR_SLACK_*` (or nowhere, if that isn't set) |
-| `RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL` (`RADIATOR_SLACK_TOKEN`) | unset | A channel of the radiator's own (see [A Slack channel for the new radiator](#a-slack-channel-for-the-new-radiator)) |
 
 Then:
 - **Run another suite** against the same radiator, without restarting it:
@@ -111,9 +102,8 @@ exists and isn't yours), then `docker compose up` again.
 Point the harness at a radiator with `RADIATOR_URL` and `RADIATOR_TOKEN` (or
 `--radiator_url` / `--radiator_token`). If people open the radiator at a
 different address than the harness uploads to (eg an in-cluster service name),
-set `RADIATOR_PUBLIC_URL` for the links in the logs and Slack. Until the new
-radiator takes over, the harness reports to it alongside Zebrunner, if that's
-configured too.
+set `RADIATOR_PUBLIC_URL` for the links in the logs, Slack and the result
+CSV (whose `url` column links each asset to its page in the radiator).
 
 Results are posted in batches; an unreachable radiator never fails a run.
 Whenever a run isn't uploaded (`--local`, the radiator isn't configured, or an
@@ -122,8 +112,22 @@ instead, which can be uploaded later:
 - `test-harness-radiator push test_results/radiator_<run id>.json`
 
 Uploads are idempotent, so pushing a run that partly made it is safe. The
-radiator never depends on Zebrunner or Slack: if either fails, the run still
-reaches the radiator (or is saved for it).
+radiator never depends on Slack: if posting fails, the run still reaches the
+radiator (or is saved for it).
+
+Each finished run gets exactly one message in the channel, to read at a
+glance: the suite, the environment, the verdict and a link, with its chart
+shown in it when there is one. The details (each service's performance
+numbers, any other chart, and the result files) go in that message's thread.
+The bot needs the `chat:write` and `files:write` scopes for this, and must be
+in the channel. If Slack won't show the chart in the message, the message goes
+without it and the chart leads the thread.
+
+The pass rate is there whenever the radiator has the run. The change against
+the previous run, the regressions and fixes, and the *What changed* link need
+a previous finished run in the same series: the same suite, environment,
+`--target` and `--query_type`. The first run of a series shows the pass rate
+alone.
 
 When the radiator has the run, the Slack report also gets a headline against
 the previous run and a chart of the last 30 runs: for acceptance runs, the pass
@@ -138,38 +142,13 @@ over time, colored by whether the pass rate went up, down, or held. The `dev`
 environment is shown greyed out as excluded there; set `RADIATOR_EXCLUDED_ENVS`
 on the radiator (comma-separated) to change which.
 
-#### A Slack channel for the new radiator
-Which channel gets what depends on whether Zebrunner is still configured
-(`ZE_BASE_URL` and `ZE_REFRESH_TOKEN`):
-
-- **Zebrunner configured:** `SLACK_CHANNEL` is still Zebrunner's. It gets the
-  report it got before the new radiator (the Zebrunner link, the result summary
-  and the result files) and nothing of the new radiator's. The new radiator's
-  report goes to a channel of its own, if you give it one (below).
-- **No Zebrunner** (after the cutover, or in Docker Compose without `ZE_*` in
-  `.env`): `SLACK_CHANNEL` is the new radiator's and gets its report.
-
-This keys off whether Zebrunner is *configured*, not whether it answered, so a
-Zebrunner outage never switches the old channel over to the new dashboard.
-
-To give the new radiator its own channel while both run, set:
-
-| Setting | |
-|---|---|
-| `RADIATOR_SLACK_WEBHOOK_URL` | An incoming webhook for the new channel (a webhook posts to one channel only) |
-| `RADIATOR_SLACK_CHANNEL` | The new channel's ID, eg `C0456EFGH` |
-| `RADIATOR_SLACK_TOKEN` | Optional: defaults to `SLACK_TOKEN`. Invite that bot to the new channel too |
-
-That channel then gets the new radiator's report for each run (its link, the
-headline against the previous run, the history charts and the result files),
-the [run cycle boards and the weekly digest](#run-cycles-and-the-weekly-digest).
-Each run still runs once and reports to both dashboards. A failure posting to
-the new channel (eg the bot isn't in it) is logged and never costs the old
-channel its report. Without it, the new radiator still records every run; it
-just posts nothing to Slack while Zebrunner is configured.
-
-When you retire Zebrunner, drop the `ZE_*` settings, point `SLACK_*` at the
-new channel, and drop `RADIATOR_SLACK_*`.
+#### Moving off Zebrunner
+The harness no longer reports to Zebrunner, and the radiator no longer has a
+Slack channel of its own: every report, run cycle board and weekly digest goes
+to `SLACK_CHANNEL`. The old settings (`ZE_BASE_URL`, `ZE_REFRESH_TOKEN` and
+`RADIATOR_SLACK_*`) are ignored, and the harness logs a warning while any of
+them is still set. If you were using `RADIATOR_SLACK_*`, point `SLACK_*` at
+that channel instead.
 
 #### Deploying it
 To run it for real, in the same Kubernetes namespace as the harness, use the
@@ -238,7 +217,7 @@ the issue it waits on).
 A skipped test isn't run: its query isn't sent (unless other assets in the same
 test case still need it), and a skipped performance test doesn't start
 HelmsDeep. It is still reported, as `SKIPPED` with the reason, in Slack, the
-CSV, Zebrunner and the Information Radiator, which leaves skips out of pass
+CSV and the Information Radiator, which leaves skips out of pass
 rates. To see whether the issue is fixed, run the skipped tests too:
 - `test-harness --env ci --include_skipped download <suite>`
 
@@ -377,8 +356,9 @@ Two artifacts per run are uploaded to Slack (or saved to `--output_dir`):
 - `<host>_<run_type>_report.html` — locust's own HTML report: charts and
   request/failure tables.
 
-Both are uploaded with a comment carrying the run's checkpoint verdict, and the
-Slack summary message leads with the overall pass/fail. A run with no
+Both are uploaded, in the report's thread, with a comment carrying the run's
+checkpoint verdict, and the Slack report's top message gives the overall
+pass/fail; each run's checkpoints and knee are in the thread. A run with no
 checkpoints reports its knee and says so explicitly rather than claiming a pass
 it never tested for. A missed checkpoint, or a HelmsDeep run that never produced
 a summary at all, is reported as `FAILED` in the Information Radiator too, so

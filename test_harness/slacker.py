@@ -5,6 +5,9 @@ import logging
 import os
 import re
 import tempfile
+import time
+from dataclasses import dataclass
+from typing import List, Optional, Sequence
 
 import httpx
 from slack_sdk import WebClient
@@ -39,8 +42,42 @@ def _chunk_text(text, limit=SLACK_SECTION_TEXT_LIMIT):
     return chunks
 
 
+@dataclass
+class Attachment:
+    """A file to post: a chart, a result file or a performance artifact."""
+
+    filename: str
+    content: bytes
+    comment: Optional[str] = None
+    title: Optional[str] = None
+
+
+def _blocks(text: str) -> List[dict]:
+    """Section blocks for ``text``, split to stay under Slack's limit."""
+    return [
+        {"type": "section", "text": {"type": "mrkdwn", "text": chunk}}
+        for chunk in _chunk_text(text)
+    ]
+
+
+def text_attachment(filename: str, extension: str, results) -> Attachment:
+    """A CSV or JSON results file, as an Attachment."""
+    if extension == "json":
+        body = json.dumps(results, indent=2)
+    else:
+        body = results if isinstance(results, str) else str(results)
+    return Attachment(
+        f"{filename}.{extension}", body.encode("utf-8"), "Test Results:", filename
+    )
+
+
 class Slacker:
     """Slack notification poster."""
+
+    # Slack processes an upload before a message can show it; how long to keep
+    # trying to post the report with its image.
+    IMAGE_ATTEMPTS = 8
+    IMAGE_DELAY_SECONDS = 1.5
 
     def __init__(self, url=None, token=None, slack_channel=None):
         self.channel = (
@@ -96,6 +133,108 @@ class Slacker:
                     res.text,
                 )
 
+    def post_thread(
+        self,
+        summary: str,
+        image: Optional[Attachment] = None,
+        details: Sequence[str] = (),
+        files: Sequence[Attachment] = (),
+    ) -> Optional[str]:
+        """Post one message to read at a glance -- ``summary``, with ``image``
+        shown in it -- and put ``details`` (messages) and ``files`` in its
+        thread. Always exactly one message in the channel itself.
+
+        Uses the bot token (chat:write, files:write). The image is uploaded
+        without sharing it, then shown in the message, so the message's ts
+        comes straight back from Slack to thread under. If Slack won't show
+        the image in the message, the message goes without it and the image
+        leads the thread.
+        """
+        file_id = None
+        if image is not None:
+            try:
+                file_id = self._upload_unshared(image)
+            except Exception as e:
+                self.logger.warning(f"Couldn't upload {image.filename}: {e}")
+        ts = None
+        if file_id is not None:
+            ts = self._post_with_image(summary, image, file_id)
+        if ts is None:
+            ts = self._post_message(summary)
+            if image is not None:
+                files = [image, *files]
+        for message in details:
+            if message and message.strip():
+                self._post_message(message, thread_ts=ts)
+        for attachment in files:
+            try:
+                self._upload(attachment, thread_ts=ts)
+            except Exception as e:
+                self.logger.warning(f"Couldn't upload {attachment.filename}: {e}")
+        return ts
+
+    def _post_message(self, text: str, thread_ts: Optional[str] = None, blocks=None):
+        response = self.client.chat_postMessage(
+            channel=self.channel,
+            text=text[:3000],
+            blocks=blocks if blocks is not None else _blocks(text)[:50],
+            thread_ts=thread_ts,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
+        return response.get("ts")
+
+    def _upload_unshared(self, attachment: Attachment) -> Optional[str]:
+        """Upload ``attachment`` without posting it anywhere; its file ID."""
+        response = self.client.files_upload_v2(
+            file=attachment.content,
+            filename=attachment.filename,
+            title=attachment.title or attachment.filename,
+        )
+        files = response.get("files") or [response.get("file") or {}]
+        return files[0].get("id") if files else None
+
+    def _post_with_image(
+        self, summary: str, image: Attachment, file_id: str
+    ) -> Optional[str]:
+        """Post ``summary`` with the uploaded image in it; its ts, or None if
+        Slack wouldn't take it. Slack rejects the image until it has processed
+        the upload, so this retries for a little while."""
+        blocks = _blocks(summary)[:49] + [
+            {
+                "type": "image",
+                "slack_file": {"id": file_id},
+                "alt_text": image.title or image.filename,
+            }
+        ]
+        for attempt in range(self.IMAGE_ATTEMPTS):
+            if attempt:
+                time.sleep(self.IMAGE_DELAY_SECONDS)
+            try:
+                return self._post_message(summary, blocks=blocks)
+            except Exception as e:
+                error = e
+                # only "the file isn't ready yet" is worth waiting out
+                if "invalid_blocks" not in str(e):
+                    break
+        self.logger.warning(
+            f"Couldn't show {image.filename} in the report ({error}); "
+            "posting it in the thread instead."
+        )
+        return None
+
+    def _upload(self, attachment: Attachment, thread_ts: Optional[str] = None):
+        """Upload ``attachment`` into the channel, in a thread if given."""
+        kwargs = {"thread_ts": thread_ts} if thread_ts else {}
+        self.client.files_upload_v2(
+            channel=self.channel,
+            file=attachment.content,
+            filename=attachment.filename,
+            title=attachment.title or attachment.filename,
+            initial_comment=attachment.comment,
+            **kwargs,
+        )
+
     def upload_test_results_file(self, filename, extension, results):
         """Upload a results file to Slack."""
         with tempfile.TemporaryDirectory() as td:
@@ -132,29 +271,28 @@ def _slugify_filename(name):
     return slug or "test_results"
 
 
-# The new Information Radiator's own Slack channel, while it runs alongside
-# Zebrunner. An incoming webhook posts to one channel only, so it needs its own;
-# the bot token can be the same one (invite the bot to both channels).
-def radiator_slacker(logger=None) -> "Slacker | None":
-    """A Slacker for the new radiator's own channel, from RADIATOR_SLACK_*, or
-    None when that isn't set up. Then SLACK_CHANNEL carries the radiator's
-    messages too, unless Zebrunner (ZE_*) is configured: that channel stays
-    Zebrunner's, and the radiator's messages aren't posted.
+# Settings from when the radiator ran alongside Zebrunner and had a channel of
+# its own. Everything now goes to SLACK_CHANNEL.
+RETIRED_SETTINGS = (
+    "RADIATOR_SLACK_WEBHOOK_URL",
+    "RADIATOR_SLACK_CHANNEL",
+    "RADIATOR_SLACK_TOKEN",
+    "ZE_BASE_URL",
+    "ZE_REFRESH_TOKEN",
+)
 
-    RADIATOR_SLACK_TOKEN defaults to SLACK_TOKEN.
-    """
-    url = os.getenv("RADIATOR_SLACK_WEBHOOK_URL")
-    channel = os.getenv("RADIATOR_SLACK_CHANNEL")
-    token = os.getenv("RADIATOR_SLACK_TOKEN") or os.getenv("SLACK_TOKEN")
-    if url and channel and token:
-        return Slacker(url=url, token=token, slack_channel=channel)
-    if url or channel or os.getenv("RADIATOR_SLACK_TOKEN"):
+
+def warn_about_retired_settings(logger=None) -> None:
+    """Say so when a retired setting is still set: it is ignored, and the
+    reports go to SLACK_CHANNEL, which may not be the channel meant."""
+    still_set = [name for name in RETIRED_SETTINGS if os.getenv(name)]
+    if still_set:
         (logger or logging.getLogger(__name__)).warning(
-            "RADIATOR_SLACK_* is only partly set (it needs a webhook URL, a "
-            "channel, and a token or SLACK_TOKEN); ignoring it and falling "
-            "back to the default Slack routing."
+            f"{', '.join(still_set)} {'is' if len(still_set) == 1 else 'are'} "
+            "no longer used and will be ignored. Slack reports go to "
+            "SLACK_CHANNEL (with SLACK_WEBHOOK_URL and SLACK_TOKEN); point those "
+            "at the channel you want."
         )
-    return None
 
 
 class LocalSlacker(Slacker):
@@ -190,6 +328,18 @@ class LocalSlacker(Slacker):
         """Log notifications instead of posting them to Slack."""
         for message in messages:
             self.logger.info(message)
+
+    def post_thread(self, summary, image=None, details=(), files=()):
+        """Log the message and its thread, and save its image and files."""
+        self.logger.info(summary)
+        if image is not None:
+            self.upload_binary_file(image.filename, image.content)
+        for message in details:
+            if message and message.strip():
+                self.logger.info(message)
+        for attachment in files:
+            self.upload_binary_file(attachment.filename, attachment.content)
+        return None
 
     def upload_test_results_file(self, filename, extension, results):
         """Save a results file locally instead of uploading it to Slack."""

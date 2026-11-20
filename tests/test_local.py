@@ -1,4 +1,4 @@
-"""Tests for running the harness locally without a Reporter or Slacker.
+"""Tests for running the harness locally without a radiator or Slack.
 
 These cover the ``--local`` switch and the fall-back to local stand-ins when
 the Information Radiator / Slack aren't configured, including saving the CSV
@@ -9,7 +9,6 @@ import json
 import os
 
 from test_harness.main import main
-from test_harness.reporter import LocalReporter, Reporter
 from test_harness.slacker import LocalSlacker, Slacker
 
 from .helpers.example_tests import example_test_cases
@@ -28,29 +27,6 @@ def test_slacker_is_configured(monkeypatch):
     monkeypatch.setenv("SLACK_TOKEN", "t")
     monkeypatch.setenv("SLACK_CHANNEL", "c")
     assert Slacker.is_configured()
-
-
-def test_reporter_is_configured(monkeypatch):
-    """The reporter needs both a base URL and a refresh token."""
-    monkeypatch.delenv("ZE_BASE_URL", raising=False)
-    monkeypatch.delenv("ZE_REFRESH_TOKEN", raising=False)
-    assert not Reporter.is_configured()
-    assert not Reporter.is_configured(base_url="http://ir")  # missing token
-    assert Reporter.is_configured(base_url="http://ir", refresh_token="tok")
-
-
-def test_local_reporter_makes_no_network_calls():
-    """The LocalReporter hands out sequential ids and never authenticates."""
-    reporter = LocalReporter()
-    reporter.get_auth()  # no-op, must not raise
-    assert reporter.authenticated_client is None
-    reporter.create_test_run("ci", "my-suite")
-    assert reporter.test_run_id == "local"
-    assert reporter.test_name.startswith("my-suite:")
-    assert reporter.create_test(None, None) == 1
-    assert reporter.create_test(None, None) == 2
-    assert reporter.finish_test("2", "PASSED") == "PASSED"
-    assert reporter.finish_test_run() is None
 
 
 def test_local_slacker_saves_results_to_disk(tmp_path):
@@ -86,19 +62,13 @@ def test_local_slacker_does_not_clobber_same_name(tmp_path):
 
 
 def test_main_local_flag_uses_local_stand_ins(mocker, monkeypatch, tmp_path):
-    """`--local` forces local reporter/slacker even when services are configured."""
+    """`--local` forces the local slacker even when Slack is configured."""
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "http://hook")
     monkeypatch.setenv("SLACK_TOKEN", "t")
     monkeypatch.setenv("SLACK_CHANNEL", "c")
-    monkeypatch.setenv("ZE_BASE_URL", "http://ir")
-    monkeypatch.setenv("ZE_REFRESH_TOKEN", "tok")
 
     run_tests = mocker.patch("test_harness.main.run_tests", return_value={})
-    reporter_cls = mocker.patch("test_harness.main.Reporter", wraps=Reporter)
     slacker_cls = mocker.patch("test_harness.main.Slacker", wraps=Slacker)
-    local_reporter = mocker.patch(
-        "test_harness.main.LocalReporter", wraps=LocalReporter
-    )
     local_slacker = mocker.patch("test_harness.main.LocalSlacker", wraps=LocalSlacker)
 
     main(
@@ -115,17 +85,15 @@ def test_main_local_flag_uses_local_stand_ins(mocker, monkeypatch, tmp_path):
     )
 
     run_tests.assert_called_once()
-    local_reporter.assert_called_once()
     local_slacker.assert_called_once()
-    # The real (networked) reporter/slacker are never constructed in local mode.
-    reporter_cls.assert_not_called()
+    # The real (networked) slacker is never constructed in local mode.
     slacker_cls.assert_not_called()
 
 
 def test_target_override_prefixes_saved_filenames(mocker, tmp_path):
     """With a target override, every saved filename is prefixed with the target."""
 
-    def fake_run_tests(tests, reporter, collector, logger, args):
+    def fake_run_tests(tests, collector, logger, args):
         collector.has_acceptance_results = True
 
     mocker.patch("test_harness.main.run_tests", side_effect=fake_run_tests)

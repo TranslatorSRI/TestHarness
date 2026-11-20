@@ -7,7 +7,6 @@ from test_harness.run import run_tests
 
 from .helpers.example_tests import example_test_cases
 from .helpers.mocks import (
-    MockReporter,
     MockResultCollector,
     MockSlacker,
     MockQueryRunner,
@@ -46,9 +45,6 @@ def test_run_tests(mocker, httpx_mock: HTTPXMock):
     )
     run_tests(
         tests=example_test_cases,
-        reporter=MockReporter(
-            base_url="http://test",
-        ),
         collector=MockResultCollector("dev", logger),
         logger=logger,
         args={
@@ -90,9 +86,6 @@ def test_run_tests_with_target_override(httpx_mock: HTTPXMock):
     assert collector.agents == ["aragorn"]
     run_tests(
         tests=example_test_cases,
-        reporter=MockReporter(
-            base_url="http://test",
-        ),
         collector=collector,
         logger=logger,
         args={

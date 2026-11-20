@@ -1,7 +1,7 @@
-"""Tests for reporting to the new Information Radiator.
+"""Tests for reporting to the Information Radiator.
 
 Covers the structured records the collector builds (including the response
-metadata Zebrunner never got: n_results, HTTP status, response time), and the
+metadata: n_results, HTTP status, response time), and the
 client's batching, auth, failure handling, and save/replay.
 """
 
@@ -24,7 +24,7 @@ from test_harness.utils import AgentReport, AgentStatus, PathfinderReport, TestR
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
 from .helpers.mock_responses import kp_response
-from .helpers.mocks import MockReporter, MockResultCollector, MockSlacker
+from .helpers.mocks import MockResultCollector, MockSlacker
 
 logger = setup_logger()
 
@@ -249,7 +249,6 @@ def test_run_tests_records_response_metadata(httpx_mock: HTTPXMock):
     collector = MockResultCollector("ci", logger, target="aragorn", radiator=client)
     run_tests(
         tests=example_test_cases,
-        reporter=MockReporter(base_url="http://test"),
         collector=collector,
         logger=logger,
         args={
@@ -388,50 +387,6 @@ def test_collector_records_a_performance_run_that_raised():
     assert (perf.status, perf.error, perf.host) == ("FAILED", "boom", "https://ars")
 
 
-class _BrokenZebrunner(MockReporter):
-    def create_test(self, test, asset):
-        raise RuntimeError("Zebrunner is down")
-
-
-def test_run_tests_still_collects_when_zebrunner_fails(httpx_mock: HTTPXMock):
-    """A Zebrunner failure for an asset must not drop it from the radiator."""
-    httpx_mock.add_response(url="http://localhost:8080/query", json=kp_response)
-    httpx_mock.add_response(
-        url="https://nodenorm-es.ci.transltr.io/get_normalized_nodes",
-        json={
-            curie: None
-            for curie in [
-                "MONDO:0010794",
-                "DRUGBANK:DB00313",
-                "MESH:D001463",
-                "CHEBI:18295",
-                "CHEBI:31690",
-                "CL:0000097",
-                "MONDO:0004979",
-                "NCBIGene:3815",
-                "NCBIGene:4254",
-                "PR:000049994",
-            ]
-        },
-    )
-    client = _recording_client()
-    collector = MockResultCollector("ci", logger, target="aragorn", radiator=client)
-    run_tests(
-        tests=example_test_cases,
-        reporter=_BrokenZebrunner(base_url="http://test"),
-        collector=collector,
-        logger=logger,
-        args={
-            "suite": "testing",
-            "env": "ci",
-            "trapi_version": "1.6.0",
-            "target_url": "http://localhost:8080",
-            "target": "aragorn",
-        },
-    )
-    assert client.payload.results
-
-
 def _main_args(tmp_path):
     return {
         "tests": example_test_cases,
@@ -450,26 +405,13 @@ def _saved_payload(tmp_path):
         return RunPayload.model_validate(json.load(f))
 
 
-def test_main_survives_zebrunner_being_down(mocker, monkeypatch, tmp_path):
-    """Zebrunner refusing to open a run no longer stops the run."""
-    monkeypatch.setenv("ZE_BASE_URL", "http://zebrunner")
-    monkeypatch.setenv("ZE_REFRESH_TOKEN", "tok")
-    mocker.patch(
-        "test_harness.main.Reporter.get_auth", side_effect=RuntimeError("down")
-    )
-    run = mocker.patch("test_harness.main.run_tests")
-    assert main(_main_args(tmp_path)) == 0
-    run.assert_called_once()
-    assert _saved_payload(tmp_path).finish is not None
-
-
 def test_main_saves_the_radiator_run_before_slack_can_fail(mocker, tmp_path):
-    """The radiator run is closed and saved before Zebrunner and Slack are
-    finished with, so their failures can't cost it the run."""
+    """The radiator run is closed and saved before the Slack report, so a
+    Slack failure can't cost it the run."""
     mocker.patch("test_harness.main.run_tests")
     mocker.patch(
-        "test_harness.main.LocalReporter.finish_test_run",
-        side_effect=RuntimeError("Zebrunner said no"),
+        "test_harness.main.LocalSlacker.post_thread",
+        side_effect=RuntimeError("Slack said no"),
     )
     with pytest.raises(RuntimeError):
         main(_main_args(tmp_path))
@@ -490,14 +432,23 @@ class _RecordingSlacker(MockSlacker):
         self.files = []
         self.results = []
 
+        self.threads = []
+        self.image = None
+
     def post_notification(self, messages=[]):
         self.messages.extend(messages)
 
-    def upload_binary_file(self, filename, content, initial_comment=None, title=None):
-        self.files.append((filename, content, initial_comment))
-
-    def upload_test_results_file(self, filename, extension, results):
-        self.results.append(extension)
+    def post_thread(self, summary, image=None, details=(), files=()):
+        """The report: its top message, its image, and its thread (messages
+        and files). Charts go in ``files``, wherever they were posted."""
+        self.messages.append(summary)
+        self.image = image
+        self.threads.append(list(details))
+        for f in ([image] if image else []) + list(files):
+            if f.filename.endswith(".png"):
+                self.files.append((f.filename, f.content, f.comment))
+            else:
+                self.results.append(f.filename.rsplit(".", 1)[-1])
 
 
 def _main_with_slack(
@@ -510,10 +461,8 @@ def _main_with_slack(
     acceptance=True,
     performance=False,
     args=None,
-    new_slacker=None,
-    zebrunner=False,
 ):
-    def fake_run_tests(tests, reporter, collector, logger, args):
+    def fake_run_tests(tests, collector, logger, args):
         collector.has_acceptance_results = acceptance
         collector.has_performance_results = performance
 
@@ -521,15 +470,6 @@ def _main_with_slack(
     slacker = _RecordingSlacker()
     mocker.patch("test_harness.main.Slacker", return_value=slacker)
     mocker.patch("test_harness.main.Slacker.is_configured", return_value=True)
-    mocker.patch("test_harness.main.radiator_slacker", return_value=new_slacker)
-    if zebrunner:
-        # configured and reachable: a run with a Zebrunner link
-        reporter = mocker.patch("test_harness.main.Reporter").return_value
-        mocker.patch("test_harness.main.Reporter.is_configured", return_value=True)
-        reporter.is_local = False
-        reporter.base_path = "https://zebrunner.example.org"
-        reporter.test_run_id = 42
-        reporter.test_name = "zebrunner_run"
     if radiator:
         monkeypatch.setenv("RADIATOR_URL", "http://radiator")
         monkeypatch.setenv("RADIATOR_TOKEN", "tok")
@@ -565,6 +505,9 @@ def test_slack_report_carries_the_radiator_history(mocker, monkeypatch, tmp_path
     [(filename, content, comment)] = slacker.files
     assert filename == "pass_rate_history.png" and content == b"\x89PNG"
     assert "Open in the Information Radiator" in comment
+    # one message, with the chart; the result files go in its thread
+    assert slacker.image.filename == "pass_rate_history.png"
+    assert slacker.results == ["json", "csv"]
 
 
 def test_runs_of_a_cycle_carry_its_id(mocker, monkeypatch, tmp_path):
@@ -622,11 +565,17 @@ def test_slack_report_carries_each_services_concurrency(mocker, monkeypatch, tmp
         },
     )
     report = slacker.messages[-1]
+    assert "Pass rate" not in report
+    # each service's numbers are in the thread, not the top message
+    assert "max sustainable concurrency" not in report
+    [details] = slacker.threads[-1]
+    assert details.startswith("*Performance details*")
     assert (
         "arax (mixed): max sustainable concurrency 7.5 (+0.3 vs the previous run)"
-        " · checkpoints missed" in report
+        " · checkpoints missed" in details
     )
-    assert "Pass rate" not in report
+    # the only chart is the top message's
+    assert slacker.image.filename == "concurrency_history.png"
     [(filename, content, comment)] = slacker.files
     assert filename == "concurrency_history.png" and content == b"\x89PNG perf"
 
@@ -650,13 +599,13 @@ def test_performance_line_variants():
 
 
 def test_slack_links_only_to_where_the_run_went(mocker, monkeypatch, tmp_path):
-    """Without Zebrunner, the report links to the new radiator only."""
+    """The report links to the run in the radiator."""
     slacker = _main_with_slack(
         mocker, monkeypatch, tmp_path, summary={"pass_rate": 1.0}
     )
     for message in slacker.messages:
         assert "/test-runs/local" not in message
-        assert "View in the new Information Radiator" in message
+        assert "View in the Information Radiator" in message
 
 
 def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPXMock):
@@ -690,7 +639,6 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
     collector = MockResultCollector("ci", logger, target="aragorn", radiator=client)
     run_tests(
         tests=example_test_cases,
-        reporter=MockReporter(base_url="http://test"),
         collector=collector,
         logger=logger,
         args={
@@ -706,114 +654,23 @@ def test_results_reach_the_radiator_as_each_test_case_finishes(httpx_mock: HTTPX
     assert sum(sent) == len(client.payload.results) > 0
 
 
-def test_the_radiator_can_have_its_own_slack_channel(mocker, monkeypatch, tmp_path):
-    """Alongside Zebrunner: the old channel keeps the report it always got, and
-    the radiator's report, with its headline and charts, goes to its own."""
-    new = _RecordingSlacker()
-    old = _main_with_slack(
-        mocker,
-        monkeypatch,
-        tmp_path,
-        summary={
-            "pass_rate": 0.86,
-            "previous_pass_rate": 0.9,
-            "regressions": 3,
-            "fixed": 1,
-        },
-        new_slacker=new,
-        zebrunner=True,
-    )
-    for message in old.messages:
-        assert "new Information Radiator" not in message
-        assert "Pass rate" not in message
-    assert old.files == []  # no radiator charts
-    # both channels get the result files
-    assert old.results == new.results == ["json", "csv"]
-
-    assert all("View in the new Information Radiator" in m for m in new.messages)
-    assert "Pass rate 86% (-4.0 pts vs the previous run)" in new.messages[-1]
-    assert [f for f, _, _ in new.files] == ["pass_rate_history.png"]
-
-
-def test_a_failing_radiator_channel_never_costs_the_old_one(
-    mocker, monkeypatch, tmp_path
-):
-    class Broken(_RecordingSlacker):
-        def post_notification(self, messages=[]):
-            raise RuntimeError("channel_not_found")
-
-    old = _main_with_slack(
-        mocker,
-        monkeypatch,
-        tmp_path,
-        summary={"pass_rate": 1.0},
-        new_slacker=Broken(),
-        zebrunner=True,
-    )
-    assert len(old.messages) == 2  # started, and the report
-
-
-def test_radiator_slack_settings(monkeypatch, caplog):
-    from test_harness.slacker import radiator_slacker
-
-    for var in (
-        "RADIATOR_SLACK_WEBHOOK_URL",
-        "RADIATOR_SLACK_CHANNEL",
-        "RADIATOR_SLACK_TOKEN",
-    ):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("SLACK_TOKEN", "xoxb-shared")
-    assert radiator_slacker() is None
-
-    monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/x")
-    assert radiator_slacker() is None
-    assert "only partly set" in caplog.text
-
-    monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
-    slacker = radiator_slacker()
-    assert (slacker.url, slacker.channel) == ("https://hooks.slack.com/x", "C0NEW")
-    assert slacker.client.token == "xoxb-shared"  # the same bot by default
-    monkeypatch.setenv("RADIATOR_SLACK_TOKEN", "xoxb-other")
-    assert radiator_slacker().client.token == "xoxb-other"
-
-
-def test_alongside_zebrunner_the_old_channel_keeps_its_report(
-    mocker, monkeypatch, tmp_path
-):
-    """No channel of the radiator's own: SLACK_CHANNEL is still Zebrunner's,
-    and gets nothing of the new radiator's."""
-    old = _main_with_slack(
-        mocker,
-        monkeypatch,
-        tmp_path,
-        summary={
-            "pass_rate": 0.86,
-            "previous_pass_rate": 0.9,
-            "regressions": 3,
-            "fixed": 1,
-        },
-        zebrunner=True,
-    )
-    for message in old.messages:
-        assert (
-            "zebrunner.example.org/test-runs/42|View in the Information Radiator"
-            in message
-        )
-        assert "new Information Radiator" not in message
-        assert "Pass rate" not in message
-    assert old.files == []
-    assert old.results == ["json", "csv"]
-
-
-def test_without_zebrunner_the_radiator_has_slack_channel(
-    mocker, monkeypatch, tmp_path
-):
-    """After the cutover (or in docker compose), SLACK_CHANNEL is the radiator's."""
+def test_slack_channel_gets_the_radiators_report(mocker, monkeypatch, tmp_path):
+    """SLACK_CHANNEL gets the report, with the radiator's headline."""
     slacker = _main_with_slack(
         mocker, monkeypatch, tmp_path, summary={"pass_rate": 0.5}
     )
-    assert all("View in the new Information Radiator" in m for m in slacker.messages)
+    assert all("View in the Information Radiator" in m for m in slacker.messages)
     assert "Pass rate 50%" in slacker.messages[-1]
+
+
+def test_result_files_link_each_asset_to_its_radiator_page():
+    client = RadiatorClient(base_url="http://radiator", token="tok")
+    client.payload = RunPayload(run=_run(env="ci"))
+    assert client.asset_url("TestCase 1", "Asset_3") == (
+        "http://radiator/assets/TestCase%201/Asset_3?env=ci"
+    )
+    # nothing to link to when the run isn't going to a radiator
+    assert _recording_client().asset_url("TestCase_1", "Asset_3") is None
 
 
 # --- what the logs say about the dashboard ---------------------------------

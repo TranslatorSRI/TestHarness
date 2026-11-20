@@ -1,8 +1,9 @@
 # Information Radiator
 
-A replacement for the Zebrunner-based Information Radiator, built in this repo
-alongside the harness. The harness posts structured results to it; it shows
-them to the consortium behind one shared login.
+The Translator SRI Information Radiator, built in this repo alongside the
+harness (it replaced the earlier Zebrunner-based one). The harness posts
+structured results to it; it shows them to the consortium behind one shared
+login.
 
 ## Why
 
@@ -113,16 +114,13 @@ deploy/
 
 ## In the Slack report
 
-Everything below goes to `SLACK_CHANNEL` once Zebrunner is gone. While
-Zebrunner is configured (`ZE_*`), `SLACK_CHANNEL` stays Zebrunner's, with the
-report it always got, and everything below goes to the radiator's own channel
-(`RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL`), or isn't posted
-without one (see the README's
-[A Slack channel for the new radiator](../README.md#a-slack-channel-for-the-new-radiator)).
+Everything below goes to `SLACK_CHANNEL`.
 
-When the radiator has the run, the harness's Slack report gains a headline
-against the previous run of the same series, and a chart of the series up to
-this run is posted under it:
+Each report is one message to read at a glance, with its chart, and a thread
+under it with the details: the performance numbers per service, any second
+chart, and the result files. When the radiator has the run, the harness's
+Slack report gains a headline against the previous run of the same series, and
+a chart of the series up to this run is attached to it:
 
 - **Acceptance runs:** pass rate and its change, regressions, fixes, and a link
   to what changed; the chart is each agent's pass rate over the last 30 runs.
@@ -143,10 +141,12 @@ the radiator, or if it can't be reached, the report is what it always was.
 
 `test-harness-cycle` runs acceptance, pathfinder and performance in one
 environment and marks their runs with a shared `cycle_id`. When it finishes, it
-posts the cycle's board (`/api/cycles/{id}/board.png`) and a message with each
-test's headline, the regressions and fixes by agent, and the flags. The
-digest, `test-harness-radiator digest`, posts `/api/digest.png` and the same
-kind of message for every environment. See the README's
+posts the cycle's board (`/api/cycles/{id}/board.png`) with a short message
+(the steps that ran, a count of each verdict, the number of flags, and a link),
+and in its thread each test's headline, the regressions and fixes by agent,
+and the flags. The digest, `test-harness-radiator digest`, posts
+`/api/digest.png` the same way: a line per environment at a glance, and each
+environment's tests and flags in the thread. See the README's
 [Run cycles](../README.md#run-cycles-and-the-weekly-digest) for the command and
 the flags.
 
@@ -225,12 +225,7 @@ manifests are:
    reads them. `RADIATOR_URL` can be the in-cluster service
    (`http://radiator`); then also set `RADIATOR_PUBLIC_URL` to the address
    people open, since the links in Slack are built from it.
-   The harness then reports to both Zebrunner and the radiator.
-5. **History.** Run the Zebrunner import (below).
-6. **Cutover**, after a couple of weeks of both: point people at the new UI,
-   then remove the Zebrunner `Reporter` and the `ZE_*` secrets. If the new
-   radiator had its own Slack channel meanwhile (`RADIATOR_SLACK_*`), point
-   `SLACK_*` at it and drop `RADIATOR_SLACK_*`.
+5. **History.** To bring over Zebrunner's past runs, run the import (below).
 
 The image is built and pushed by the release workflow alongside the harness's.
 To build it by hand, from the repo root:

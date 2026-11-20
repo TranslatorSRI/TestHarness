@@ -11,7 +11,7 @@ from test_harness.utils import filter_tests_by_query_type
 
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
-from .helpers.mocks import MockReporter, MockSlacker
+from .helpers.mocks import MockSlacker
 
 logger = setup_logger()
 
@@ -147,7 +147,6 @@ def test_main_runs_only_the_requested_query_type(mocker):
     """--query_type reaches run_tests as an already-filtered set of tests."""
     run_tests = mocker.patch("test_harness.main.run_tests", return_value={})
     mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
-    mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
 
     main(
         {
@@ -170,7 +169,6 @@ def test_main_runs_only_the_requested_query_type(mocker):
 def test_main_without_query_type_runs_every_test(mocker):
     run_tests = mocker.patch("test_harness.main.run_tests", return_value={})
     mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
-    mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
 
     main(
         {

@@ -24,7 +24,7 @@ from test_harness.utils import NODE_NORM_URL
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
 from .helpers.mock_responses import kp_response
-from .helpers.mocks import MockReporter, MockResultCollector
+from .helpers.mocks import MockResultCollector
 
 logger = setup_logger()
 
@@ -130,7 +130,6 @@ def _sent_parameters(httpx_mock: HTTPXMock, tests, query_parameters, env="ci"):
     )
     run_tests(
         tests=tests,
-        reporter=MockReporter(base_url="http://test"),
         collector=MockResultCollector("ci", logger, target="aragorn"),
         logger=logger,
         args={
@@ -210,7 +209,7 @@ def test_main_sends_and_records_them(mocker, tmp_path):
     """The run's parameters reach the queries and the radiator's record."""
     run = mocker.patch("test_harness.main.run_tests")
     assert main(_main_args(tmp_path, query_parameters={"timeout": 300})) == 0
-    assert run.call_args.args[4]["query_parameters"] == {"timeout": 300.0}
+    assert run.call_args.args[3]["query_parameters"] == {"timeout": 300.0}
     [saved] = [p for p in os.listdir(tmp_path) if p.startswith("radiator_")]
     with open(tmp_path / saved) as f:
         payload = RunPayload.model_validate(json.load(f))

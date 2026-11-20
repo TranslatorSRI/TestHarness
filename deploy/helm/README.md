@@ -20,7 +20,7 @@ cp deploy/helm/test-harness/values.example.yaml deploy/helm/test-harness/values.
 ```
 
 The secrets (the radiator's login, API token and database password, the
-harness's Slack and Zebrunner tokens) go under `secrets` in those copies, and
+harness's Slack tokens) go under `secrets` in those copies, and
 each chart keeps them in a Secret of its own: `<release>-secrets`, plus
 `<release>-postgres` for the radiator's database password. That makes the
 copies the only place the real values live, so keep them somewhere safe (a
