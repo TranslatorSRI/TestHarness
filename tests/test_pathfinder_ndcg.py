@@ -17,7 +17,7 @@ from test_harness.run import run_tests
 from test_harness.utils import AgentStatus, PathfinderReport, hash_test_asset
 
 from .helpers.logger import setup_logger
-from .helpers.mocks import MockReporter, MockResultCollector
+from .helpers.mocks import MockResultCollector
 
 logger = setup_logger()
 
@@ -173,7 +173,6 @@ def run_pathfinder(mocker, message, normalized=None):
 
     run_tests(
         tests={test.id: test},
-        reporter=MockReporter(base_url="http://test"),
         collector=collector,
         logger=logger,
         args={"env": "ci"},

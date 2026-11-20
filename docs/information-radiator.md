@@ -1,8 +1,9 @@
 # Information Radiator
 
-A replacement for the Zebrunner-based Information Radiator, built in this repo
-alongside the harness. The harness posts structured results to it; it shows
-them to the consortium behind one shared login.
+The Translator SRI Information Radiator, built in this repo alongside the
+harness (it replaced the earlier Zebrunner-based one). The harness posts
+structured results to it; it shows them to the consortium behind one shared
+login.
 
 ## Why
 
@@ -113,12 +114,7 @@ deploy/
 
 ## In the Slack report
 
-Everything below goes to `SLACK_CHANNEL` once Zebrunner is gone. While
-Zebrunner is configured (`ZE_*`), `SLACK_CHANNEL` stays Zebrunner's, with the
-report it always got, and everything below goes to the radiator's own channel
-(`RADIATOR_SLACK_WEBHOOK_URL`, `RADIATOR_SLACK_CHANNEL`), or isn't posted
-without one (see the README's
-[A Slack channel for the radiator](../README.md#a-slack-channel-for-the-radiator)).
+Everything below goes to `SLACK_CHANNEL`.
 
 Each report is one message to read at a glance, with its chart, and a thread
 under it with the details: the performance numbers per service, any second
@@ -229,12 +225,7 @@ manifests are:
    reads them. `RADIATOR_URL` can be the in-cluster service
    (`http://radiator`); then also set `RADIATOR_PUBLIC_URL` to the address
    people open, since the links in Slack are built from it.
-   The harness then reports to both Zebrunner and the radiator.
-5. **History.** Run the Zebrunner import (below).
-6. **Cutover**, after a couple of weeks of both: point people at the new UI,
-   then remove the Zebrunner `Reporter` and the `ZE_*` secrets. If the new
-   radiator had its own Slack channel meanwhile (`RADIATOR_SLACK_*`), point
-   `SLACK_*` at it and drop `RADIATOR_SLACK_*`.
+5. **History.** To bring over Zebrunner's past runs, run the import (below).
 
 The image is built and pushed by the release workflow alongside the harness's.
 To build it by hand, from the repo root:

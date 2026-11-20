@@ -261,23 +261,23 @@ def test_posting_the_digest():
     assert not cycle.post_digest(radiator, _Slack(), mock.Mock())
 
 
-def test_the_board_and_digest_go_to_the_radiators_own_channel(monkeypatch):
-    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/old")
+def test_the_board_and_digest_go_to_slack_channel(monkeypatch):
+    from test_harness.slacker import RETIRED_SETTINGS
+
+    for name in RETIRED_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/x")
     monkeypatch.setenv("SLACK_TOKEN", "xoxb")
-    monkeypatch.setenv("SLACK_CHANNEL", "C0OLD")
-    monkeypatch.delenv("RADIATOR_SLACK_TOKEN", raising=False)
-    monkeypatch.delenv("RADIATOR_SLACK_WEBHOOK_URL", raising=False)
-    monkeypatch.delenv("RADIATOR_SLACK_CHANNEL", raising=False)
-    monkeypatch.delenv("ZE_BASE_URL", raising=False)
-    monkeypatch.delenv("ZE_REFRESH_TOKEN", raising=False)
-    assert cycle._slacker("out", mock.Mock()).channel == "C0OLD"
-    # while SLACK_CHANNEL is Zebrunner's, the radiator's posts don't go there
+    monkeypatch.setenv("SLACK_CHANNEL", "C0123")
+    logger = mock.Mock()
+    assert cycle._slacker("out", logger).channel == "C0123"
+    logger.warning.assert_not_called()
+    # the settings from before the switch are ignored, and say so
     monkeypatch.setenv("ZE_BASE_URL", "https://zebrunner.example.org")
-    monkeypatch.setenv("ZE_REFRESH_TOKEN", "tok")
-    assert cycle._slacker("out", mock.Mock()) is None
-    monkeypatch.setenv("RADIATOR_SLACK_WEBHOOK_URL", "https://hooks.slack.com/new")
-    monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0NEW")
-    assert cycle._slacker("out", mock.Mock()).channel == "C0NEW"
+    monkeypatch.setenv("RADIATOR_SLACK_CHANNEL", "C0OTHER")
+    assert cycle._slacker("out", logger).channel == "C0123"
+    [warning] = logger.warning.call_args.args
+    assert "RADIATOR_SLACK_CHANNEL, ZE_BASE_URL are no longer used" in warning
 
 
 def test_the_board_comes_from_the_radiator_the_steps_reported_to(monkeypatch):

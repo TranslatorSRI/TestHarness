@@ -1,8 +1,7 @@
 """Client for the Information Radiator's ingest API.
 
-Runs alongside the Zebrunner ``Reporter``, when that is configured.
-Unlike the Reporter, it never makes a call per test: results are buffered and
-posted in batches as structured records (see ``radiator_schema``).
+It never makes a call per test: results are buffered and posted in batches as
+structured records (see ``radiator_schema``).
 
 An unreachable radiator must never cost a run its results, so nothing here
 raises. Every record is kept in ``payload`` whether or not it was uploaded;
@@ -14,6 +13,7 @@ ids the client chose, so replaying a run that partly made it is safe.
 import json
 import logging
 import os
+from urllib.parse import quote
 import sys
 from argparse import ArgumentParser
 from datetime import datetime
@@ -88,6 +88,15 @@ class RadiatorClient:
         if not self.enabled or self.payload is None:
             return None
         return f"{self.public_url}/runs/{self.payload.run.run_id}"
+
+    def asset_url(self, test_case_id: str, asset_id: str) -> Optional[str]:
+        """Link to a test asset's history in the radiator UI, in this run's
+        environment."""
+        if not self.enabled or self.payload is None:
+            return None
+        url = f"{self.public_url}/assets/{quote(test_case_id)}/{quote(asset_id)}"
+        env = self.payload.run.env
+        return f"{url}?env={quote(env)}" if env else url
 
     def start_run(self, run: RunCreate):
         """Open a run."""
@@ -352,8 +361,7 @@ def cli(argv=None):
         parents=[common],
         help=(
             "Post the weekly digest to Slack: every environment's latest runs "
-            "of each test, with flags (to RADIATOR_SLACK_*, or SLACK_* when "
-            "Zebrunner isn't configured)"
+            "of each test, with flags (to SLACK_CHANNEL)"
         ),
     )
     digest_parser.add_argument(

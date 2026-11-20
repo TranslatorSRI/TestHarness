@@ -118,25 +118,9 @@ spec:
                 - name: SLACK_CHANNEL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: slack-channel}
-                # Optional: a channel of the radiator's own, alongside
-                # Zebrunner (see the README's "A Slack channel for the
-                # radiator"). The token defaults to slack-token.
-                - name: RADIATOR_SLACK_WEBHOOK_URL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-webhook-url, optional: true}
-                - name: RADIATOR_SLACK_CHANNEL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-channel, optional: true}
-                - name: ZE_BASE_URL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: ze-base-url}
-                - name: ZE_REFRESH_TOKEN
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}
-                # The Information Radiator, reported to alongside
-                # Zebrunner if that is configured. Optional: without it each run
-                # is saved to --output_dir in the pod, which is lost with the
-                # pod unless that directory is a mounted volume.
+                # The Information Radiator. Optional: without it each run is
+                # saved to --output_dir in the pod, which is lost with the pod
+                # unless that directory is a mounted volume.
                 - name: RADIATOR_URL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: radiator-url, optional: true}

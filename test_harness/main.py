@@ -23,15 +23,14 @@ from test_harness.download import download_tests, load_tests
 from test_harness.logger import get_logger, setup_logger
 from test_harness.performance_test_runner import PROFILES
 from test_harness.radiator_client import RadiatorClient
-from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.slacker import (
     Attachment,
     LocalSlacker,
     Slacker,
-    radiator_slacker,
     text_attachment,
+    warn_about_retired_settings,
 )
 from test_harness.runner.query_runner import env_map
 from test_harness.runner.smart_api_registry import registered_trapi_versions
@@ -202,11 +201,11 @@ def post_report(
     links,
     radiator,
     collector,
-    reporter,
-    prefix,
+    results_name,
     logger,
+    prefix="",
 ):
-    """A finished run's report in one channel: a message to read at a glance,
+    """A finished run's report: a message to read at a glance,
     with the radiator's history chart (with ``radiator``), and in its thread
     the details, any other chart and the result files."""
     glance, details = (
@@ -227,7 +226,7 @@ def post_report(
     )
     files = charts[1:]
     if collector.has_acceptance_results:
-        name = f"{prefix}{reporter.test_name}"
+        name = f"{prefix}{results_name}"
         files.append(text_attachment(name, "json", collector.acceptance_stats))
         files.append(text_attachment(name, "csv", collector.acceptance_csv))
     if collector.has_performance_results:
@@ -356,42 +355,15 @@ def main(args):
     # without an Information Radiator or Slack workspace.
     local = args.get("local", False)
 
-    use_local_reporter = local or not Reporter.is_configured(
-        base_url=args.get("reporter_url"),
-        refresh_token=args.get("reporter_access_token"),
-    )
-    if use_local_reporter:
-        logger.info("Running without Zebrunner (local reporter).")
-        reporter = LocalReporter(logger=logger)
-    else:
-        # Create test run in Zebrunner
-        reporter = Reporter(
-            base_url=args.get("reporter_url"),
-            refresh_token=args.get("reporter_access_token"),
-            logger=logger,
-        )
-    try:
-        reporter.get_auth()
-        reporter.create_test_run(test_env, args["suite"])
-    except Exception as e:
-        # Zebrunner being down mustn't stop the run: the tests still run and
-        # still reach Slack and the Information Radiator.
-        logger.error(f"Couldn't open a run in Zebrunner ({e}); continuing without it.")
-        reporter = LocalReporter(logger=logger)
-        reporter.create_test_run(test_env, args["suite"])
-
     use_local_slacker = local or not Slacker.is_configured()
     if use_local_slacker:
         logger.info(f"Running without Slack; results will be saved to '{output_dir}'.")
         slacker = LocalSlacker(output_dir=output_dir, logger=logger)
     else:
         slacker = Slacker()
-    # With RADIATOR_SLACK_* set, the radiator's reports go to their own
-    # channel, and SLACK_CHANNEL keeps getting the report it always did.
-    new_slacker = None if local else radiator_slacker(logger)
-    # The Information Radiator runs alongside Zebrunner, if that is
-    # configured. It is additive: without RADIATOR_URL/RADIATOR_TOKEN, or with
-    # --local, it only records, and the run is saved to --output_dir instead.
+    warn_about_retired_settings(logger)
+    # Without RADIATOR_URL/RADIATOR_TOKEN, or with --local, the radiator client
+    # only records, and the run is saved to --output_dir instead.
     radiator = RadiatorClient(
         base_url=args.get("radiator_url"),
         token=args.get("radiator_token"),
@@ -432,70 +404,29 @@ def main(args):
         if sent_parameters
         else ""
     )
-    # Only link to Zebrunner when the run went there: the local stand-in's
-    # "URL" leads nowhere.
-    zebrunner_link = (
-        ""
-        if reporter.is_local
-        else f"\n<{reporter.base_path}/test-runs/{reporter.test_run_id}|View in Zebrunner>"
-    )
     radiator_link = (
         f"\n<{radiator.run_url}|View in the Information Radiator>"
         if radiator.run_url
         else ""
     )
 
-    # Where the reports go: (slacker, links, with the radiator's headline and
-    # charts, best effort). While Zebrunner is configured, SLACK_CHANNEL is its
-    # channel and keeps the report it always got; the radiator's report
-    # goes only to a channel of its own (RADIATOR_SLACK_*). Without Zebrunner,
-    # SLACK_CHANNEL is the radiator's. Configured, not reachable: a Zebrunner
-    # outage mustn't switch Zebrunner's channel over to the radiator.
-    zebrunner_configured = not use_local_reporter
-    channels = []
-    if zebrunner_configured or new_slacker is None:
-        channels.append(
-            (
-                slacker,
-                zebrunner_link if zebrunner_configured else radiator_link,
-                not zebrunner_configured,
-                False,
-            )
-        )
-    if new_slacker is not None:
-        channels.append((new_slacker, radiator_link, True, True))
-    if zebrunner_configured and new_slacker is None and radiator.enabled:
-        logger.info(
-            "Reporting to Zebrunner, so SLACK_CHANNEL gets its report only; set "
-            "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
-            "Information Radiator's report to a channel of its own."
-        )
-
-    def post(action, best_effort):
-        if not best_effort:
-            return action()
-        # the radiator's channel never costs Zebrunner's its report
-        try:
-            action()
-        except Exception as e:
-            logger.warning(f"Couldn't post to the Information Radiator's channel: {e}")
-
     collector = ResultCollector(
         test_env, logger, target=args.get("target"), radiator=radiator
     )
     queried_envs = {test_env}
-    for channel, links, _, best_effort in channels:
-        post(
-            lambda: channel.post_notification(
-                messages=[
-                    f"Running {args['suite']} on {test_env.upper()} ({sum([len(test.test_assets) for test in tests.values()])} tests, {len(tests.values())} queries, TRAPI {args['trapi_version']})...{params_note}{links}"
-                ]
-            ),
-            best_effort,
-        )
+    n_assets = sum(len(test.test_assets) for test in tests.values())
+    slacker.post_notification(
+        messages=[
+            f"Running {args['suite']} on {test_env.upper()} ({n_assets} tests, "
+            f"{len(tests)} queries, TRAPI {args['trapi_version']})..."
+            f"{params_note}{radiator_link}"
+        ]
+    )
+    # names the result files: the suite and when it started
+    results_name = f"{args['suite']}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
     start_time = time.time()
     try:
-        run_tests(tests, reporter, collector, logger, args)
+        run_tests(tests, collector, logger, args)
     except BaseException:
         # Keep what was collected, but leave the run open: a run that died
         # halfway must not read as finished.
@@ -504,32 +435,25 @@ def main(args):
         log_radiator_outcome(radiator, tests, logger)
         save_radiator_run(radiator, output_dir, target_prefix, logger, force=True)
         raise
-    # Close out the radiator before Zebrunner and Slack, whose failures below
-    # would otherwise cost it the run.
+    # Close out the radiator before Slack, whose failures below would
+    # otherwise cost it the run.
     radiator.finish_run(counts=collector.acceptance_report)
     log_radiator_outcome(radiator, tests, logger)
     save_radiator_run(radiator, output_dir, target_prefix, logger)
 
     duration = round(time.time() - start_time, 2)
-    for channel, links, with_radiator, best_effort in channels:
-        post(
-            lambda: post_report(
-                channel,
-                args["suite"],
-                duration,
-                queried_envs,
-                links,
-                radiator if with_radiator else None,
-                collector,
-                reporter,
-                target_prefix,
-                logger,
-            ),
-            best_effort,
-        )
-
-    logger.info("Finishing up test run...")
-    reporter.finish_test_run()
+    post_report(
+        slacker,
+        args["suite"],
+        duration,
+        queried_envs,
+        radiator_link,
+        radiator,
+        collector,
+        results_name,
+        logger,
+        prefix=target_prefix,
+    )
 
     if args["json_output"]:
         os.makedirs(output_dir, exist_ok=True)
@@ -687,18 +611,6 @@ def cli():
             "case), eg to see whether the issue behind them is fixed. Without "
             "it they're reported as SKIPPED, with the reason, and not run."
         ),
-    )
-
-    parser.add_argument(
-        "--reporter_url",
-        type=url_type,
-        help="URL of the Testing Dashboard",
-    )
-
-    parser.add_argument(
-        "--reporter_access_token",
-        type=str,
-        help="Access token for authentication with the Testing Dashboard",
     )
 
     parser.add_argument(

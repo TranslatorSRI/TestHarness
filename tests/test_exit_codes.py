@@ -12,7 +12,7 @@ from test_harness.main import EXIT_COULD_NOT_RUN, EXIT_OK, main
 from test_harness.sweep import run_sweep
 
 from .helpers.example_tests import example_test_cases
-from .helpers.mocks import MockReporter, MockSlacker
+from .helpers.mocks import MockSlacker
 from .test_reporting import _checkpoint, _helmsdeep_summary
 
 BASE_ARGS = {
@@ -28,7 +28,6 @@ TARGETS = [("ars", "http://ars"), ("aragorn", "http://aragorn")]
 
 def _run(mocker, **overrides):
     mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
-    mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
     return main({**BASE_ARGS, **overrides})
 
 
@@ -40,7 +39,7 @@ def test_a_completed_run_exits_ok(mocker):
 def test_failing_tests_still_exit_ok(mocker):
     """Red results are news for Slack, not a broken cron job."""
 
-    def fail_everything(tests, reporter, collector, logger, args):
+    def fail_everything(tests, collector, logger, args):
         collector.has_acceptance_results = True
         collector.acceptance_report["FAILED"] = 12
         collector.has_performance_results = True
@@ -63,7 +62,7 @@ def test_failing_tests_still_exit_ok(mocker):
 def test_a_performance_run_that_never_completed_still_exits_ok(mocker):
     """An unreachable service is a result too -- Slack says so; cron stays green."""
 
-    def broken_run(tests, reporter, collector, logger, args):
+    def broken_run(tests, collector, logger, args):
         collector.has_performance_results = True
         collector.performance_report["stats"]["http://ara (aras)"] = {
             "host": "http://ara",
@@ -89,7 +88,6 @@ def test_half_configured_target_override_cannot_run(mocker):
 def test_no_subcommand_cannot_run(mocker):
     """Neither a suite to download nor one to load nor inline tests."""
     mocker.patch("test_harness.main.Slacker", return_value=MockSlacker())
-    mocker.patch("test_harness.main.Reporter", return_value=MockReporter())
     assert main(dict(BASE_ARGS)) == EXIT_COULD_NOT_RUN
 
 

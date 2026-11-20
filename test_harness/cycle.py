@@ -35,8 +35,12 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 from test_harness.radiator_client import RadiatorClient
-from test_harness.reporter import Reporter
-from test_harness.slacker import Attachment, LocalSlacker, Slacker, radiator_slacker
+from test_harness.slacker import (
+    Attachment,
+    LocalSlacker,
+    Slacker,
+    warn_about_retired_settings,
+)
 from test_harness.sweep import (
     DEFAULT_OUTPUT_DIR,
     HARNESS,
@@ -278,20 +282,9 @@ def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
 
 
 def _slacker(output_dir: str, logger):
-    """Where the radiator's board and digest go: its own channel
-    (RADIATOR_SLACK_*) if it has one; else SLACK_CHANNEL, unless that is
-    still Zebrunner's (ZE_* set), which gets nothing of the radiator's;
-    then None."""
-    own = radiator_slacker(logger)
-    if own is not None:
-        return own
-    if Reporter.is_configured():
-        logger.info(
-            "SLACK_CHANNEL is Zebrunner's while ZE_* is set; set "
-            "RADIATOR_SLACK_WEBHOOK_URL and RADIATOR_SLACK_CHANNEL to post the "
-            "Information Radiator's board and digest to a channel of its own."
-        )
-        return None
+    """Where the board and digest go: SLACK_CHANNEL, or files in
+    ``output_dir`` when Slack isn't configured."""
+    warn_about_retired_settings(logger)
     if Slacker.is_configured():
         return Slacker()
     logger.info(f"Slack isn't configured; saving the reports to '{output_dir}'.")
@@ -500,8 +493,6 @@ def _passthrough_value(harness_args: Sequence[str], flag: str) -> Optional[str]:
 def digest_cli(radiator: RadiatorClient, days: int, output_dir: str, logger) -> int:
     """``test-harness-radiator digest``: post the weekly digest to Slack."""
     slacker = _slacker(output_dir, logger)
-    if slacker is None:
-        return 0
     return 0 if post_digest(radiator, slacker, logger, days) else 1
 
 

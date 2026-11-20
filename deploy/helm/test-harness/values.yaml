@@ -22,18 +22,6 @@ secrets:
   slackToken: ""
   # The channel ID (eg C0123ABCD), not its #name.
   slackChannel: ""
-  # The radiator's own channel, while it runs alongside Zebrunner. With
-  # Zebrunner configured, SLACK_CHANNEL is Zebrunner's and gets only its
-  # report; the radiator's reports, the cycle boards and the digest go here
-  # (or nowhere without these). Its own incoming webhook; the same bot by
-  # default.
-  radiatorSlackWebhookUrl: ""
-  radiatorSlackChannel: ""
-  # Optional: defaults to slackToken.
-  radiatorSlackToken: ""
-  # Optional: Zebrunner, until the radiator takes over.
-  zeBaseUrl: ""
-  zeRefreshToken: ""
 
 radiator:
   # Where the harness uploads: the radiator's in-cluster service.
