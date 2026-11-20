@@ -18,7 +18,11 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
-from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
+from test_harness.pathfinder_test_runner import (
+    expected_path_nodes,
+    pathfinder_ndcg,
+    pathfinder_pass_fail_analysis,
+)
 from test_harness.performance_test_runner import (
     describe_run,
     helmsdeep_target,
@@ -32,6 +36,7 @@ from test_harness.trapi import DEFAULT_TRAPI_VERSION
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
+    PathfinderReport,
     TestReport,
     hash_test_asset,
     normalized_output_ids,
@@ -170,19 +175,18 @@ def run_tests(
                         report.test_details = {
                             "minimum_required_path_nodes": asset.minimum_required_path_nodes,
                             "expected_path_nodes": "; ".join(
-                                [
-                                    ",".join(
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                    )
-                                    for path_node in asset.path_nodes
-                                ]
+                                ",".join(curies)
+                                for curies in expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                             ),
                         }
                     for agent, response in test_query["responses"].items():
-                        report.result[agent] = AgentReport(
+                        report.result[agent] = (
+                            PathfinderReport
+                            if isinstance(asset, PathfinderTestAsset)
+                            else AgentReport
+                        )(
                             status=AgentStatus.SKIPPED,
                             message=None,
                             actual_output=None,
@@ -226,23 +230,40 @@ def run_tests(
                             ):
                                 agent_report.status = AgentStatus.NO_RESULTS
                                 agent_report.message = "No results"
+                                if isinstance(asset, PathfinderTestAsset):
+                                    # no paths, so none of them are relevant
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        expected_path_nodes(asset, normalized_curies),
+                                        asset.minimum_required_path_nodes,
+                                    )
                                 continue
                             if isinstance(test, PathfinderTestCase) and isinstance(
                                 asset, PathfinderTestAsset
                             ):
+                                path_nodes = expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                                 pathfinder_pass_fail_analysis(
                                     report.result,
                                     agent,
                                     response["response"]["message"],
-                                    [
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                        for path_node in asset.path_nodes
-                                    ],
+                                    path_nodes,
                                     asset.minimum_required_path_nodes,
                                 )
+                                # NDCG is extra to pass/fail: a response it
+                                # can't score mustn't fail the test.
+                                try:
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        path_nodes,
+                                        asset.minimum_required_path_nodes,
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"[{test.id}] couldn't score the NDCG of "
+                                        f"{agent}'s paths for {asset.id}: {e!r}"
+                                    )
                             elif isinstance(asset, TestAsset):
                                 run_acceptance_pass_fail_analysis(
                                     report.result,
