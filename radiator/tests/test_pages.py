@@ -669,3 +669,20 @@ def test_performance_run_that_failed_to_run(app, browser):
     assert "didn't produce a result" in page.text
     assert "HelmsDeep exited 2 without writing summary.json" in page.text
     assert "exit code 2" in page.text
+
+
+def test_pathfinder_asset_page_shows_ndcg(app, browser):
+    """A Pathfinder asset's history has an NDCG column; an acceptance one,
+    which has no NDCG, doesn't."""
+    pathfinder = f.asset(
+        "Asset_1",
+        kind="pathfinder",
+        expected_output=None,
+        agents=[f.agent("ars", ndcg=0.5213), f.agent("aragorn", ndcg=None)],
+    )
+    _load(app, _payload(T0, [pathfinder, f.asset("Asset_2")]))
+
+    page = browser.get("/assets/TestCase_1/Asset_1").text
+    assert '<th class="num">NDCG</th>' in page
+    assert '<td class="num">0.521</td>' in page
+    assert "NDCG" not in browser.get("/assets/TestCase_1/Asset_2").text

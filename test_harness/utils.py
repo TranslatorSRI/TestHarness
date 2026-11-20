@@ -66,6 +66,9 @@ class PathfinderReport(AgentReport):
     """Dictionary for single Pathfinder agent report."""
 
     expected_nodes_found: Optional[str] = None
+    # How high the first path with the asset's minimum required expected nodes
+    # ranks (see pathfinder_ndcg).
+    ndcg: Optional[float] = None
 
 
 @dataclass
