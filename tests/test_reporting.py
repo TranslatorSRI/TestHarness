@@ -710,3 +710,31 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
                 AgentStatus.ERROR if agent.agent == "ars" else AgentStatus.SKIPPED
             )
             assert agent.status == expected.value, agent.agent
+
+
+def test_performance_details_name_the_url_under_load():
+    """Each run's Slack section names the full URL HelmsDeep hit."""
+    collector = ResultCollector("prod", logger)
+    results = _perf_results(_helmsdeep_summary(checkpoints=[_checkpoint(30, "PASS")]))
+    results["request_url"] = "http://ara/query"
+    collector.collect_performance_result(
+        _Case(), _Asset(), "http://ir/1", "http://ara", results
+    )
+    assert "> - URL: http://ara/query" in collector.performance_details()
+    assert "> - URL: http://ara/query" in collector.dump_result_summary()
+
+
+def test_performance_details_fall_back_to_the_host_url():
+    """Without HelmsDeep's endpoint, and for a run that failed, the host is
+    still named."""
+    collector = ResultCollector("prod", logger)
+    collector.collect_performance_result(
+        _Case(),
+        _Asset(),
+        "http://ir/1",
+        "http://ara",
+        _perf_results(None, error="HelmsDeep exited 1"),
+    )
+    details = collector.performance_details()
+    assert "> - URL: http://ara" in details
+    assert "RUN FAILED" in details
