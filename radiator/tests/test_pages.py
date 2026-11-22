@@ -263,7 +263,8 @@ def test_run_summary_and_history_png(app, api, client):
     assert res.status_code == 200
     assert res.headers["content-type"] == "image/png"
     assert res.content.startswith(b"\x89PNG")
-    assert client.get(f"/api/runs/{run_id}/history.png").status_code == 401
+    # open, like the rest of the read API
+    assert client.get(f"/api/runs/{run_id}/history.png").status_code == 200
 
     with app.state.sessionmaker() as session:
         run = queries.get_run(session, run_id)

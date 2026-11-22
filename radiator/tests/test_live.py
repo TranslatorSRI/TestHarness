@@ -137,9 +137,9 @@ def test_the_runs_list_and_weekly_page_poll(app, api, browser):
     assert running != stalled
 
 
-def test_live_endpoints_need_a_login_or_token(client):
-    assert client.get("/api/live").status_code == 401
-    assert client.get(f"/api/runs/{uuid.uuid4()}/progress").status_code == 401
+def test_live_endpoints_are_open(client):
+    assert client.get("/api/live").status_code == 200
+    assert client.get(f"/api/runs/{uuid.uuid4()}/progress").status_code == 404
 
 
 def test_what_changed_mid_run_leaves_out_untested_assets(api, browser):

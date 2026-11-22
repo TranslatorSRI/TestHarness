@@ -1,23 +1,30 @@
-"""The JSON API: ingest for the harness, and a small read API for scripts."""
+"""The JSON API: ingest for the harness, and an open read API for scripts.
 
+Uploads need the bearer token. Reading needs nothing: anyone can pull the
+results for their own analysis (see docs/api.md).
+"""
+
+import csv
+import io
 import logging
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 import radiator_schema as schema
 from radiator import board_png, cycles, history_png, ingest, queries
-from radiator.auth import require_token, require_token_or_login
+from radiator.auth import require_token
 from radiator.models import Run
 
 logger = logging.getLogger("radiator")
 
 ingest_router = APIRouter(
-    prefix=schema.INGEST_PREFIX, dependencies=[Depends(require_token)]
+    prefix=schema.INGEST_PREFIX, dependencies=[Depends(require_token)], tags=["ingest"]
 )
-read_router = APIRouter(prefix="/api", dependencies=[Depends(require_token_or_login)])
+read_router = APIRouter(prefix="/api", tags=["read"])
 
 
 def get_session(request: Request):
@@ -85,11 +92,47 @@ def finish_run(
 def list_runs(
     suite: str | None = None,
     env: str | None = None,
+    origin: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    zebrunner_launch: str | None = None,
     limit: int = 50,
+    offset: int = 0,
     session: Session = Depends(get_session),
 ):
-    runs = queries.list_runs(session, suite=suite, env=env, limit=min(limit, 500))
+    """Runs, newest first. ``since``/``until`` bound when they started;
+    ``zebrunner_launch`` finds a run imported from Zebrunner by its old
+    ``testRunId``. Page with ``limit`` (at most 500) and ``offset``."""
+    runs = queries.list_runs(
+        session,
+        suite=suite,
+        env=env,
+        origin=origin,
+        since=since,
+        until=until,
+        zebrunner_launch=zebrunner_launch,
+        limit=min(max(limit, 1), 500),
+        offset=max(offset, 0),
+    )
     return [queries.run_json(run) for run in runs]
+
+
+@read_router.get("/runs/latest")
+def get_latest_run(
+    suite: str,
+    env: str | None = None,
+    finished: bool = True,
+    results: bool = False,
+    session: Session = Depends(get_session),
+):
+    """The newest run of a suite (in ``env``, if given): only finished runs
+    unless ``finished=false``. With every result if ``results=true``."""
+    run = queries.latest_run(session, suite=suite, env=env, finished=finished)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
+    if results:
+        run = queries.get_run(session, run.id)
+    return queries.run_json(run, with_results=results)
 
 
 @read_router.get("/runs/{run_id}")
@@ -104,6 +147,69 @@ def get_run(
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
     return queries.run_json(run, with_results=results)
+
+
+def _rows_response(rows: list[dict], columns: list[str], format: str, name: str):
+    if format == "json":
+        return rows
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(
+            {k: ";".join(v) if isinstance(v, list) else v for k, v in row.items()}
+        )
+    return Response(
+        out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'},
+    )
+
+
+def _loaded_run_or_404(session: Session, run_id: uuid.UUID) -> Run:
+    run = queries.get_run(session, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such run")
+    return run
+
+
+@read_router.get("/runs/{run_id}/results")
+def get_run_results(
+    run_id: uuid.UUID,
+    agent: str | None = None,
+    status_: str | None = Query(None, alias="status"),
+    test_case_id: str | None = None,
+    format: Literal["json", "csv"] = "json",
+    session: Session = Depends(get_session),
+):
+    """A run's results flattened to one row per asset and agent, for
+    loading into a dataframe. Filter by ``agent``, the agent's ``status``
+    and ``test_case_id``; ``format=csv`` for a CSV file."""
+    rows = [
+        row
+        for row in queries.result_rows(_loaded_run_or_404(session, run_id))
+        if (agent is None or row["agent"] == agent)
+        and (status_ is None or row["status"] == status_)
+        and (test_case_id is None or row["test_case_id"] == test_case_id)
+    ]
+    return _rows_response(rows, queries.RESULT_ROW_COLUMNS, format, f"results_{run_id}")
+
+
+@read_router.get("/runs/{run_id}/pks")
+def get_run_pks(
+    run_id: uuid.UUID,
+    agent: str | None = None,
+    format: Literal["json", "csv"] = "json",
+    session: Session = Depends(get_session),
+):
+    """Every pk in a run: one row per asset and agent, with the asset's
+    parent pk. ``format=csv`` for a CSV file."""
+    rows = [
+        row
+        for row in queries.pk_rows(_loaded_run_or_404(session, run_id))
+        if agent is None or row["agent"] == agent
+    ]
+    return _rows_response(rows, queries.PK_ROW_COLUMNS, format, f"pks_{run_id}")
 
 
 def _run_or_404(session: Session, run_id: uuid.UUID) -> Run:

@@ -21,7 +21,7 @@ runs and how assets and agents trend over time.
 | Repo | Monorepo: `radiator/` here, shipped as its own image (`ghcr.io/translatorsri/testharness-radiator`). |
 | Hosting | Same Kubernetes namespace as the harness CronJob. |
 | UI login | One shared username/password for the consortium (a k8s secret). Signed session cookie; failed logins are throttled per client. |
-| API auth | Every API route needs the bearer token (`RADIATOR_API_TOKEN`); the read API also accepts a logged-in session. Uploads need the token. |
+| API auth | Uploads need the bearer token (`RADIATOR_API_TOKEN`). The read API is open: anyone can read results without a login or token (see [Reading results](api.md)). |
 | Raw responses | Not stored. Results keep their pks, which open in the ARAX UI on ci. |
 | History | Imported from Zebrunner's API (`radiator.zebrunner_import`). |
 
@@ -186,12 +186,17 @@ the newest upload. Retries and replays never duplicate. The asset ids come from
 the Tests repo and are stable across runs, which is what history and trends key
 on.
 
-Reading, with the token or a session:
+Reading needs no login or token. [Reading results](api.md) is the guide for
+people pulling results into their own analysis (including moving over from
+Zebrunner's API); the interactive reference is at `/api/docs`.
 
 | Path | |
 |---|---|
-| `GET /api/runs?suite=&env=&limit=` | runs, newest first |
+| `GET /api/runs?suite=&env=&since=&until=&origin=&zebrunner_launch=&limit=&offset=` | runs, newest first |
+| `GET /api/runs/latest?suite=&env=` | the newest finished run of a suite (`finished=false`, `results=true`) |
 | `GET /api/runs/{run_id}` | a run with every result (`?results=false` for just the run) |
+| `GET /api/runs/{run_id}/results?agent=&status=&test_case_id=&format=json\|csv` | a run's results, one row per asset and agent |
+| `GET /api/runs/{run_id}/pks?agent=&format=json\|csv` | every pk in a run, with each asset's parent pk |
 | `GET /api/runs/{run_id}/progress` | how far a run has got (assets tested of its total, counts, state); what its page polls |
 | `GET /api/live` | the runs in progress, and a version that changes when runs start, upload or finish |
 | `GET /api/runs/{run_id}/summary` | pass rate, previous pass rate, regressions, fixes |
