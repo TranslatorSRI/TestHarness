@@ -40,12 +40,15 @@ spec:
       # The Job only fails when a step couldn't run at all, never on a test
       # result.
       backoffLimit: 0
-      # A cycle takes ~2 h; 4 h leaves room without letting a wedged run hold
-      # the next day's environment.
-      activeDeadlineSeconds: 14400
       template:
         spec:
           restartPolicy: Never
+          # A cycle takes ~2 h; 4 h leaves room without letting a wedged run
+          # hold the next day's environment. It's the pod's deadline, not the
+          # Job's: at a Job deadline Kubernetes deletes the pod, and its logs
+          # with it; at a pod deadline the pod stays, Failed
+          # (DeadlineExceeded), for `kubectl logs`.
+          activeDeadlineSeconds: 14400
           terminationGracePeriodSeconds: 120
           containers:
             - name: test-harness
@@ -83,15 +86,6 @@ spec:
                 - name: SLACK_CHANNEL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: slack-channel}
-                # Optional: a channel of the new radiator's own, alongside
-                # Zebrunner (see the README's "A Slack channel for the new
-                # radiator"). The token defaults to slack-token.
-                - name: RADIATOR_SLACK_WEBHOOK_URL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-webhook-url, optional: true}
-                - name: RADIATOR_SLACK_CHANNEL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-channel, optional: true}
                 # The board comes from the radiator: without it, each step
                 # still reports, but there's no board at the end.
                 - name: RADIATOR_URL

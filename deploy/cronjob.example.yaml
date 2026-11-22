@@ -41,15 +41,18 @@ spec:
       # run (bad config, a missing suite, a crash, an OOM kill).
       backoffLimit: 0
 
-      # Hard ceiling, comfortably above the expected duration. With the `mixed`
-      # profile a sweep is roughly 70 min (ARS) + 61 min per ARA ~= 4.2 h; the
-      # single-class default profile is ~2.7 h. 6 h leaves room without letting
-      # a wedged run hold the schedule indefinitely.
-      activeDeadlineSeconds: 21600
-
       template:
         spec:
           restartPolicy: Never
+
+          # Hard ceiling, comfortably above the expected duration. With the
+          # `mixed` profile a sweep is roughly 70 min (ARS) + 61 min per ARA
+          # ~= 4.2 h; the single-class default profile is ~2.7 h. 6 h leaves
+          # room without letting a wedged run hold the schedule indefinitely.
+          # It's the pod's deadline, not the Job's: at a Job deadline
+          # Kubernetes deletes the pod, and its logs with it; at a pod deadline
+          # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
+          activeDeadlineSeconds: 21600
 
           # HelmsDeep drains in-flight queries at the end of a run (the ARS
           # completion sidecar keeps polling past the failure threshold). Give
@@ -115,25 +118,9 @@ spec:
                 - name: SLACK_CHANNEL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: slack-channel}
-                # Optional: a channel of the new radiator's own, alongside
-                # Zebrunner (see the README's "A Slack channel for the new
-                # radiator"). The token defaults to slack-token.
-                - name: RADIATOR_SLACK_WEBHOOK_URL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-webhook-url, optional: true}
-                - name: RADIATOR_SLACK_CHANNEL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: radiator-slack-channel, optional: true}
-                - name: ZE_BASE_URL
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: ze-base-url}
-                - name: ZE_REFRESH_TOKEN
-                  valueFrom:
-                    secretKeyRef: {name: test-harness-secrets, key: ze-refresh-token}
-                # The new Information Radiator, reported to alongside
-                # Zebrunner until it takes over. Optional: without it each run
-                # is saved to --output_dir in the pod, which is lost with the
-                # pod unless that directory is a mounted volume.
+                # The Information Radiator. Optional: without it each run is
+                # saved to --output_dir in the pod, which is lost with the pod
+                # unless that directory is a mounted volume.
                 - name: RADIATOR_URL
                   valueFrom:
                     secretKeyRef: {name: test-harness-secrets, key: radiator-url, optional: true}

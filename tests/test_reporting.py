@@ -1,7 +1,7 @@
 """Regression tests for test-result propagation to reporting services.
 
 These cover bugs where results were dropped or mangled on their way to the
-Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
+Information Radiator and/or Slack (via the ResultCollector output):
 
 * A skipped test case left its assets marked FAILED (for ARAs) / NO_RESULTS
   (for ARS) instead of SKIPPED, and assets that never got a query were dropped
@@ -16,6 +16,7 @@ Information Radiator (Reporter) and/or Slack (via the ResultCollector output):
 """
 
 import json
+from uuid import uuid4
 
 import pytest
 from translator_testing_model.datamodel.pydanticmodel import (
@@ -26,11 +27,13 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
+from radiator_schema import RunCreate
 from test_harness.performance_test_runner import (
     PROFILES,
     helmsdeep_target,
     resolve_profile,
 )
+from test_harness.radiator_client import RadiatorClient
 from test_harness.result_collector import ResultCollector
 from test_harness.run import run_tests
 from test_harness.runner.generate_query import generate_query
@@ -38,7 +41,7 @@ from test_harness.utils import AgentReport, AgentStatus, TestReport, hash_test_a
 
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
-from .helpers.mocks import MockReporter, MockResultCollector, MockQueryRunner
+from .helpers.mocks import MockResultCollector, MockQueryRunner
 
 logger = setup_logger()
 
@@ -338,6 +341,10 @@ def test_performance_checkpoint_failure_reaches_the_summary():
     assert "checkpoints: *FAIL*" in summary
     assert "45 users - headroom above peak: FAIL" in summary
     assert "Max sustainable concurrency: 42.5" in summary
+    # each checkpoint carries its pass/fail mark in the thread
+    details = collector.performance_details()
+    assert ":white_check_mark: 30 users" in details
+    assert ":x: 45 users" in details
 
 
 def test_performance_checkpoints_pass():
@@ -438,18 +445,31 @@ def test_profile_comes_from_test_runner_settings_then_the_override():
         resolve_profile(case, "nonsense")
 
 
-class _RecordingReporter(MockReporter):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.finished = []
-        self.labels = []
+def _radiator():
+    """A radiator client that records but sends nothing, with a run open."""
+    client = RadiatorClient(enabled=False)
+    client.start_run(
+        RunCreate(run_id=uuid4(), suite="perf", started_at="2026-10-06T00:00:00Z")
+    )
+    return client
 
-    def finish_test(self, test_id, result):
-        self.finished.append((test_id, result))
-        return result
 
-    def upload_labels(self, test_id, labels):
-        self.labels.append(labels)
+def _performance_status(mocker, **perf):
+    """Run the performance test case; the status the radiator records."""
+    mocker.patch(
+        "test_harness.run.QueryRunner",
+        return_value=MockQueryRunner(logger, "ci"),
+    )
+    mocker.patch("test_harness.run.run_performance_test", **perf)
+    radiator = _radiator()
+    run_tests(
+        tests={"TestCase_1": _performance_test_case()},
+        collector=MockResultCollector("ci", logger, radiator=radiator),
+        logger=logger,
+        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
+    )
+    [record] = radiator.payload.performance
+    return record.status
 
 
 def test_force_skipped_records_all_agents_skipped():
@@ -532,106 +552,45 @@ def _performance_test_case():
 
 def test_performance_test_is_finished_in_radiator(mocker):
     """A performance test must reach a terminal status in the radiator."""
-    mocker.patch(
-        "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger, "ci"),
-    )
-    mocker.patch(
-        "test_harness.run.run_performance_test",
+    status = _performance_status(
+        mocker,
         return_value=_perf_results(
             _helmsdeep_summary(checkpoints=[_checkpoint(30, "PASS")]), target="ars"
         ),
     )
-
-    reporter = _RecordingReporter(base_url="http://ir")
-    run_tests(
-        tests={"TestCase_1": _performance_test_case()},
-        reporter=reporter,
-        collector=MockResultCollector("ci", logger),
-        logger=logger,
-        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
-    )
-
-    assert reporter.finished, "performance test was never finished in the radiator"
-    assert reporter.finished[0][1] == AgentStatus.PASSED.value
+    assert status == AgentStatus.PASSED.value
 
 
 def test_performance_checkpoint_failure_fails_the_radiator_test(mocker):
     """A missed checkpoint is a measured failure, so the radiator agrees with
     Slack instead of showing the run as PASSED."""
-    mocker.patch(
-        "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger, "ci"),
-    )
-    mocker.patch(
-        "test_harness.run.run_performance_test",
+    status = _performance_status(
+        mocker,
         return_value=_perf_results(
             _helmsdeep_summary(checkpoints=[_checkpoint(30, "FAIL")]),
             target="ars",
             exit_code=1,
         ),
     )
-
-    reporter = _RecordingReporter(base_url="http://ir")
-    run_tests(
-        tests={"TestCase_1": _performance_test_case()},
-        reporter=reporter,
-        collector=MockResultCollector("ci", logger),
-        logger=logger,
-        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
-    )
-
-    assert reporter.finished[0][1] == AgentStatus.FAILED.value
+    assert status == AgentStatus.FAILED.value
 
 
 def test_performance_run_without_a_summary_fails_the_radiator_test(mocker):
     """HelmsDeep exiting without a summary must not be reported as PASSED."""
-    mocker.patch(
-        "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger, "ci"),
-    )
-    mocker.patch(
-        "test_harness.run.run_performance_test",
+    status = _performance_status(
+        mocker,
         return_value=_perf_results(
             None, error="HelmsDeep exited 2 without writing a summary", target="ars"
         ),
     )
-
-    reporter = _RecordingReporter(base_url="http://ir")
-    run_tests(
-        tests={"TestCase_1": _performance_test_case()},
-        reporter=reporter,
-        collector=MockResultCollector("ci", logger),
-        logger=logger,
-        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
-    )
-
-    assert reporter.finished[0][1] == AgentStatus.FAILED.value
+    assert status == AgentStatus.FAILED.value
 
 
 def test_performance_test_finished_failed_on_error(mocker):
     """If the performance run raises, the radiator still gets a terminal
     FAILED status instead of a perpetually-unfinished test."""
-    mocker.patch(
-        "test_harness.run.QueryRunner",
-        return_value=MockQueryRunner(logger, "ci"),
-    )
-    mocker.patch(
-        "test_harness.run.run_performance_test",
-        side_effect=RuntimeError("boom"),
-    )
-
-    reporter = _RecordingReporter(base_url="http://ir")
-    run_tests(
-        tests={"TestCase_1": _performance_test_case()},
-        reporter=reporter,
-        collector=MockResultCollector("ci", logger),
-        logger=logger,
-        args={"suite": "perf", "env": "ci", "trapi_version": "2.0.0"},
-    )
-
-    assert reporter.finished
-    assert reporter.finished[0][1] == AgentStatus.FAILED.value
+    status = _performance_status(mocker, side_effect=RuntimeError("boom"))
+    assert status == AgentStatus.FAILED.value
 
 
 class _NoResponseQueryRunner(MockQueryRunner):
@@ -652,19 +611,20 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
         return_value=_NoResponseQueryRunner(logger, "ci"),
     )
 
-    collector = ResultCollector("ci", logger)
-    reporter = _RecordingReporter(base_url="http://ir")
+    radiator = _radiator()
+    collector = ResultCollector("ci", logger, radiator=radiator)
     run_tests(
         tests=example_test_cases,
-        reporter=reporter,
         collector=collector,
         logger=logger,
         args={"suite": "acceptance", "env": "ci", "trapi_version": "2.0.0"},
     )
 
     # 3 assets total across the two acceptance cases in the fixture.
-    assert len(reporter.finished) == 3
-    assert all(result == AgentStatus.SKIPPED.value for _, result in reporter.finished)
+    assert len(radiator.payload.results) == 3
+    for result in radiator.payload.results:
+        assert result.status == AgentStatus.SKIPPED.value
+        assert {a.status for a in result.agents} <= {AgentStatus.SKIPPED.value}
     assert collector.acceptance_report[AgentStatus.SKIPPED.value] == 3
     assert collector.acceptance_report[AgentStatus.FAILED.value] == 0
     assert collector.acceptance_report[AgentStatus.NO_RESULTS.value] == 0
@@ -679,16 +639,11 @@ def test_skipped_test_case_marks_all_assets_and_agents_skipped(mocker):
         )
         assert skipped_total == 3, f"{agent} should have 3 SKIPPED"
 
-    # CSV has a row per asset (plus header), all SKIPPED, and labels were
-    # uploaded as SKIPPED for every agent on every asset.
+    # CSV has a row per asset (plus header), all SKIPPED.
     data_rows = collector.acceptance_csv.strip().splitlines()[1:]
     assert len(data_rows) == 3
     for row in data_rows:
         assert "FAILED" not in row and "NO_RESULTS" not in row
-    assert len(reporter.labels) == 3
-    for label_set in reporter.labels:
-        assert {label["key"] for label in label_set} == set(collector.agents)
-        assert all(label["value"] == AgentStatus.SKIPPED.value for label in label_set)
 
 
 class _IdentityCuries(dict):
@@ -720,11 +675,10 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
         return_value=_ArsBadGatewayQueryRunner(logger, "ci"),
     )
 
-    collector = ResultCollector("ci", logger)
-    reporter = _RecordingReporter(base_url="http://ir")
+    radiator = _radiator()
+    collector = ResultCollector("ci", logger, radiator=radiator)
     run_tests(
         tests=example_test_cases,
-        reporter=reporter,
         collector=collector,
         logger=logger,
         args={"suite": "acceptance", "env": "ci", "trapi_version": "1.6.0"},
@@ -736,8 +690,8 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
         for request in httpx_mock.get_requests()
     )
 
-    assert len(reporter.finished) == 3
-    assert all(result == AgentStatus.ERROR.value for _, result in reporter.finished)
+    assert len(radiator.payload.results) == 3
+    assert all(r.status == AgentStatus.ERROR.value for r in radiator.payload.results)
     assert collector.acceptance_report[AgentStatus.ERROR.value] == 3
     assert collector.acceptance_report[AgentStatus.SKIPPED.value] == 0
 
@@ -749,10 +703,10 @@ def test_ars_submission_failure_errors_ars_and_skips_aras(mocker, httpx_mock):
         )
         assert total == 3, f"{agent} should have 3 {expected.value}"
 
-    assert len(reporter.labels) == 3
-    for label_set in reporter.labels:
-        labels = {label["key"]: label["value"] for label in label_set}
-        assert set(labels) == set(collector.agents)
-        for agent, value in labels.items():
-            expected = AgentStatus.ERROR if agent == "ars" else AgentStatus.SKIPPED
-            assert value == expected.value
+    # the radiator has the ARS's error, and the ARAs as SKIPPED
+    for result in radiator.payload.results:
+        for agent in result.agents:
+            expected = (
+                AgentStatus.ERROR if agent.agent == "ars" else AgentStatus.SKIPPED
+            )
+            assert agent.status == expected.value, agent.agent

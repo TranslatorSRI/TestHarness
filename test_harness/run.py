@@ -1,8 +1,6 @@
 """Run tests through the Test Runners."""
 
-import json
 import logging
-from dataclasses import asdict
 from typing import Any, Dict, Union
 
 from tqdm import tqdm
@@ -18,20 +16,24 @@ from translator_testing_model.datamodel.pydanticmodel import (
 )
 
 from test_harness.acceptance_test_runner import run_acceptance_pass_fail_analysis
-from test_harness.pathfinder_test_runner import pathfinder_pass_fail_analysis
+from test_harness.pathfinder_test_runner import (
+    expected_path_nodes,
+    pathfinder_ndcg,
+    pathfinder_pass_fail_analysis,
+)
 from test_harness.performance_test_runner import (
     describe_run,
     helmsdeep_target,
     resolve_profile,
     run_performance_test,
 )
-from test_harness.reporter import LocalReporter, Reporter
 from test_harness.result_collector import ResultCollector
 from test_harness.runner.query_runner import QueryRunner, env_map
 from test_harness.trapi import DEFAULT_TRAPI_VERSION
 from test_harness.utils import (
     AgentReport,
     AgentStatus,
+    PathfinderReport,
     TestReport,
     hash_test_asset,
     normalized_output_ids,
@@ -60,9 +62,15 @@ def record_response_meta(agent_report: AgentReport, response: Any) -> None:
         agent_report.n_results = len(results)
 
 
+def asset_url(collector: ResultCollector, test, asset) -> str:
+    """Where to read an asset's result: its page in the radiator, or nothing
+    when the run isn't going to one."""
+    radiator = collector.radiator
+    return (radiator.asset_url(test.id, asset.id) if radiator else None) or ""
+
+
 def run_tests(
     tests: Dict[str, Union[TestCase, PathfinderTestCase]],
-    reporter: Reporter,
     collector: ResultCollector,
     logger: logging.Logger = logging.getLogger(__name__),
     args: Dict[str, Any] = {},
@@ -118,8 +126,6 @@ def run_tests(
             else:
                 logger.info(f"[{test.id}] every asset is skipped; not querying")
                 normalized_curies = {}
-            test_ids = []
-
             for asset in test.test_assets:
                 # throw out any assets with unsupported expected outputs, i.e. OverlyGeneric
                 if asset.expected_output not in collector.query_types:
@@ -130,32 +136,10 @@ def run_tests(
                         f"({', '.join(collector.query_types)})"
                     )
                     continue
-                # create test in Test Dashboard
-                test_id = ""
-                asset_reporter = reporter
-                try:
-                    test_id = reporter.create_test(test, asset)
-                    test_ids.append(test_id)
-                except Exception:
-                    # Zebrunner failing for this asset mustn't drop it: run
-                    # and collect it anyway, just without reporting it there.
-                    logger.error(f"Failed to create test: {test.id}")
-                    asset_reporter = LocalReporter(logger=logger)
-
                 skip_message = skips[asset.id]
                 test_asset_hash = hash_test_asset(asset)
                 test_query = (
                     None if skip_message else query_responses.get(test_asset_hash)
-                )
-                if test_query is not None:
-                    message = json.dumps(test_query["query"], indent=4)
-                elif skip_message:
-                    message = skip_message
-                else:
-                    message = "Unable to retrieve response for test asset."
-                asset_reporter.upload_log(
-                    test_id,
-                    message,
                 )
 
                 if test_query is not None:
@@ -170,19 +154,18 @@ def run_tests(
                         report.test_details = {
                             "minimum_required_path_nodes": asset.minimum_required_path_nodes,
                             "expected_path_nodes": "; ".join(
-                                [
-                                    ",".join(
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                    )
-                                    for path_node in asset.path_nodes
-                                ]
+                                ",".join(curies)
+                                for curies in expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                             ),
                         }
                     for agent, response in test_query["responses"].items():
-                        report.result[agent] = AgentReport(
+                        report.result[agent] = (
+                            PathfinderReport
+                            if isinstance(asset, PathfinderTestAsset)
+                            else AgentReport
+                        )(
                             status=AgentStatus.SKIPPED,
                             message=None,
                             actual_output=None,
@@ -226,23 +209,40 @@ def run_tests(
                             ):
                                 agent_report.status = AgentStatus.NO_RESULTS
                                 agent_report.message = "No results"
+                                if isinstance(asset, PathfinderTestAsset):
+                                    # no paths, so none of them are relevant
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        expected_path_nodes(asset, normalized_curies),
+                                        asset.minimum_required_path_nodes,
+                                    )
                                 continue
                             if isinstance(test, PathfinderTestCase) and isinstance(
                                 asset, PathfinderTestAsset
                             ):
+                                path_nodes = expected_path_nodes(
+                                    asset, normalized_curies
+                                )
                                 pathfinder_pass_fail_analysis(
                                     report.result,
                                     agent,
                                     response["response"]["message"],
-                                    [
-                                        [
-                                            normalized_curies[path_node_id]
-                                            for path_node_id in path_node.ids
-                                        ]
-                                        for path_node in asset.path_nodes
-                                    ],
+                                    path_nodes,
                                     asset.minimum_required_path_nodes,
                                 )
+                                # NDCG is extra to pass/fail: a response it
+                                # can't score mustn't fail the test.
+                                try:
+                                    agent_report.ndcg = pathfinder_ndcg(
+                                        response["response"]["message"],
+                                        path_nodes,
+                                        asset.minimum_required_path_nodes,
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"[{test.id}] couldn't score the NDCG of "
+                                        f"{agent}'s paths for {asset.id}: {e!r}"
+                                    )
                             elif isinstance(asset, TestAsset):
                                 run_acceptance_pass_fail_analysis(
                                     report.result,
@@ -270,68 +270,24 @@ def run_tests(
                     # When the test is skipped, every agent is skipped too: the
                     # query never really ran, so the incidental per-ARA
                     # error/no-result statuses would be misleading. Force them
-                    # all to SKIPPED so the radiator labels, CSV, and JSON stats
+                    # all to SKIPPED so the radiator, CSV, and JSON stats
                     # stay consistent with the skipped test-level status.
                     force_skipped = status == AgentStatus.SKIPPED
-                    submission_failed = bool(
-                        test_query["responses"]
-                        .get(status_agent, {})
-                        .get("submission_failed")
-                    )
-
                     collector.collect_acceptance_result(
                         test,
                         asset,
                         report,
                         test_query["pks"].get("parent_pk"),
-                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                        asset_url(collector, test, asset),
                         force_skipped=force_skipped,
                         status=status,
                     )
 
-                    try:
-                        if force_skipped:
-                            labels = [
-                                {
-                                    "key": ara,
-                                    "value": AgentStatus.SKIPPED.value,
-                                }
-                                for ara in collector.agents
-                            ]
-                        elif submission_failed:
-                            # The query never reached the ARAs, so they're
-                            # skipped while the status agent shows the error.
-                            labels = [
-                                {
-                                    "key": ara,
-                                    "value": (
-                                        report.result[ara].status.value
-                                        if ara in report.result
-                                        else AgentStatus.SKIPPED.value
-                                    ),
-                                }
-                                for ara in collector.agents
-                            ]
-                        else:
-                            labels = [
-                                {
-                                    "key": ara,
-                                    "value": report.result[ara].status.value,
-                                }
-                                for ara in collector.agents
-                                if ara in report.result
-                            ]
-                        asset_reporter.upload_labels(test_id, labels)
-                    except Exception as e:
-                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
-                    asset_reporter.upload_log(
-                        test_id, json.dumps(asdict(report), indent=4)
-                    )
                 else:
                     # Skipped by the suite, or no query response for this asset
                     # (eg query generation failed). Record it as skipped across
                     # every agent so it still appears in the per-agent stats,
-                    # CSV, and radiator labels as SKIPPED instead of being
+                    # CSV, and radiator as SKIPPED instead of being
                     # dropped entirely.
                     if skip_message:
                         logger.info(f"[{test.id}] asset {asset.id}: {skip_message}")
@@ -347,37 +303,14 @@ def run_tests(
                         asset,
                         TestReport(pks={}, result={}, test_details=None),
                         None,
-                        f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                        asset_url(collector, test, asset),
                         force_skipped=True,
                         status=status,
                         message=skip_message,
                     )
-                    try:
-                        asset_reporter.upload_labels(
-                            test_id,
-                            [
-                                {"key": ara, "value": AgentStatus.SKIPPED.value}
-                                for ara in collector.agents
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"[{test.id}] failed to upload labels: {e}")
-
-                asset_reporter.finish_test(test_id, status.value)
                 collector.acceptance_report[status.value] += 1
         elif test.test_case_objective == "QuantitativeTest":
-            # create test in Test Dashboard
-            test_ids = []
             for asset in test.test_assets:
-                test_id = ""
-                asset_reporter = reporter
-                try:
-                    test_id = reporter.create_test(test, asset)
-                    test_ids.append(test_id)
-                except Exception as e:
-                    logger.error(f"Failed to create test: {test.id}: {e}")
-                    asset_reporter = LocalReporter(logger=logger)
-
                 if not isinstance(test, PerformanceTestCase):
                     logger.warning(
                         f"[{test.id}] asset {asset.id} skipped, and not sent to "
@@ -395,21 +328,19 @@ def run_tests(
                         perf_target = None
                     skip_message = skipped_because(test, asset, include_skipped)
                     if skip_message:
-                        # no load test, but the radiator and Zebrunner still
-                        # get the test, as SKIPPED with the reason
+                        # no load test, but the radiator still gets the test,
+                        # as SKIPPED with the reason
                         logger.info(
                             f"[{test.id}] {skip_message}; not running HelmsDeep"
                         )
-                        asset_reporter.upload_log(test_id, skip_message)
                         collector.record_performance_skip(
                             test, asset, host, skip_message
                         )
-                        asset_reporter.finish_test(test_id, AgentStatus.SKIPPED.value)
                         continue
                     # HelmsDeep sends its own varied corpus, so the asset's
                     # TRAPI query is not what goes under load. Log the run plan
-                    # -- layer, ramp, SLO, checkpoints -- which is what the
-                    # radiator's reader actually needs to interpret the result.
+                    # -- layer, ramp, SLO, checkpoints -- which is what a
+                    # reader actually needs to interpret the result.
                     try:
                         profile = resolve_profile(
                             test, args.get("performance_profile"), logger
@@ -417,20 +348,15 @@ def run_tests(
                         run_type = helmsdeep_target(
                             perf_target or test.components[0], profile
                         )
-                        asset_reporter.upload_log(
-                            test_id,
-                            describe_run(test, host, run_type, profile),
+                        logger.info(
+                            f"[{test.id}] "
+                            f"{describe_run(test, host, run_type, profile)}"
                         )
                     except Exception as e:
                         logger.warning(
                             f"Could not describe the HelmsDeep plan for "
                             f"{test.id}: {e}"
                         )
-                    # Give the performance test a terminal status in the
-                    # Information Radiator. Without this the test is created
-                    # but never finished, so it shows up as perpetually
-                    # incomplete in the dashboard.
-                    status = AgentStatus.PASSED
                     try:
                         results = run_performance_test(
                             test,
@@ -444,79 +370,26 @@ def run_tests(
                         collector.collect_performance_result(
                             test,
                             asset,
-                            f"{reporter.base_path}/test-runs/{reporter.test_run_id}/tests/{test_id}",
+                            asset_url(collector, test, asset),
                             host,
                             results,
                         )
-                        # A run that never produced a summary failed outright.
-                        # One that produced a summary with a missed checkpoint
-                        # is a real, measured failure -- both belong in the
-                        # radiator as FAILED, so the dashboard agrees with what
-                        # Slack says.
-                        summary = results.get("summary") or {}
                         if results.get("error"):
                             logger.error(
                                 f"Performance run for {test.id} did not "
                                 f"complete: {results['error']}"
                             )
-                            status = AgentStatus.FAILED
-                        elif summary.get("checkpoints_passed") is False:
-                            status = AgentStatus.FAILED
                     except Exception as e:
                         logger.error(
                             f"[{test.id}] performance test against {host} failed: "
                             f"{type(e).__name__}: {e}"
                         )
-                        status = AgentStatus.FAILED
                         collector.record_performance_error(test, asset, host, str(e))
-                    asset_reporter.finish_test(test_id, status.value)
-            # try:
-            #     test_inputs = [
-            #         assets.id,
-            #         # TODO: update this. Assumes is going to be ARS
-            #         test.components[0],
-            #     ]
-            #     await reporter.upload_log(
-            #         test_id,
-            #         f"Calling Benchmark Test Runner with: {json.dumps(test_inputs, indent=4)}",
-            #     )
-            #     benchmark_results, screenshots = await run_benchmarks(*test_inputs)
-            #     await reporter.upload_log(test_id, ("\n").join(benchmark_results))
-            #     # ex:
-            #     # {
-            #     #   "aragorn": {
-            #     #     "precision": screenshot
-            #     #   }
-            #     # }
-            #     for target_screenshots in screenshots.values():
-            #         for screenshot in target_screenshots.values():
-            #             await reporter.upload_screenshot(test_id, screenshot)
-            #     await reporter.finish_test(test_id, "PASSED")
-            #     collector.full_report["PASSED"] += 1
-            # except Exception as e:
-            #     logger.error(f"Benchmarks failed with {e}: {traceback.format_exc()}")
-            #     collector.full_report["FAILED"] += 1
-            #     try:
-            #         await reporter.upload_log(test_id, traceback.format_exc())
-            #     except Exception:
-            #         logger.error(
-            #             f"Failed to upload fail logs for test {test_id}: {traceback.format_exc()}"
-            #         )
-            #     await reporter.finish_test(test_id, "FAILED")
         else:
-            try:
-                test_id = reporter.create_test(test, test.test_assets[0])
-                logger.error(
-                    f"[{test.id}] not run, and not sent to the Information "
-                    f"Radiator: unsupported test type {test.test_case_objective!r}"
-                )
-                reporter.upload_log(
-                    test_id, f"Unsupported test type in test: {test.id}"
-                )
-                status = "FAILED"
-                reporter.finish_test(test_id, status)
-            except Exception:
-                logger.error(f"Failed to report errors with: {test.id}")
+            logger.error(
+                f"[{test.id}] not run, and not sent to the Information "
+                f"Radiator: unsupported test type {test.test_case_objective!r}"
+            )
 
         # Send this test case's results to the radiator now rather than when a
         # batch fills: each case waits minutes on its queries, so a whole run

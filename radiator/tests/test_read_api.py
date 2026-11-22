@@ -43,7 +43,7 @@ def _assets():
             parent_pk="parent-1",
             agents=[
                 f.agent("ars", found=True, rank=3, score=0.9, pk="merged-1"),
-                f.agent("arax", found=True, rank=1, pk="child-1"),
+                f.agent("arax", found=True, rank=1, pk="child-1", ndcg=0.63),
             ],
         ),
     ]
@@ -121,6 +121,7 @@ def test_flat_results(client, api):
     assert (first["asset_id"], first["agent"], first["rank"]) == ("Asset_1", "ars", 3)
     assert first["asset_status"] == "PASSED"
     assert first["output_curies"] == ["CHEBI:31690"]
+    assert rows[1]["ndcg"] == 0.63
 
     failed = client.get(
         f"/api/runs/{run_id}/results", params={"status": "FAILED"}

@@ -28,7 +28,7 @@ from test_harness.utils import AgentReport, AgentStatus, PathfinderReport
 from .helpers.example_tests import example_test_cases
 from .helpers.logger import setup_logger
 from .helpers.mock_responses import kp_response
-from .helpers.mocks import MockReporter, MockResultCollector
+from .helpers.mocks import MockResultCollector
 
 logger = setup_logger()
 
@@ -287,7 +287,6 @@ def test_run_sends_and_reads_trapi_2_0(httpx_mock: HTTPXMock):
     tests = {"TestCase_1": example_test_cases["TestCase_1"]}
     run_tests(
         tests=tests,
-        reporter=MockReporter(base_url="http://test"),
         collector=collector,
         logger=logger,
         args={

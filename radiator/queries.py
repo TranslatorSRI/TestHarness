@@ -731,6 +731,7 @@ def _agent_json(agent) -> dict:
         "n_results": agent.n_results,
         "http_status": agent.http_status,
         "response_time_s": agent.response_time_s,
+        "ndcg": agent.ndcg,
         "pk": agent.pk,
         "expected_nodes_found": agent.expected_nodes_found,
     }
@@ -825,6 +826,7 @@ RESULT_ROW_COLUMNS = [
     "n_results",
     "http_status",
     "response_time_s",
+    "ndcg",
     "pk",
     "expected_nodes_found",
 ]

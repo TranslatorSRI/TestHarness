@@ -100,7 +100,7 @@ And each agent's result:
 | `rank`, `score` | Where the expected answer ranked, and its score |
 | `n_results`, `http_status`, `response_time_s` | When recorded (response time only for direct queries) |
 | `pk` | Its pk: the merged pk for `ars`, the child pk for an ARA |
-| `expected_nodes_found` | Pathfinder only |
+| `expected_nodes_found`, `ndcg` | Pathfinder only: which expected path nodes were found, and the NDCG (0 to 1) of how high the first path with them ranked in the agent's top 500 |
 
 A pk opens in the ARAX UI at `https://arax.ci.transltr.io/?r=<pk>`.
 
