@@ -328,6 +328,9 @@ def run_helmsdeep(
         "runner": "helmsdeep",
         "helmsdeep_target": helmsdeep_run_type,
         "host": host,
+        # the full URL HelmsDeep sent its requests to (the host plus its run
+        # type's endpoint), for the Slack report
+        "request_url": request_url(helmsdeep_run_type, host),
         "prefix": prefix,
         "exit_code": exit_code,
         "summary": summary,

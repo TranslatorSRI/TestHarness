@@ -333,6 +333,7 @@ class ResultCollector:
         run_key = f"{host_url} ({results.get('helmsdeep_target', 'unknown')})"
         self.performance_report["stats"][run_key] = {
             "host": host_url,
+            "request_url": results.get("request_url"),
             "helmsdeep_target": results.get("helmsdeep_target"),
             "component": config.get("component") or results.get("component"),
             "profile": results.get("profile"),
@@ -609,6 +610,11 @@ class ResultCollector:
         run produces whether or not it has checkpoints.
         """
         lines = [f"> {run_key}"]
+        # the URL under load: HelmsDeep's endpoint on the host, or the host
+        # itself when HelmsDeep couldn't say which endpoint it uses
+        url = run_stats.get("request_url") or run_stats.get("host")
+        if url:
+            lines.append(f"> - URL: {url}")
 
         if run_stats.get("error"):
             lines.append(f"> - RUN FAILED: {run_stats['error']}")
