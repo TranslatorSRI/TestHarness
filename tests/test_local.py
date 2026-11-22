@@ -93,7 +93,7 @@ def test_main_local_flag_uses_local_stand_ins(mocker, monkeypatch, tmp_path):
 def test_target_override_prefixes_saved_filenames(mocker, tmp_path):
     """With a target override, every saved filename is prefixed with the target."""
 
-    def fake_run_tests(tests, collector, logger, args):
+    def fake_run_tests(tests, collector, logger, args, **kwargs):
         collector.has_acceptance_results = True
 
     mocker.patch("test_harness.main.run_tests", side_effect=fake_run_tests)

@@ -35,7 +35,8 @@ from test_harness.performance_test_runner import (
 )
 from test_harness.radiator_client import RadiatorClient
 from test_harness.result_collector import ResultCollector
-from test_harness.run import run_tests
+from test_harness.main import main
+from test_harness.run import performance_urls, run_tests
 from test_harness.runner.generate_query import generate_query
 from test_harness.utils import AgentReport, AgentStatus, TestReport, hash_test_asset
 
@@ -738,3 +739,84 @@ def test_performance_details_fall_back_to_the_host_url():
     details = collector.performance_details()
     assert "> - URL: http://ara" in details
     assert "RUN FAILED" in details
+
+
+def _registered_query_runner(env="ci", **kwargs):
+    query_runner = MockQueryRunner(logger, env, **kwargs)
+    query_runner.retrieve_registry(trapi_version="2.0.0")
+    return query_runner
+
+
+def test_performance_urls_come_from_the_registry():
+    """Without --target_url, the URL is the component's registered one plus
+    HelmsDeep's endpoint for it."""
+    urls = performance_urls(
+        {"perf-1": _performance_test_case()},
+        _registered_query_runner(),
+        {"env": "ci"},
+        logger,
+    )
+    assert urls == ["http://tester/ars/api/submit"]
+
+
+def test_performance_urls_follow_the_target_override():
+    """With --target_url, the override target is what goes under load."""
+    args = {"env": "ci", "target_url": "http://localhost:8080/", "target": "aragorn"}
+    urls = performance_urls(
+        {"perf-1": _performance_test_case()},
+        _registered_query_runner(target_url=args["target_url"], target=args["target"]),
+        args,
+        logger,
+    )
+    assert urls == ["http://localhost:8080/query"]
+
+
+def test_performance_urls_leave_out_skipped_tests():
+    test = _performance_test_case()
+    test.test_assets[0].skip = True
+    assert (
+        performance_urls({"perf-1": test}, _registered_query_runner(), {"env": "ci"})
+        == []
+    )
+
+
+def test_start_message_names_the_urls_under_load(mocker, tmp_path):
+    """The start message says what the performance tests will load, and the
+    run reuses the registry fetched to say so."""
+    query_runner = _registered_query_runner()
+    mocker.patch("test_harness.main.prepare_query_runner", return_value=query_runner)
+    run = mocker.patch("test_harness.main.run_tests")
+    notify = mocker.patch("test_harness.main.LocalSlacker.post_notification")
+    main(
+        {
+            "tests": {"perf-1": _performance_test_case()},
+            "suite": "performance",
+            "env": "ci",
+            "log_level": "ERROR",
+            "json_output": False,
+            "local": True,
+            "output_dir": str(tmp_path),
+        }
+    )
+    [start] = notify.call_args_list[0].kwargs["messages"]
+    assert "\nLoad testing: http://tester/ars/api/submit" in start
+    assert run.call_args.kwargs["query_runner"] is query_runner
+
+
+def test_start_message_without_performance_tests_fetches_no_registry(mocker, tmp_path):
+    prepare = mocker.patch("test_harness.main.prepare_query_runner")
+    mocker.patch("test_harness.main.run_tests")
+    notify = mocker.patch("test_harness.main.LocalSlacker.post_notification")
+    main(
+        {
+            "tests": example_test_cases,
+            "suite": "acceptance",
+            "env": "ci",
+            "log_level": "ERROR",
+            "json_output": False,
+            "local": True,
+            "output_dir": str(tmp_path),
+        }
+    )
+    prepare.assert_not_called()
+    assert "Load testing" not in notify.call_args_list[0].kwargs["messages"][0]

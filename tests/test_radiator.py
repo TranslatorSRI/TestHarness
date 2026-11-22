@@ -462,7 +462,7 @@ def _main_with_slack(
     performance=False,
     args=None,
 ):
-    def fake_run_tests(tests, collector, logger, args):
+    def fake_run_tests(tests, collector, logger, args, **kwargs):
         collector.has_acceptance_results = acceptance
         collector.has_performance_results = performance
 

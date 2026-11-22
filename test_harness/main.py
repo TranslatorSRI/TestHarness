@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 import httpx
 from setproctitle import setproctitle
+from translator_testing_model.datamodel.pydanticmodel import PerformanceTestCase
 
 from radiator_schema import RunCreate
 from test_harness.download import download_tests, load_tests
@@ -24,7 +25,7 @@ from test_harness.logger import get_logger, setup_logger
 from test_harness.performance_test_runner import PROFILES
 from test_harness.radiator_client import RadiatorClient
 from test_harness.result_collector import ResultCollector
-from test_harness.run import run_tests
+from test_harness.run import performance_urls, prepare_query_runner, run_tests
 from test_harness.slacker import (
     Attachment,
     LocalSlacker,
@@ -415,18 +416,32 @@ def main(args):
     )
     queried_envs = {test_env}
     n_assets = sum(len(test.test_assets) for test in tests.values())
+    query_runner, load_note = None, ""
+    if any(isinstance(test, PerformanceTestCase) for test in tests.values()):
+        # Resolve what the performance tests will load now, for the start
+        # message; the run then reuses this registry rather than fetching it
+        # again. A failure here only costs the line: the run fetches the
+        # registry itself and reports any failure as it always has.
+        try:
+            query_runner = prepare_query_runner(args, logger)
+            urls = performance_urls(tests, query_runner, args, logger)
+        except Exception as e:
+            logger.warning(f"Couldn't tell which URLs the run will load test: {e}")
+            query_runner, urls = None, []
+        if urls:
+            load_note = "\nLoad testing: " + ", ".join(urls)
     slacker.post_notification(
         messages=[
             f"Running {args['suite']} on {test_env.upper()} ({n_assets} tests, "
             f"{len(tests)} queries, TRAPI {args['trapi_version']})..."
-            f"{params_note}{radiator_link}"
+            f"{load_note}{params_note}{radiator_link}"
         ]
     )
     # names the result files: the suite and when it started
     results_name = f"{args['suite']}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
     start_time = time.time()
     try:
-        run_tests(tests, collector, logger, args)
+        run_tests(tests, collector, logger, args, query_runner=query_runner)
     except BaseException:
         # Keep what was collected, but leave the run open: a run that died
         # halfway must not read as finished.

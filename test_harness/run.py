@@ -1,7 +1,7 @@
 """Run tests through the Test Runners."""
 
 import logging
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Optional, Union
 
 from tqdm import tqdm
 
@@ -24,6 +24,7 @@ from test_harness.pathfinder_test_runner import (
 from test_harness.performance_test_runner import (
     describe_run,
     helmsdeep_target,
+    request_url,
     resolve_profile,
     run_performance_test,
 )
@@ -69,33 +70,102 @@ def asset_url(collector: ResultCollector, test, asset) -> str:
     return (radiator.asset_url(test.id, asset.id) if radiator else None) or ""
 
 
-def run_tests(
-    tests: Dict[str, Union[TestCase, PathfinderTestCase]],
-    collector: ResultCollector,
-    logger: logging.Logger = logging.getLogger(__name__),
-    args: Dict[str, Any] = {},
-) -> None:
-    """Send tests through the Test Runners."""
-    logger.info(f"Running {len(tests)} queries...")
-    target_url = args.get("target_url")
-    target = args.get("target")
+def prepare_query_runner(
+    args: Dict[str, Any], logger: logging.Logger = logging.getLogger(__name__)
+) -> QueryRunner:
+    """A query runner for the run, with the service registry fetched."""
     trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
     query_runner = QueryRunner(
         logger,
         args["env"],
-        target_url=target_url,
-        target=target,
+        target_url=args.get("target_url"),
+        target=args.get("target"),
         trapi_version=trapi_version,
         query_parameters=args.get("query_parameters"),
     )
     logger.info("Runner is getting service registry")
     query_runner.retrieve_registry(trapi_version=trapi_version)
-    # The overall test status is normally driven by the ARS. When the target
-    # service specified in the tests is overridden (eg to run against a
-    # locally running ARA), it is driven by the override target instead.
-    status_agent = "ars"
-    if target_url is not None and target is not None:
-        status_agent = target.split("infores:")[-1]
+    return query_runner
+
+
+def _status_agent(args: Dict[str, Any]) -> str:
+    """The agent that drives the overall test status.
+
+    Normally the ARS. When the target service specified in the tests is
+    overridden (eg to run against a locally running ARA), it is the override
+    target instead.
+    """
+    if args.get("target_url") is not None and args.get("target") is not None:
+        return args["target"].split("infores:")[-1]
+    return "ars"
+
+
+def _performance_host(
+    test: PerformanceTestCase, query_runner: QueryRunner, status_agent: str
+):
+    """(host, HelmsDeep target override) for a performance test: the
+    --target_url when given, else the registered URL of its component."""
+    if query_runner.target_url is not None:
+        return query_runner.target_url, status_agent
+    host = query_runner.registry[env_map[query_runner.env]][test.components[0]][0][
+        "url"
+    ]
+    return host, None
+
+
+def performance_urls(
+    tests: Dict[str, Union[TestCase, PathfinderTestCase]],
+    query_runner: QueryRunner,
+    args: Dict[str, Any],
+    logger: logging.Logger = logging.getLogger(__name__),
+) -> List[str]:
+    """The URLs the run's performance tests will load test, in order and
+    without duplicates: the full request URL (host plus HelmsDeep's endpoint),
+    or the host when HelmsDeep's endpoint isn't known. Tests the run skips
+    hit nothing, so they're left out."""
+    status_agent = _status_agent(args)
+    include_skipped = bool(args.get("include_skipped"))
+    urls: List[str] = []
+    for test in tests.values():
+        if not isinstance(test, PerformanceTestCase):
+            continue
+        if test.test_case_objective != "QuantitativeTest":
+            continue
+        if all(
+            skipped_because(test, asset, include_skipped)
+            for asset in test.test_assets or []
+        ):
+            continue
+        try:
+            host, perf_target = _performance_host(test, query_runner, status_agent)
+            profile = resolve_profile(test, args.get("performance_profile"), logger)
+            run_type = helmsdeep_target(perf_target or test.components[0], profile)
+        except Exception as e:
+            logger.warning(f"[{test.id}] couldn't tell which URL it will load: {e}")
+            continue
+        url = request_url(run_type, host) or host
+        if url not in urls:
+            urls.append(url)
+    return urls
+
+
+def run_tests(
+    tests: Dict[str, Union[TestCase, PathfinderTestCase]],
+    collector: ResultCollector,
+    logger: logging.Logger = logging.getLogger(__name__),
+    args: Dict[str, Any] = {},
+    query_runner: Optional[QueryRunner] = None,
+) -> None:
+    """Send tests through the Test Runners.
+
+    ``query_runner`` is one from ``prepare_query_runner``, when the caller has
+    already fetched the registry; otherwise one is made here.
+    """
+    logger.info(f"Running {len(tests)} queries...")
+    trapi_version = args.get("trapi_version") or DEFAULT_TRAPI_VERSION
+    if query_runner is None:
+        query_runner = prepare_query_runner(args, logger)
+    status_agent = _status_agent(args)
     include_skipped = bool(args.get("include_skipped"))
     # loop over all tests
     for test in tqdm(list(tests.values())):
@@ -318,14 +388,9 @@ def run_tests(
                         "run as QuantitativeTests"
                     )
                 if isinstance(test, PerformanceTestCase):
-                    if target_url is not None:
-                        host = query_runner.target_url
-                        perf_target = status_agent
-                    else:
-                        host = query_runner.registry[env_map[query_runner.env]][
-                            test.components[0]
-                        ][0]["url"]
-                        perf_target = None
+                    host, perf_target = _performance_host(
+                        test, query_runner, status_agent
+                    )
                     skip_message = skipped_because(test, asset, include_skipped)
                     if skip_message:
                         # no load test, but the radiator still gets the test,

@@ -39,7 +39,7 @@ def test_a_completed_run_exits_ok(mocker):
 def test_failing_tests_still_exit_ok(mocker):
     """Red results are news for Slack, not a broken cron job."""
 
-    def fail_everything(tests, collector, logger, args):
+    def fail_everything(tests, collector, logger, args, **kwargs):
         collector.has_acceptance_results = True
         collector.acceptance_report["FAILED"] = 12
         collector.has_performance_results = True
@@ -62,7 +62,7 @@ def test_failing_tests_still_exit_ok(mocker):
 def test_a_performance_run_that_never_completed_still_exits_ok(mocker):
     """An unreachable service is a result too -- Slack says so; cron stays green."""
 
-    def broken_run(tests, collector, logger, args):
+    def broken_run(tests, collector, logger, args, **kwargs):
         collector.has_performance_results = True
         collector.performance_report["stats"]["http://ara (aras)"] = {
             "host": "http://ara",
