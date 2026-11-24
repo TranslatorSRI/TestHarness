@@ -38,7 +38,8 @@ harnessArgs: ["--log_level", "INFO"]
 cycles:
   enabled: true
   defaults:
-    acceptance: mvp_tests
+    # One suite, or a list run in order, before pathfinder.
+    acceptance: [mvp_tests, external_repurposing_tests]
     pathfinder: pathfinder_tests
     performance: performance_tests
     performanceProfile: mixed

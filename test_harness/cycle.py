@@ -1,7 +1,7 @@
 """Run a cycle: acceptance, then pathfinder, then performance, in one environment.
 
-A run cycle is a weekly look at one environment: the acceptance suite (about
-50 minutes), the pathfinder suite, and a HelmsDeep performance run against the
+A run cycle is a weekly look at one environment: the acceptance suites (about
+50 minutes for mvp_tests), the pathfinder suite, and a HelmsDeep performance run against the
 ARS (about 70 minutes), one after another so they never load the services at
 the same time. Each step is an ordinary ``test-harness`` run, with its own Slack
 report as usual; the runs share a cycle id, and when the last one finishes the
@@ -10,11 +10,15 @@ against its previous run in this environment, the regressions and fixes by
 agent, and flags for anything odd.
 
     test-harness-cycle --env ci --download \\
-        --acceptance mvp_tests --pathfinder pathfinder_tests \\
+        --acceptance mvp_tests --acceptance external_repurposing_tests \\
+        --pathfinder pathfinder_tests \\
         --performance performance_tests \\
         --performance_target ars=https://ars.ci.transltr.io \\
         --performance_profile mixed \\
         -- --log_level INFO
+
+``--acceptance`` can be given more than once: the acceptance suites run in that
+order, each its own run, before the pathfinder suite.
 
 Every step runs even when an earlier one fails. Like the sweep, the exit status
 answers "did the runs happen?": non-zero only when a step couldn't be carried
@@ -31,7 +35,7 @@ import sys
 import time
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
 from test_harness.radiator_client import RadiatorClient
@@ -86,7 +90,7 @@ def _suite_command(
 
 def plan(
     cycle_id: str,
-    acceptance: Optional[str] = None,
+    acceptance: Union[str, Sequence[str], None] = None,
     pathfinder: Optional[str] = None,
     performance: Optional[str] = None,
     performance_targets: Sequence = (),
@@ -97,24 +101,36 @@ def plan(
     tests_url: Optional[str] = None,
     tests_dir: Optional[str] = None,
 ) -> List[Step]:
-    """The cycle's harness invocations, in order."""
+    """The cycle's harness invocations, in order: each acceptance suite, the
+    pathfinder suite, then performance."""
     shared = ["--cycle_id", cycle_id, *harness_args]
+    acceptance = [acceptance] if isinstance(acceptance, str) else list(acceptance or [])
+    acceptance = [suite for suite in acceptance if suite]
+    suites = [("acceptance", suite) for suite in acceptance]
+    if pathfinder:
+        suites.append(("pathfinder", pathfinder))
     steps = []
-    for kind, suite in (("acceptance", acceptance), ("pathfinder", pathfinder)):
-        if suite:
-            steps.append(
-                Step(
-                    f"{kind} ({suite})",
-                    _suite_command(
-                        suite,
-                        os.path.join(output_dir, kind),
-                        shared,
-                        download,
-                        tests_url,
-                        tests_dir,
-                    ),
-                )
+    for kind, suite in suites:
+        # several acceptance runs would overwrite each other's reports in one
+        # directory, so each gets its own
+        subdir = (
+            os.path.join(kind, suite)
+            if kind == "acceptance" and len(acceptance) > 1
+            else kind
+        )
+        steps.append(
+            Step(
+                f"{kind} ({suite})",
+                _suite_command(
+                    suite,
+                    os.path.join(output_dir, subdir),
+                    shared,
+                    download,
+                    tests_url,
+                    tests_dir,
+                ),
             )
+        )
     if performance:
         profile = (
             ["--performance_profile", performance_profile]
@@ -161,10 +177,16 @@ def run_steps(steps: List[Step]) -> None:
 # --- the Slack messages ------------------------------------------------------------
 
 
+def _row_name(row: dict) -> str:
+    """eg "Acceptance (mvp_tests)": the suite tells a cycle's acceptance runs
+    apart. A performance row's label already names its service."""
+    if row.get("host") is None and row.get("suite"):
+        return f"{row['label']} ({row['suite']})"
+    return row["label"]
+
+
 def _row_line(row: dict) -> str:
-    what = row["label"]
-    if row.get("host") is None:
-        what += f" ({row['suite']})"
+    what = _row_name(row)
     return (
         f"• *{what}*: {row['value_text']} {row['unit']}, {row['change_text']} · "
         f"{row['detail_text']} · *{row['verdict_label']}*"
@@ -234,7 +256,7 @@ def cycle_message(
     if changed:
         lines = ["*Regressions and fixes by agent*"]
         for row in changed:
-            lines.append(f"  {row['label']}:")
+            lines.append(f"  {_row_name(row)}:")
             lines += _changes_lines(row)
         thread.append("\n".join(lines))
     if flags:
@@ -266,7 +288,7 @@ def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
         lines = [f"*{name}*"]
         for row in env["rows"]:
             lines.append(
-                f"    {row['label']}: {row['value_text']}, {row['change_text']} · "
+                f"    {_row_name(row)}: {row['value_text']}, {row['change_text']} · "
                 f"{row['verdict_label']}"
             )
         thread.append("\n".join(lines))
@@ -362,12 +384,21 @@ def cli(argv: Sequence[str] = None) -> int:
             "Anything after a `--` separator is passed to every harness "
             "invocation, e.g.:\n\n"
             "  test-harness-cycle --env ci --download --acceptance mvp_tests \\\n"
+            "      --acceptance external_repurposing_tests \\\n"
             "      --pathfinder pathfinder_tests --performance performance_tests \\\n"
             "      --performance_target ars=https://ars.ci.transltr.io \\\n"
             "      --performance_profile mixed -- --log_level INFO\n"
         ),
     )
-    parser.add_argument("--acceptance", help="The acceptance suite to run first.")
+    parser.add_argument(
+        "--acceptance",
+        action="append",
+        default=[],
+        help=(
+            "An acceptance suite to run first. Repeat to run several, in the "
+            "order given."
+        ),
+    )
     parser.add_argument("--pathfinder", help="The pathfinder suite to run second.")
     parser.add_argument("--performance", help="The performance suite to run last.")
     parser.add_argument(

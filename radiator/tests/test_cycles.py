@@ -137,6 +137,59 @@ def test_a_cycle_board_compares_each_test_with_its_previous_run(app):
     assert [flag.kind for flag in performance.flags] == ["concurrency_drop"]
 
 
+def test_a_cycle_can_run_several_acceptance_suites(app, browser):
+    """eg mvp_tests then external_repurposing_tests: a row each, in the
+    order they ran, each against the previous run of its own suite."""
+
+    def suite_run(started, suite, statuses, cycle_id):
+        return schema.RunPayload(
+            run=f.run_create(
+                started_at=started, env="ci", suite=suite, cycle_id=cycle_id
+            ),
+            results=_assets(statuses),
+            finish=f.finish(started),
+        )
+
+    def cycle_of(start, mvp, external):
+        cycle_id = uuid.uuid4()
+        _load(
+            app,
+            suite_run(start, "mvp_tests", mvp, cycle_id),
+            suite_run(
+                start + timedelta(hours=1), "external_repurposing_tests", external, cycle_id
+            ),
+            _results_run(start + timedelta(hours=2), [P], "ci", cycle_id, "pathfinder"),
+        )
+        return cycle_id
+
+    cycle_of(T0, mvp=[P, P], external=[F, F])
+    later = cycle_of(T0 + timedelta(days=7), mvp=[P, F], external=[P, F])
+    cycle = _get_cycle(app, later)
+    assert [(row.kind, row.run.suite) for row in cycle.rows] == [
+        ("acceptance", "mvp_tests"),
+        ("acceptance", "external_repurposing_tests"),
+        ("pathfinder", "pathfinder_tests"),
+    ]
+    mvp, external, _ = cycle.rows
+    assert (mvp.previous, mvp.value, mvp.verdict) == (1.0, 0.5, cycles.REGRESSED)
+    assert (external.previous, external.value, external.verdict) == (
+        0.0,
+        0.5,
+        cycles.IMPROVED,
+    )
+    assert [row["suite"] for row in map(cycles.row_json, cycle.rows)][:2] == [
+        "mvp_tests",
+        "external_repurposing_tests",
+    ]
+
+    page = browser.get(f"/cycles/{later}")
+    assert "Acceptance (mvp_tests): regressions and fixes by agent" in page.text
+    assert (
+        "Acceptance (external_repurposing_tests): regressions and fixes by agent"
+        in page.text
+    )
+
+
 def test_verdicts(app):
     first = _cycle(app, T0, acceptance=[P, F])
     assert _get_cycle(app, first).rows[0].verdict == cycles.FIRST

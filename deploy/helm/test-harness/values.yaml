@@ -47,13 +47,14 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Weekly run cycles: acceptance, then pathfinder, then performance, in one
-# environment. One CronJob per entry in `environments`.
+# Weekly run cycles: the acceptance suites, then pathfinder, then
+# performance, in one environment. One CronJob per entry in `environments`.
 cycles:
   enabled: true
   # Applied to every environment unless the environment sets its own.
   defaults:
-    acceptance: mvp_tests
+    # One suite, or a list run in order, before pathfinder.
+    acceptance: [mvp_tests, external_repurposing_tests]
     pathfinder: pathfinder_tests
     performance: performance_tests
     performanceProfile: mixed
