@@ -66,7 +66,12 @@ spec:
     - --env
     - {{ .testEnv | quote }}
     {{- include "harness.testsArgs" $ | trim | nindent 4 }}
-    {{- with .pick.acceptance }}
+    {{- /* one suite, or a list of them, run in order */}}
+    {{- $acceptance := .pick.acceptance }}
+    {{- if not (kindIs "slice" $acceptance) }}
+    {{- $acceptance = ternary (list) (list $acceptance) (empty $acceptance) }}
+    {{- end }}
+    {{- range $acceptance }}
     - --acceptance
     - {{ . | quote }}
     {{- end }}

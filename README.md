@@ -450,23 +450,27 @@ hours); the single-class default profile is ~58 + ~35 × 3 (~2.7 hours). Nothing
 overlaps, by design.
 
 ### Run cycles and the weekly digest
-A run cycle is a weekly look at one environment: acceptance, then pathfinder,
-then a HelmsDeep performance run against that environment's ARS, one after
-another so they never load the services at the same time (about 2 hours with
-the `mixed` profile). The intended schedule is one environment a day: dev on
+A run cycle is a weekly look at one environment: the acceptance suites
+(`mvp_tests`, then `external_repurposing_tests`), then pathfinder, then a
+HelmsDeep performance run against that environment's ARS, one after another so
+they never load the services at the same time (2 to 3 hours with the `mixed`
+profile). The intended schedule is one environment a day: dev on
 Monday, ci on Tuesday, test on Wednesday, prod on Thursday.
 
 ```
 test-harness-cycle --env ci --download \
-    --acceptance mvp_tests --pathfinder pathfinder_tests \
+    --acceptance mvp_tests --acceptance external_repurposing_tests \
+    --pathfinder pathfinder_tests \
     --performance performance_tests \
     --performance_target ars=https://ars.ci.transltr.io \
     --performance_profile mixed \
     -- --log_level INFO
 ```
 
-Each step is an ordinary harness run with its usual Slack report. Leave out any
-step you don't want; anything after `--` goes to every step (eg
+Each step is an ordinary harness run with its usual Slack report.
+`--acceptance` can be repeated: each suite is its own run, in the order given,
+with its own row on the board (and, with more than one, its own
+`acceptance/<suite>` results directory). Leave out any step you don't want; anything after `--` goes to every step (eg
 `--query_parameters`). When the last step finishes, the cycle posts the
 Information Radiator's **board**: each test against its previous run in that
 environment (pass rate or max concurrency, the change, regressions and fixes),

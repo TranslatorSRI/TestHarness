@@ -61,6 +61,72 @@ def test_a_cycle_can_leave_steps_out():
     assert steps[0].cmd[-3:] == ["a", "--tests_dir", "suites"]
 
 
+def test_several_acceptance_suites_run_in_order_before_pathfinder():
+    steps = plan(
+        CYCLE_ID,
+        acceptance=["mvp_tests", "external_repurposing_tests"],
+        pathfinder="pathfinder_tests",
+        output_dir="out",
+        download=True,
+    )
+    assert [s.name for s in steps] == [
+        "acceptance (mvp_tests)",
+        "acceptance (external_repurposing_tests)",
+        "pathfinder (pathfinder_tests)",
+    ]
+    # each acceptance run reports to a directory of its own
+    output_dirs = [s.cmd[s.cmd.index("--output_dir") + 1] for s in steps]
+    assert output_dirs == [
+        "out/acceptance/mvp_tests",
+        "out/acceptance/external_repurposing_tests",
+        "out/pathfinder",
+    ]
+    assert [s.cmd[-1] for s in steps] == [
+        "mvp_tests",
+        "external_repurposing_tests",
+        "pathfinder_tests",
+    ]
+    for step in steps:
+        assert step.cmd[step.cmd.index("--cycle_id") + 1] == CYCLE_ID
+
+
+def test_one_acceptance_suite_keeps_its_directory():
+    for acceptance in ("mvp_tests", ["mvp_tests"]):
+        [step] = plan(CYCLE_ID, acceptance=acceptance, output_dir="out")
+        assert step.cmd[step.cmd.index("--output_dir") + 1] == "out/acceptance"
+
+
+@mock.patch("test_harness.cycle.subprocess.run")
+def test_acceptance_can_be_repeated_on_the_command_line(run, monkeypatch):
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    run.return_value = mock.Mock(returncode=0)
+    cli(
+        [
+            "--env",
+            "ci",
+            "--download",
+            "--acceptance",
+            "mvp_tests",
+            "--acceptance",
+            "external_repurposing_tests",
+            "--pathfinder",
+            "pathfinder_tests",
+        ]
+    )
+    suites = [call.args[0][-1] for call in run.call_args_list]
+    assert suites == ["mvp_tests", "external_repurposing_tests", "pathfinder_tests"]
+
+
+def test_the_regressions_name_the_suite():
+    second = {**REPORT["rows"][0], "suite": "external_repurposing_tests"}
+    report = {"env": "ci", "rows": [REPORT["rows"][0], second]}
+    _, thread = cycle_message(report, _ran(0, 0), None)
+    changes = thread[1]
+    assert "  Acceptance (sprint_4_tests):" in changes
+    assert "  Acceptance (external_repurposing_tests):" in changes
+
+
 def _ran(*codes):
     return [Step(f"step {i}", [], code, 30.0) for i, code in enumerate(codes)]
 
@@ -213,7 +279,11 @@ def test_the_digest_message():
         "<https://r/weekly|Open the weekly page in the Information Radiator>"
     )
     rows, flags = thread
-    assert rows.startswith("*CI*\n    Acceptance: 80.6%, ▼2.8 pts · Regressed")
+    assert rows.startswith(
+        "*CI*\n    Acceptance (sprint_4_tests): 80.6%, ▼2.8 pts · Regressed"
+    )
+    # a performance row's label names its service; no suite after it
+    assert "    Performance · ars: 14.5," in rows
     assert "• CI: arax: no results on 5 assets" in flags
     empty, thread = digest_message({**digest, "envs": []}, None)
     assert "No finished runs this week." in empty

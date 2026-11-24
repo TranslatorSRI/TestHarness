@@ -5,7 +5,8 @@
 # Thursday (dev, ci, test, prod), so a regression shows up in dev before it
 # reaches prod and Friday is free for re-runs.
 #
-# Each cycle runs acceptance (~50 min), then pathfinder, then a HelmsDeep
+# Each cycle runs the acceptance suites (mvp_tests ~50 min, then
+# external_repurposing_tests), then pathfinder, then a HelmsDeep
 # performance run against that environment's ARS (~70 min with the mixed
 # profile), one after another so they never load the services at the same
 # time. Each step posts its own Slack report as usual; when the cycle finishes
@@ -61,6 +62,8 @@ spec:
                 - "--download"
                 - "--acceptance"
                 - "mvp_tests"
+                - "--acceptance"
+                - "external_repurposing_tests"
                 - "--pathfinder"
                 - "pathfinder_tests"
                 - "--performance"

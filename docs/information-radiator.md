@@ -139,8 +139,8 @@ the radiator, or if it can't be reached, the report is what it always was.
 
 ### Run cycles and the weekly digest
 
-`test-harness-cycle` runs acceptance, pathfinder and performance in one
-environment and marks their runs with a shared `cycle_id`. When it finishes, it
+`test-harness-cycle` runs acceptance (one or more suites), pathfinder and
+performance in one environment and marks their runs with a shared `cycle_id`. When it finishes, it
 posts the cycle's board (`/api/cycles/{id}/board.png`) with a short message
 (the steps that ran, a count of each verdict, the number of flags, and a link),
 and in its thread each test's headline, the regressions and fixes by agent,
@@ -154,7 +154,8 @@ How the board is worked out (`radiator/cycles.py`):
 
 - **Which test a run is**: a run with performance results is performance; one
   whose results are all pathfinder assets is pathfinder; anything else is
-  acceptance.
+  acceptance. A cycle with several acceptance suites has a row for each, in
+  the order they ran, named with its suite (eg `Acceptance (mvp_tests)`).
 - **Compared with what**: each run against the previous finished run of its
   series (same suite, environment, target override and query type), which is
   last week's cycle in practice. Performance compares per service.

@@ -46,7 +46,7 @@
 
 {% for row in cycle.rows if row.changes %}
 <div class="card">
-  <h2>{{ row.label }}: regressions and fixes by agent</h2>
+  <h2>{{ row.label }}{% if row.perf is none %} ({{ row.run.suite }}){% endif %}: regressions and fixes by agent</h2>
   <p class="sub"><a href="/runs/{{ row.run.id }}/diff">Everything that changed</a>, including rank moves and skips</p>
   <table class="data">
     <thead><tr><th>Agent</th><th>Regressions</th><th>Fixed</th></tr></thead>

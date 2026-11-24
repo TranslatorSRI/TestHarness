@@ -85,6 +85,9 @@ Thursday, each at 01:52 in `timeZone`, and the digest on Monday at 08:52. The
 environment comes from the test cases, so each environment names the suites
 written for it. Any setting under `cycles.defaults` can be overridden per
 environment; `performance: ""` leaves the performance step out (eg for prod).
+`acceptance` is one suite or a list, run in order before pathfinder; the
+default is `[mvp_tests, external_repurposing_tests]`, so an environment that
+sets its own `acceptance` replaces the whole list.
 
 To run one now, without waiting for its day:
 
@@ -95,7 +98,7 @@ kubectl -n translator create job --from=cronjob/test-harness-weekly-digest diges
 
 That runs the whole cycle. To run one step of it (acceptance, pathfinder or
 performance) on its own, with the suites and targets from that environment's
-CronJob:
+CronJob (`acceptance` runs all of the CronJob's acceptance suites):
 
 ```
 deploy/run-step.sh ci acceptance
