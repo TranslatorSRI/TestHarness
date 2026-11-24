@@ -38,6 +38,9 @@ setup(
             # Uploads a run the harness saved instead of sending to the
             # Information Radiator (--local, or the radiator was unreachable).
             "test-harness-radiator = test_harness.radiator_client:cli",
+            # Re-scores a past run's ARS responses by RRF as well as by
+            # confidence, to compare the two rankings.
+            "test-harness-rrf-compare = test_harness.rrf_compare:cli",
         ],
     },
 )

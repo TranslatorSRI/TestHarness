@@ -54,6 +54,7 @@ def run_acceptance_pass_fail_analysis(
     results: List[Dict[str, Any]],
     out_curies: List[str],
     expect_output: str,
+    sort_by_confidence: bool = True,
 ):
     """Function to run pass fail analysis on individual results.
 
@@ -63,12 +64,16 @@ def run_acceptance_pass_fail_analysis(
     Acceptable asset passes if any of them passes, and a BadButForgivable or
     NeverShow asset fails if any of them fails. The rank and score reported are
     those of the best-ranked result binding any of them.
+
+    ARS results are re-sorted by confidence first, unless
+    ``sort_by_confidence`` is False: then ``results`` are taken in the order
+    given (eg already sorted by RRF, see ``test_harness.rrf_compare``).
     """
     try:
         # ARS results are scored by their confidence, so make sure they're
         # ordered by it before slicing out the top n and assigning ranks.
         is_ars = any(get_ars_confidence(res) is not None for res in results)
-        if is_ars:
+        if is_ars and sort_by_confidence:
             results = sort_by_ars_confidence(results)
         if expect_output == "TopAnswer":
             window = range(0, min(30, len(results)))

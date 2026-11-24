@@ -307,6 +307,24 @@ then contributes four columns:
 These are the same numbers as the `actual_output` in the per-test report JSON
 uploaded to the Information Radiator.
 
+### Comparing the confidence ranking with RRF
+The harness ranks the ARS's merged results by their `confidence`. The ARS also
+ranks them by weighted Reciprocal Rank Fusion of the ARAGORN and ARAX rankings
+(`rrf_score`/`rrf_rank` on each merged result). `test-harness-rrf-compare`
+re-scores a past acceptance run both ways, from the ARS pks the Information
+Radiator stored, so both rankings are judged on the same responses:
+
+```bash
+test-harness-rrf-compare --radiator-url https://radiator.example.org --env ci
+```
+
+It takes the latest finished acceptance run in `--env` (or `--suite`, or
+`--run-id`), writes a CSV with each asset's rank and pass/fail under each
+ranking, and prints a summary. Where a merged message has no `rrf_score`, the
+RRF is computed from the ARAGORN and ARAX responses the way the ARS does it
+(`--recompute` always does; `--aragorn-weight` and `--c` match the ARS's
+`ARS_RRF_ARAGORN_WEIGHT` and `ARS_RRF_C`).
+
 ### Performance tests
 Performance tests (`QuantitativeTest` cases) are run by
 [**HelmsDeep**](https://github.com/TranslatorSRI/HelmsDeep), installed from
