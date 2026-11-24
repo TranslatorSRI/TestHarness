@@ -156,7 +156,10 @@ def test_a_cycle_can_run_several_acceptance_suites(app, browser):
             app,
             suite_run(start, "mvp_tests", mvp, cycle_id),
             suite_run(
-                start + timedelta(hours=1), "external_repurposing_tests", external, cycle_id
+                start + timedelta(hours=1),
+                "external_repurposing_tests",
+                external,
+                cycle_id,
             ),
             _results_run(start + timedelta(hours=2), [P], "ci", cycle_id, "pathfinder"),
         )
