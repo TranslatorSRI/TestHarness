@@ -21,6 +21,8 @@ from test_harness.sweep import (
     cli,
     parse_targets,
     run_sweep,
+    slack_notifier,
+    stopped_message,
 )
 
 TARGETS = [
@@ -271,3 +273,98 @@ def test_at_sigterm_the_log_says_why_and_the_step_is_killed(tmp_path):
     assert "activeDeadlineSeconds" in out
     with pytest.raises(ProcessLookupError):
         os.kill(step_pid, 0)
+
+
+NOTIFY_SCRIPT = """
+import subprocess, sys
+from test_harness.sweep import say_why_on_sigterm
+def notify(minutes):
+    open(sys.argv[2], "w").write("told Slack")
+    raise RuntimeError("and Slack was down")  # the stop still goes ahead
+say_why_on_sigterm("The cycle", notify)
+print("started", flush=True)
+subprocess.run([sys.executable, "-c", "import time; time.sleep(60)"])
+"""
+
+
+def test_at_sigterm_slack_is_told_before_stopping(tmp_path):
+    told = tmp_path / "told"
+    proc = subprocess.Popen(
+        [sys.executable, "-c", NOTIFY_SCRIPT, "unused", str(told)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout.readline().strip() == "started"
+    time.sleep(0.2)
+    proc.send_signal(signal.SIGTERM)
+    out, _ = proc.communicate(timeout=10)
+
+    assert proc.returncode == 128 + signal.SIGTERM
+    assert told.read_text() == "told Slack"
+    assert "Couldn't report the stop to Slack: RuntimeError" in out
+
+
+def test_the_stopped_message_says_how_far_it_got():
+    text = stopped_message(
+        "The run cycle",
+        "ci",
+        240.2,
+        [("acceptance (mvp_tests)", 0, 52.0), ("pathfinder (p)", 1, 3.0)],
+        "performance (ars)",
+        ["performance (aragorn)"],
+    )
+    assert "*The run cycle in `ci` was stopped after 4 h 00 min*" in text
+    assert "ran out of time" in text
+    assert "*Cut off:* performance (ars)" in text
+    assert "*Done:* acceptance (mvp_tests): finished, 52 min" in text
+    assert "*Done:* pathfinder (p): failed (exit 1), 3 min" in text
+    assert "*Never started:* performance (aragorn)" in text
+
+
+def test_without_slack_nothing_is_posted_at_sigterm(monkeypatch):
+    for name in ("SLACK_WEBHOOK_URL", "SLACK_TOKEN", "SLACK_CHANNEL"):
+        monkeypatch.delenv(name, raising=False)
+    assert slack_notifier(lambda minutes: "x") is None
+
+
+def test_with_slack_the_stop_is_posted(monkeypatch):
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/x")
+    monkeypatch.setenv("SLACK_TOKEN", "xoxb")
+    monkeypatch.setenv("SLACK_CHANNEL", "C1")
+    with mock.patch("test_harness.slacker.Slacker.post_notification") as post:
+        slack_notifier(lambda minutes: f"stopped after {minutes}")(240)
+    post.assert_called_once_with(["stopped after 240"])
+
+
+def test_the_sweep_tells_slack_which_target_was_cut_off(monkeypatch):
+    built = {}
+
+    def fake_say_why(what, notify):
+        built["what"] = what
+
+    def fake_notifier(build):
+        built["build"] = build
+
+    def fake_run_sweep(targets, suite, results, **kwargs):
+        results.append(("ars", 0, 600.0))
+        return 0
+
+    monkeypatch.setattr("test_harness.sweep.say_why_on_sigterm", fake_say_why)
+    monkeypatch.setattr("test_harness.sweep.slack_notifier", fake_notifier)
+    monkeypatch.setattr("test_harness.sweep.run_sweep", fake_run_sweep)
+    cli(
+        [
+            "--suite",
+            "perf",
+            "--env",
+            "ci",
+            "ars=http://a",
+            "aragorn=http://b",
+            "bte=http://c",
+        ]
+    )
+    text = built["build"](360)
+    assert "The `perf` sweep in `ci`" in text
+    assert "*Done:* ars: finished, 10 min" in text
+    assert "*Cut off:* aragorn" in text
+    assert "*Never started:* bte" in text

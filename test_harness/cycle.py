@@ -55,7 +55,9 @@ from test_harness.sweep import (
     build_command,
     parse_targets,
     say_why_on_sigterm,
+    slack_notifier,
     split_passthrough,
+    stopped_message,
 )
 from test_harness.utils import TEST_ENVS
 
@@ -365,6 +367,26 @@ def post_digest(
     return True
 
 
+def cycle_stopped_message(env: str, steps: Sequence[Step], minutes: float) -> str:
+    """The Slack message for a cycle stopped by SIGTERM, usually its deadline."""
+    finished = [(s.name, s.code, s.minutes) for s in steps if s.code is not None]
+    pending = [s.name for s in steps if s.code is None]
+    return stopped_message(
+        "The run cycle",
+        env,
+        minutes,
+        finished,
+        pending[0] if pending else None,
+        pending[1:],
+        note=(
+            "Steps that finished posted their own reports; there will be no "
+            "board for the cycle."
+            if pending
+            else "Every step finished; it was cut off posting the cycle board."
+        ),
+    )
+
+
 # --- the command ----------------------------------------------------------------------
 
 
@@ -484,7 +506,10 @@ def cli(argv: Sequence[str] = None) -> int:
         tests_dir=args.tests_dir,
     )
     print(f"Run cycle {cycle_id}: {len(steps)} steps", flush=True)
-    say_why_on_sigterm("The cycle")
+    say_why_on_sigterm(
+        "The cycle",
+        slack_notifier(lambda minutes: cycle_stopped_message(args.env, steps, minutes)),
+    )
     run_steps(steps)
 
     _banner("CYCLE SUMMARY")

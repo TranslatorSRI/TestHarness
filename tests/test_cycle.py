@@ -384,3 +384,24 @@ def test_a_slack_failure_after_the_cycle_is_a_warning(monkeypatch, caplog):
         run.return_value = mock.Mock(returncode=0)
         assert cli(["--env", "ci", "--acceptance", "a"]) == 0
     assert "Couldn't post the cycle board: RuntimeError: slack down" in caplog.text
+
+
+def test_a_cycle_stopped_at_its_deadline_says_which_step_was_cut_off():
+    steps = [
+        Step("acceptance (mvp_tests)", [], code=0, minutes=50),
+        Step("pathfinder (pathfinder_tests)", []),
+        Step("performance (ars)", []),
+    ]
+    text = cycle.cycle_stopped_message("ci", steps, 240)
+    assert "The run cycle in `ci` was stopped after 4 h 00 min" in text
+    assert "*Done:* acceptance (mvp_tests): finished, 50 min" in text
+    assert "*Cut off:* pathfinder (pathfinder_tests)" in text
+    assert "*Never started:* performance (ars)" in text
+    assert "no board" in text
+
+
+def test_a_cycle_stopped_after_its_steps_was_posting_the_board():
+    steps = [Step("acceptance (mvp_tests)", [], code=0, minutes=50)]
+    text = cycle.cycle_stopped_message("ci", steps, 240)
+    assert "Cut off" not in text
+    assert "posting the cycle board" in text

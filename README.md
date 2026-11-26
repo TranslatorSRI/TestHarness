@@ -444,6 +444,13 @@ Forbid` so the next schedule can't start a second overlapping sweep,
 progress, and CPU requests that keep the load generator from measuring its own
 scheduling delay.
 
+When a sweep or cycle hits its `activeDeadlineSeconds` (or the pod is otherwise
+stopped), it posts a short Slack message saying so: how long it ran, which
+step was cut off, which finished and which never started. Without it a run
+that ran out of time would just go quiet, which looks the same as the harness
+itself crashing. The message goes out in the pod's
+`terminationGracePeriodSeconds`, and only when Slack is configured.
+
 Budget the time before you schedule it: with `--performance_profile mixed` a
 four-service sweep is roughly 70 min for the ARS plus 61 min per ARA (~4.2
 hours); the single-class default profile is ~58 + ~35 × 3 (~2.7 hours). Nothing

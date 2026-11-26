@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
-from typing import Dict, List, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from test_harness.utils import TEST_ENVS
 
@@ -141,27 +141,91 @@ def _banner(text: str) -> None:
     print(f"\n{'=' * 72}\n{text}\n{'=' * 72}", flush=True)
 
 
-def say_why_on_sigterm(what: str) -> None:
+def say_why_on_sigterm(
+    what: str, notify: Optional[Callable[[float], None]] = None
+) -> None:
     """At SIGTERM, say so in the log and stop, killing the step that's running.
 
     In a pod this entrypoint is PID 1, which the kernel spares the default
     SIGTERM action: without a handler it would ignore the SIGTERM sent when
     the pod's activeDeadlineSeconds runs out, and the log would simply stop
     when the SIGKILL comes, with nothing to say why.
+
+    ``notify``, if given, is called with the minutes since this was set up,
+    before stopping: to tell Slack, so a run cut off at its deadline doesn't
+    just go quiet. It has the pod's terminationGracePeriodSeconds to finish;
+    if it fails, the failure is logged and the stop goes ahead.
     """
     started = time.time()
 
     def stop(signum, frame):
+        # a second SIGTERM mustn't interrupt the Slack message
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        minutes = (time.time() - started) / 60
         print(
-            f"\n{what} got SIGTERM after {(time.time() - started) / 60:.1f} min: "
+            f"\n{what} got SIGTERM after {minutes:.1f} min: "
             "the pod's activeDeadlineSeconds ran out, or the pod is being "
             "stopped. Stopping, and killing the step that's running.",
             flush=True,
         )
+        if notify is not None:
+            try:
+                notify(minutes)
+            except Exception as e:
+                print(
+                    f"Couldn't report the stop to Slack: {type(e).__name__}: {e}",
+                    flush=True,
+                )
         # subprocess.run kills its child on the way out
         raise SystemExit(128 + signum)
 
     signal.signal(signal.SIGTERM, stop)
+
+
+def _duration(minutes: float) -> str:
+    hours, minutes = divmod(int(round(minutes)), 60)
+    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+
+
+def stopped_message(
+    what: str,
+    env: str,
+    minutes: float,
+    finished: Sequence[Tuple[str, int, float]],
+    running: Optional[str],
+    not_started: Sequence[str],
+    note: str = "",
+) -> str:
+    """The Slack message for a run stopped by SIGTERM: almost always the pod's
+    time limit (activeDeadlineSeconds) running out. ``finished`` is
+    (name, exit code, minutes) per step that ended."""
+    lines = [
+        f":hourglass: *{what} in `{env}` was stopped after "
+        f"{_duration(minutes)}* -- most likely it ran out of time (the pod's "
+        "activeDeadlineSeconds), or the pod was deleted or evicted. "
+        "It didn't finish.",
+    ]
+    if running:
+        lines.append(f"*Cut off:* {running}")
+    for name, code, step_minutes in finished:
+        status = "finished" if code == 0 else f"failed (exit {code})"
+        lines.append(f"*Done:* {name}: {status}, {_duration(step_minutes)}")
+    if not_started:
+        lines.append(f"*Never started:* {', '.join(not_started)}")
+    if note:
+        lines.append(note)
+    return "\n".join(lines)
+
+
+def slack_notifier(build: Callable[[float], str]) -> Optional[Callable[[float], None]]:
+    """A ``notify`` for say_why_on_sigterm that posts ``build(minutes)`` to
+    Slack, or None when Slack isn't configured."""
+    # imported here: the sweep needs nothing from Slack otherwise
+    from test_harness.slacker import Slacker
+
+    if not Slacker.is_configured():
+        return None
+    return lambda minutes: Slacker().post_notification([build(minutes)])
 
 
 def run_sweep(
@@ -172,6 +236,7 @@ def run_sweep(
     download: bool = False,
     tests_url: str = None,
     tests_dir: str = None,
+    results: Optional[List[Tuple[str, int, float]]] = None,
 ) -> int:
     """Run the suite against each target in turn. Returns a process exit code.
 
@@ -181,8 +246,12 @@ def run_sweep(
     The returned code reports whether the runs *happened*: the harness exits 0
     for any test outcome and non-zero only when it couldn't carry out the run,
     so a non-zero here always means something operational, never a red test.
+
+    ``results``, if given, is filled in with (target, exit code, seconds) as
+    each target finishes, so a SIGTERM handler can say how far it got.
     """
-    results = []
+    if results is None:
+        results = []
     for position, (target, url) in enumerate(targets, start=1):
         cmd = build_command(
             target,
@@ -360,6 +429,21 @@ def cli(argv: Sequence[str] = None) -> int:
             f"{TARGETS_ENV}."
         )
 
+    env = args.env
+    results = []
+
+    def stopped(minutes: float) -> str:
+        names = [target for target, _ in targets]
+        return stopped_message(
+            f"The `{args.suite}` sweep",
+            env,
+            minutes,
+            [(target, code, seconds / 60) for target, code, seconds in results],
+            names[len(results)] if len(results) < len(names) else None,
+            names[len(results) + 1 :],
+        )
+
+    say_why_on_sigterm("The sweep", slack_notifier(stopped))
     return run_sweep(
         targets,
         args.suite,
@@ -368,6 +452,7 @@ def cli(argv: Sequence[str] = None) -> int:
         download=args.download,
         tests_url=args.tests_url,
         tests_dir=args.tests_dir,
+        results=results,
     )
 
 
