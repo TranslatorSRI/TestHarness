@@ -58,8 +58,13 @@ cycles:
     pathfinder: pathfinder_tests
     performance: performance_tests
     performanceProfile: mixed
-    # ~2 h expected; this stops a wedged run before the next environment's day.
-    activeDeadlineSeconds: 14400
+    # How long a cycle may run, in minutes (test-harness-cycle --time_limit;
+    # ~2 h expected). When it runs out, the step that's running stops and
+    # reports what it got to Slack and the radiator as having run out of
+    # time, and the steps after it don't start. The pod's
+    # activeDeadlineSeconds is set 30 min above this, as a backstop; set
+    # activeDeadlineSeconds here to choose it yourself.
+    timeLimitMinutes: 240
     resources:
       # HelmsDeep's load generator runs in this container during the
       # performance step: give it real CPU, requests == limits.
@@ -67,7 +72,7 @@ cycles:
       limits: {cpu: "2", memory: "4Gi"}
   # Each: name, schedule, acceptance, performanceTargets (NAME=URL, in
   # order), and optionally env, pathfinder, performance, performanceProfile,
-  # harnessArgs, suspend, activeDeadlineSeconds, resources. See
+  # harnessArgs, suspend, timeLimitMinutes, activeDeadlineSeconds, resources. See
   # values.example.yaml. The environment tested is env, or else the name, so
   # name an entry dev, ci, test or prod (or give it an env): the suites are
   # the same in every environment.
@@ -95,7 +100,10 @@ sweep:
   profile: mixed
   # NAME=URL, in the order they're loaded.
   targets: []
-  activeDeadlineSeconds: 21600
+  # How long the whole sweep may run, in minutes (test-harness-sweep
+  # --time_limit). The pod's activeDeadlineSeconds is 30 min above it, as a
+  # backstop, unless activeDeadlineSeconds is set here.
+  timeLimitMinutes: 360
   resources:
     requests: {cpu: "2", memory: "2Gi"}
     limits: {cpu: "2", memory: "4Gi"}

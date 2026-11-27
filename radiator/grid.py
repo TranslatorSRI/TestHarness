@@ -19,6 +19,7 @@ from markupsafe import Markup, escape
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from radiator import queries
 from radiator.models import AssetResult, Run
 
 # Lanes in this order; any other environment after these, alphabetically, and
@@ -126,6 +127,8 @@ def grid_runs(
         Run.ended_at.is_not(None),
         Run.started_at <= until,
     ]
+    # a run cut off at its time limit is shown, but isn't the baseline
+    complete = [*full, *queries.complete()]
     runs = list(
         session.scalars(
             select(Run).where(*full, Run.started_at >= since).order_by(Run.started_at)
@@ -137,7 +140,7 @@ def grid_runs(
     for env in envs:
         before = session.scalar(
             select(Run)
-            .where(*full, Run.env.is_not_distinct_from(env), Run.started_at < since)
+            .where(*complete, Run.env.is_not_distinct_from(env), Run.started_at < since)
             .order_by(Run.started_at.desc())
             .limit(1)
         )
@@ -181,7 +184,7 @@ def grid_runs(
                 item.trend = FLAT
             else:
                 item.trend = UP if rate > prev else DOWN
-        if rate is not None:
+        if rate is not None and run.stopped is None:
             previous_rate[run.env] = rate
         if run.started_at >= since:
             items.append(item)

@@ -136,15 +136,20 @@ class RadiatorClient:
             self.sent_batches += 1
 
     def finish_run(
-        self, counts: Optional[dict] = None, finish: Optional[RunFinish] = None
+        self,
+        counts: Optional[dict] = None,
+        finish: Optional[RunFinish] = None,
+        stopped: Optional[str] = None,
     ):
         """Upload any remaining results and close the run.
 
         ``finish`` closes it with a given end time instead of now, for replays.
+        ``stopped`` says why it ended before running every test (see
+        RunFinish.stopped).
         """
         self.flush()
         self.payload.finish = finish or RunFinish(
-            ended_at=datetime.now().astimezone(), counts=counts or {}
+            ended_at=datetime.now().astimezone(), counts=counts or {}, stopped=stopped
         )
         self._send(
             "PATCH",

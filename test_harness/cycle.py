@@ -46,18 +46,27 @@ from test_harness.slacker import (
     warn_about_retired_settings,
 )
 from test_harness.sweep import (
+    DEFAULT_CYCLE_TIME_LIMIT,
     DEFAULT_OUTPUT_DIR,
+    EXIT_TIME_LIMIT,
+    MIN_STEP_MINUTES,
     HARNESS,
     SUBCOMMAND_FLAGS,
     TARGETS_ENV,
     _banner,
     _passes_env,
+    _passes_time_limit,
+    _time_limit_type,
     build_command,
+    minutes_left,
+    out_of_time_message,
     parse_targets,
     say_why_on_sigterm,
     slack_notifier,
     split_passthrough,
+    step_status,
     stopped_message,
+    with_time_limit,
 )
 from test_harness.utils import TEST_ENVS
 
@@ -68,6 +77,12 @@ class Step:
     cmd: List[str]
     code: Optional[int] = None
     minutes: float = 0.0
+    # ran out of the cycle's time limit, or never started for want of time
+    out_of_time: bool = False
+
+    @property
+    def status(self) -> str:
+        return step_status(self.code, self.out_of_time)
 
 
 def _suite_command(
@@ -158,13 +173,23 @@ def plan(
     return steps
 
 
-def run_steps(steps: List[Step]) -> None:
+def run_steps(steps: List[Step], time_limit: Optional[float] = None) -> None:
+    """Run the steps in order. ``time_limit`` is minutes for them all: each
+    gets what's left, and once it's gone the rest aren't started."""
+    deadline = time.time() + time_limit * 60 if time_limit else None
+    out_of_time = False
     for position, step in enumerate(steps, start=1):
+        left = minutes_left(deadline)
+        if out_of_time or (left is not None and left < MIN_STEP_MINUTES):
+            out_of_time = step.out_of_time = True
+            print(f"\nNot starting {step.name}: the cycle is out of time.", flush=True)
+            continue
+        cmd = with_time_limit(step.cmd, left)
         _banner(f"[{position}/{len(steps)}] {step.name}")
-        print(f"$ {' '.join(step.cmd)}", flush=True)
+        print(f"$ {' '.join(cmd)}", flush=True)
         started = time.time()
         try:
-            step.code = subprocess.run(step.cmd).returncode
+            step.code = subprocess.run(cmd).returncode
         except OSError as e:
             print(f"Failed to launch the harness for {step.name}: {e}", flush=True)
             step.code = 127
@@ -174,6 +199,8 @@ def run_steps(steps: List[Step]) -> None:
             f"after {step.minutes:.1f} min",
             flush=True,
         )
+        if step.code == EXIT_TIME_LIMIT:
+            out_of_time = step.out_of_time = True
 
 
 # --- the Slack messages ------------------------------------------------------------
@@ -236,8 +263,14 @@ def cycle_message(
     ran = [step for step in steps if step.code == 0]
     rows = report.get("rows", [])
     flags = [flag for row in rows for flag in row.get("flags", [])]
+    out_of_time = any(step.out_of_time for step in steps)
     glance = [
-        f"*{env} run cycle finished* · {len(ran)} of {len(steps)} steps ran · "
+        (
+            f":hourglass: *{env} run cycle ran out of time*"
+            if out_of_time
+            else f"*{env} run cycle finished*"
+        )
+        + f" · {len(ran)} of {len(steps)} steps ran · "
         f"{int(total // 60)} h {int(total % 60):02d} min"
     ]
     verdicts = _verdict_counts(rows)
@@ -247,11 +280,7 @@ def cycle_message(
     if url:
         glance.append(f"<{url}|Open the run cycle in the Information Radiator>")
 
-    results = [
-        f"• {step.name}: couldn't run (exit {step.code})"
-        for step in steps
-        if step.code != 0
-    ]
+    results = [_step_problem(step) for step in steps if step.code != 0]
     results += [_row_line(row) for row in rows]
     thread = ["*Results*\n" + "\n".join(results)]
     changed = [row for row in rows if row.get("changes")]
@@ -264,6 +293,14 @@ def cycle_message(
     if flags:
         thread.append("*Flags*\n" + "\n".join(f"• {flag['text']}" for flag in flags))
     return "\n".join(glance), thread
+
+
+def _step_problem(step: Step) -> str:
+    if step.code is None:
+        return f"• {step.name}: didn't run, the cycle was out of time"
+    if step.code == EXIT_TIME_LIMIT:
+        return f"• {step.name}: ran out of time; its results are partial"
+    return f"• {step.name}: couldn't run (exit {step.code})"
 
 
 def digest_message(digest: dict, url: Optional[str]) -> Tuple[str, List[str]]:
@@ -452,6 +489,19 @@ def cli(argv: Sequence[str] = None) -> int:
     parser.add_argument("--tests_url", help="URL to download the suites from.")
     parser.add_argument("--tests_dir", help="Directory to read local suites from.")
     parser.add_argument(
+        "--time_limit",
+        type=_time_limit_type,
+        default=DEFAULT_CYCLE_TIME_LIMIT,
+        metavar="MINUTES",
+        help=(
+            "How long the whole cycle may run (default: "
+            f"{DEFAULT_CYCLE_TIME_LIMIT}). Each step gets what's left: when it "
+            "runs out, the run stops and reports what it got to Slack and the "
+            "Information Radiator, as having run out of time, and the steps "
+            "after it aren't started."
+        ),
+    )
+    parser.add_argument(
         "--output_dir",
         default=DEFAULT_OUTPUT_DIR,
         help="Base directory for results; each step gets its own subdirectory.",
@@ -473,6 +523,11 @@ def cli(argv: Sequence[str] = None) -> int:
         parser.error("The cycle sets --cycle_id itself.")
     if _passes_env(harness_args):
         parser.error("Pass --env to the cycle, before the `--`.")
+    if _passes_time_limit(harness_args):
+        parser.error(
+            "Pass --time_limit to the cycle, before the `--`: it's for the "
+            "whole cycle, and each step gets what's left of it."
+        )
     if not (args.acceptance or args.pathfinder or args.performance):
         parser.error(
             "Nothing to run: pass --acceptance, --pathfinder or --performance."
@@ -510,12 +565,14 @@ def cli(argv: Sequence[str] = None) -> int:
         "The cycle",
         slack_notifier(lambda minutes: cycle_stopped_message(args.env, steps, minutes)),
     )
-    run_steps(steps)
+    run_steps(steps, args.time_limit)
 
     _banner("CYCLE SUMMARY")
     for step in steps:
-        status = "ok" if step.code == 0 else f"FAILED (exit {step.code})"
-        print(f"  {step.name:<40} {status:<20} {step.minutes:>6.1f} min", flush=True)
+        print(
+            f"  {step.name:<40} {step.status:<22} {step.minutes:>6.1f} min",
+            flush=True,
+        )
 
     # the radiator the steps reported to: from after the `--`, or the env
     radiator = RadiatorClient(
@@ -524,14 +581,28 @@ def cli(argv: Sequence[str] = None) -> int:
         logger=logger,
     )
     slacker = _slacker(args.output_dir, logger) if radiator.enabled else None
+    posted = False
     if slacker is not None:
         # the cycle ran; a Slack failure now is worth a warning, not a crash
         try:
-            post_cycle_report(cycle_id, steps, radiator, slacker, logger)
+            posted = post_cycle_report(cycle_id, steps, radiator, slacker, logger)
         except Exception as e:
             logger.warning(f"Couldn't post the cycle board: {type(e).__name__}: {e}")
     elif not radiator.enabled:
         logger.info("No Information Radiator configured, so no cycle board.")
+    never_ran = [step.name for step in steps if step.code is None]
+    if never_ran and not posted:
+        # without the board, nothing else says these steps never ran
+        try:
+            (slacker or _slacker(args.output_dir, logger)).post_notification(
+                [
+                    out_of_time_message(
+                        "The run cycle", args.env, args.time_limit, never_ran
+                    )
+                ]
+            )
+        except Exception as e:
+            logger.warning(f"Couldn't tell Slack: {type(e).__name__}: {e}")
     return 1 if any(step.code != 0 for step in steps) else 0
 
 

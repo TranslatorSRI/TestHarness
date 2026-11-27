@@ -190,6 +190,10 @@ class RunFinish(BaseModel):
     ended_at: datetime
     # Overall status counts, as reported in Slack.
     counts: Dict[str, int] = Field(default_factory=dict)
+    # Why the run ended before running every test, or None when it ran them
+    # all. "time_limit": it ran out of its --time_limit. A stopped run's
+    # results are real but partial, so it's no baseline for the next run.
+    stopped: Optional[Literal["time_limit"]] = None
 
 
 class RunPayload(BaseModel):

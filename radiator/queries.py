@@ -157,6 +157,14 @@ def get_run(session: Session, run_id: uuid.UUID) -> Optional[Run]:
     )
 
 
+def complete() -> list:
+    """Conditions for a run that ran every test: finished, and not stopped
+    early. Only these are baselines and history: a run cut off at its time
+    limit has real results, but comparing against it would show every test it
+    never got to as new."""
+    return [Run.ended_at.is_not(None), Run.stopped.is_(None)]
+
+
 def previous_run(session: Session, run: Run) -> Optional[Run]:
     """The run before this one in the same series.
 
@@ -169,8 +177,8 @@ def previous_run(session: Session, run: Run) -> Optional[Run]:
         .where(
             *_same_series(run),
             Run.started_at < run.started_at,
-            # a crashed or still-uploading run isn't a fair baseline
-            Run.ended_at.is_not(None),
+            # a crashed, still-uploading or cut-off run isn't a fair baseline
+            *complete(),
         )
         .order_by(Run.started_at.desc())
         .limit(1)
@@ -197,7 +205,7 @@ def series_history(
             .where(
                 *_same_series(run),
                 Run.started_at < run.started_at,
-                Run.ended_at.is_not(None),
+                *complete(),
             )
             .order_by(Run.started_at.desc())
             .limit(max(limit - 1, 0))
@@ -535,7 +543,7 @@ def agent_trends(
         Run.started_at >= since,
         Run.target.is_(None),
         Run.query_type.is_(None),
-        Run.ended_at.is_not(None),
+        *complete(),
     ]
     if env:
         run_filter.append(Run.env == env)
@@ -623,7 +631,7 @@ def performance_series(
                 PerformanceResult.status != "SKIPPED",
                 Run.env.is_not_distinct_from(run.env),
                 Run.started_at < run.started_at,
-                Run.ended_at.is_not(None),
+                *complete(),
             )
             .order_by(Run.started_at.desc())
             .limit(max(limit - 1, 0))
@@ -648,6 +656,8 @@ def is_performance_run(run: Run) -> bool:
 # --- live updates ---------------------------------------------------------------
 
 RUNNING, STALLED, FINISHED = "running", "stalled", "finished"
+# finished, but cut off at its time limit with tests left to run
+OUT_OF_TIME = "out_of_time"
 # An open run that hasn't uploaded anything for this long is taken to have
 # died (a crash, a killed pod) rather than to be still going. HelmsDeep's
 # ~70 minutes without an upload is the longest quiet stretch a live run has.
@@ -656,7 +666,7 @@ STALE_AFTER = timedelta(hours=2)
 
 def run_state(run: Run, now: Optional[datetime] = None) -> str:
     if run.ended_at is not None:
-        return FINISHED
+        return OUT_OF_TIME if run.stopped == "time_limit" else FINISHED
     now = now or datetime.now(timezone.utc)
     if run.updated_at is not None and now - run.updated_at > STALE_AFTER:
         return STALLED
@@ -772,6 +782,7 @@ def run_json(run: Run, with_results: bool = False) -> dict:
         "cycle_id": str(run.cycle_id) if run.cycle_id else None,
         "started_at": run.started_at.isoformat(),
         "ended_at": run.ended_at.isoformat() if run.ended_at else None,
+        "stopped": run.stopped,
         "counts": run.counts,
     }
     if with_results:

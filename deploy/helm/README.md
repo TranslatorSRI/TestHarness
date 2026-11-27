@@ -113,13 +113,22 @@ still running (a Job created by hand ignores the CronJob's
 `suspend: true` on an environment (or `digest.suspend`, `sweep.suspend`) keeps
 its CronJob but stops it from running.
 
-### A run that hit its deadline
+### A run that ran out of time
 
-A cycle stops at `activeDeadlineSeconds` (4 hours by default; a sweep at
-`sweep.activeDeadlineSeconds`). The deadline is on the pod, not the Job, so the
-pod stays after it, `Failed` with reason `DeadlineExceeded`, and its log ends
-with a line saying the cycle got SIGTERM and after how long. Its log is there
-until the Job is cleaned up, after the CronJob's three most recent failed Jobs:
+A cycle stops itself after `timeLimitMinutes` (4 hours by default; a sweep after
+`sweep.timeLimitMinutes`, 6 hours). Each step gets what's left of it. The step
+running when it runs out stops, and its results so far go to the radiator and
+Slack as usual, marked as having run out of time. The steps after it don't
+start, and the cycle's board says so. The Job then fails, since the cycle
+didn't finish.
+
+The pod's `activeDeadlineSeconds` is only a backstop, 30 minutes past the time
+limit, for a cycle that's wedged. If it does hit it, the cycle posts a short
+Slack message saying it was stopped and which step was cut off. The deadline is
+on the pod, not the Job, so the pod stays after it, `Failed` with reason
+`DeadlineExceeded`, and its log ends with a line saying the cycle got SIGTERM
+and after how long. Its log is there until the Job is cleaned up, after the
+CronJob's three most recent failed Jobs:
 
 ```
 kubectl -n translator get pods -l app.kubernetes.io/component=cycle

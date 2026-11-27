@@ -201,8 +201,15 @@ def elapsed(run) -> str:
 
 
 def run_badge(run) -> Markup:
-    """A running or didn't-finish badge for an open run; nothing once done."""
+    """A running or didn't-finish badge for an open run, an out-of-time badge
+    for one cut off at its time limit; nothing for one that ran every test."""
     state = queries.run_state(run)
+    if state == queries.OUT_OF_TIME:
+        return Markup(
+            '<span class="badge warn" title="Stopped at its time limit before '
+            "every test ran: these results are partial, and later runs aren't "
+            'compared against it">ran out of time</span>'
+        )
     if state == queries.RUNNING:
         return Markup(
             '<span class="badge live"><span class="pulse" aria-hidden="true"></span>'

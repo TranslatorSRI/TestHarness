@@ -8,7 +8,7 @@
   <h1><span class="muted">#{{ run.number }}</span> {{ run.suite }} <span class="muted">· {{ run.env or 'no env' }}</span></h1>
   <div class="meta" id="run-meta" data-live-region>
     <span>{{ when(run.started_at) }}</span>
-    <span>{% if run.ended_at %}Duration {{ duration(run) }}{% else %}{{ run_badge(run) }} for {{ elapsed(run) }}{% endif %}</span>
+    <span>{% if run.ended_at %}Duration {{ duration(run) }} {{ run_badge(run) }}{% else %}{{ run_badge(run) }} for {{ elapsed(run) }}{% endif %}</span>
     <span class="badge">load test</span>
     {% if run.target %}<span class="badge" title="{{ run.target_url }}">target: {{ run.target }}</span>{% endif %}
     {% if run.trapi_version %}<span class="badge" title="The TRAPI version the queries were written in">TRAPI {{ trapi_minor(run.trapi_version) }}</span>{% endif %}
@@ -17,6 +17,9 @@
 </div>
 
 <div class="live-note" data-live-indicator hidden></div>
+{% if run.stopped == 'time_limit' %}
+<div class="callout" role="note"><b>Ran out of time.</b> The run was stopped at its time limit before every test ran: these results are partial, and later runs aren't compared against this one.</div>
+{% endif %}
 {% if trapi_change %}
 <div class="callout" role="note"><b>TRAPI {{ trapi_change[0] }} → {{ trapi_change[1] }}</b> since the previous run: some of the changes may come from the version change rather than from the services.</div>
 {% endif %}

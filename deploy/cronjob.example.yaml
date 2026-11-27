@@ -45,14 +45,12 @@ spec:
         spec:
           restartPolicy: Never
 
-          # Hard ceiling, comfortably above the expected duration. With the
-          # `mixed` profile a sweep is roughly 70 min (ARS) + 61 min per ARA
-          # ~= 4.2 h; the single-class default profile is ~2.7 h. 6 h leaves
-          # room without letting a wedged run hold the schedule indefinitely.
-          # It's the pod's deadline, not the Job's: at a Job deadline
+          # A backstop only: the sweep stops itself at its --time_limit (6 h,
+          # below) and reports; this leaves 30 min after that for the last
+          # reports. It's the pod's deadline, not the Job's: at a Job deadline
           # Kubernetes deletes the pod, and its logs with it; at a pod deadline
           # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
-          activeDeadlineSeconds: 21600
+          activeDeadlineSeconds: 23400
 
           # HelmsDeep drains in-flight queries at the end of a run (the ARS
           # completion sidecar keeps polling past the failure threshold). Give
@@ -71,6 +69,14 @@ spec:
                 # The environment the targets below are in.
                 - "--env"
                 - "ci"
+                # With the `mixed` profile a sweep is roughly 70 min (ARS) +
+                # 61 min per ARA ~= 4.2 h; the single-class default profile is
+                # ~2.7 h. 6 h leaves room without letting a wedged run hold the
+                # schedule indefinitely. Each target gets what's left; one
+                # that runs out stops and reports what it got, and the rest
+                # don't start.
+                - "--time_limit"
+                - "360"
                 # --download takes the upstream Tests repo's main branch. To
                 # pin a branch or a fork, replace it with --tests_url (which
                 # implies --download). Both belong to the sweep, NOT after the

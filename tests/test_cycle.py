@@ -405,3 +405,80 @@ def test_a_cycle_stopped_after_its_steps_was_posting_the_board():
     text = cycle.cycle_stopped_message("ci", steps, 240)
     assert "Cut off" not in text
     assert "posting the cycle board" in text
+
+
+def _steps():
+    return [
+        Step("acceptance (mvp_tests)", ["test-harness", "--env", "ci", "load", "a"]),
+        Step("pathfinder (p)", ["test-harness", "--env", "ci", "load", "p"]),
+        Step("performance (ars)", ["test-harness", "--env", "ci", "load", "x"]),
+    ]
+
+
+def test_each_step_gets_whats_left_of_the_cycles_time_limit(monkeypatch):
+    calls = []
+    clock = [1000.0]
+
+    def run(cmd):
+        calls.append(cmd)
+        clock[0] += 60 * 60  # each step takes an hour
+        return mock.Mock(returncode=0)
+
+    monkeypatch.setattr(cycle.subprocess, "run", run)
+    monkeypatch.setattr(cycle.time, "time", lambda: clock[0])
+    monkeypatch.setattr("test_harness.sweep.time.time", lambda: clock[0])
+    cycle.run_steps(_steps(), time_limit=240)
+    limits = [float(cmd[cmd.index("--time_limit") + 1]) for cmd in calls]
+    assert limits == [240, 180, 120]
+
+
+def test_a_step_that_runs_out_of_time_ends_the_cycle(monkeypatch):
+    codes = iter([0, cycle.EXIT_TIME_LIMIT])
+    monkeypatch.setattr(
+        cycle.subprocess, "run", lambda cmd: mock.Mock(returncode=next(codes))
+    )
+    steps = _steps()
+    cycle.run_steps(steps, time_limit=240)
+    assert [s.status for s in steps] == [
+        "ok",
+        "ran out of time",
+        "not run: out of time",
+    ]
+
+    summary, thread = cycle_message({"env": "ci", "rows": []}, steps, None)
+    assert "*CI run cycle ran out of time*" in summary
+    assert "1 of 3 steps ran" in summary
+    assert "pathfinder (p): ran out of time; its results are partial" in thread[0]
+    assert "performance (ars): didn't run, the cycle was out of time" in thread[0]
+
+
+@mock.patch("test_harness.cycle.subprocess.run")
+def test_steps_that_never_ran_reach_slack_without_a_board(run, monkeypatch, tmp_path):
+    monkeypatch.delenv("RADIATOR_URL", raising=False)
+    monkeypatch.delenv("RADIATOR_TOKEN", raising=False)
+    run.return_value = mock.Mock(returncode=cycle.EXIT_TIME_LIMIT)
+    notes = []
+    slacker = mock.Mock(post_notification=lambda messages: notes.extend(messages))
+    monkeypatch.setattr(cycle, "_slacker", lambda *a: slacker)
+    code = cli(
+        [
+            "--env",
+            "ci",
+            "--acceptance",
+            "a",
+            "--pathfinder",
+            "p",
+            "--output_dir",
+            str(tmp_path),
+        ]
+    )
+    assert code == 1
+    (note,) = notes
+    assert "The run cycle in `ci` ran out of its 240 min time limit" in note
+    assert "Never started: pathfinder (p)" in note
+
+
+def test_the_time_limit_belongs_to_the_cycle(capsys):
+    with pytest.raises(SystemExit):
+        cli(["--env", "ci", "--acceptance", "a", "--", "--time_limit=5"])
+    assert "Pass --time_limit to the cycle" in capsys.readouterr().err

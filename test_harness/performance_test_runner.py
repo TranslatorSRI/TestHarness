@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -205,13 +206,24 @@ def _stream(cmd: List[str], logger: logging.Logger, extra_env: Optional[Dict] = 
         errors="replace",
         bufsize=1,
         env=env,
+        # its own process group, so stopping it stops the locust it starts too
+        start_new_session=True,
     ) as proc:
-        for line in proc.stdout:
-            line = line.rstrip()
-            if not line.strip():
-                continue
-            logger.info(f"{LOG_TAG} {line}")
-            tail.append(line)
+        try:
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line.strip():
+                    continue
+                logger.info(f"{LOG_TAG} {line}")
+                tail.append(line)
+        except BaseException:
+            # eg the run's time limit or a Ctrl-C: stop HelmsDeep and its
+            # locust now, rather than have the `with` wait the load test out
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                proc.kill()
+            raise
         exit_code = proc.wait()
     return exit_code, "\n".join(tail)
 

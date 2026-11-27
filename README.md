@@ -444,12 +444,21 @@ Forbid` so the next schedule can't start a second overlapping sweep,
 progress, and CPU requests that keep the load generator from measuring its own
 scheduling delay.
 
-When a sweep or cycle hits its `activeDeadlineSeconds` (or the pod is otherwise
-stopped), it posts a short Slack message saying so: how long it ran, which
-step was cut off, which finished and which never started. Without it a run
-that ran out of time would just go quiet, which looks the same as the harness
-itself crashing. The message goes out in the pod's
-`terminationGracePeriodSeconds`, and only when Slack is configured.
+The harness keeps its own time. `test-harness --time_limit MINUTES` stops a
+run when the time runs out and reports what it got: Slack's report is headed
+as having run out of time, and the Information Radiator records the run as
+stopped at its time limit, shows it as such, and doesn't compare later runs
+against it. The harness then exits with 124. `test-harness-sweep` and
+`test-harness-cycle` take a `--time_limit` for the whole sweep or cycle (6 and
+4 hours by default) and give each step what's left. Steps that never got to
+start are listed in the cycle's board message, or in a Slack message of their
+own.
+
+The pod's `activeDeadlineSeconds` is then only a backstop, set above the time
+limit. If a sweep or cycle does hit it (or the pod is otherwise stopped), it
+posts a short Slack message saying so: how long it ran, which step was cut
+off, which finished and which never started. That message goes out in the
+pod's `terminationGracePeriodSeconds`, and only when Slack is configured.
 
 Budget the time before you schedule it: with `--performance_profile mixed` a
 four-service sweep is roughly 70 min for the ARS plus 61 min per ARA (~4.2

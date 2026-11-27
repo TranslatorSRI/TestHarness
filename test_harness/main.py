@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import time
+from contextlib import nullcontext
 from argparse import ArgumentParser, ArgumentTypeError
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -15,6 +16,7 @@ from typing import List, Tuple
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+import gevent
 import httpx
 from setproctitle import setproctitle
 from translator_testing_model.datamodel.pydanticmodel import PerformanceTestCase
@@ -62,6 +64,25 @@ setup_logger()
 # green and silent indefinitely.
 EXIT_OK = 0
 EXIT_COULD_NOT_RUN = 1
+# The run reached its --time_limit and stopped with tests left to run. Its
+# partial results were still reported, but it didn't do the whole run. 124 is
+# what timeout(1) exits with.
+EXIT_TIME_LIMIT = 124
+
+
+class TimeLimitReached(BaseException):
+    """Raised into the run when its --time_limit runs out. A BaseException,
+    like KeyboardInterrupt, so no ``except Exception`` in a runner swallows it
+    and carries on with the next test."""
+
+
+def time_limit(seconds):
+    """A context that raises TimeLimitReached in the run after ``seconds``, or
+    does nothing for None. gevent's timer interrupts whatever the run is
+    waiting on: an ARS poll, a query, or HelmsDeep's output."""
+    if seconds is None:
+        return nullcontext()
+    return gevent.Timeout(max(seconds, 0.001), TimeLimitReached())
 
 
 def url_type(arg):
@@ -184,11 +205,21 @@ def _fmt_duration(seconds: float) -> str:
     return f"{seconds} s"
 
 
-def report_summary(suite, duration, queried_envs, links, collector, headline=()) -> str:
+def report_summary(
+    suite, duration, queried_envs, links, collector, headline=(), stopped=None
+) -> str:
     """The top message of a finished run's Slack report: what ran, the
-    verdict at a glance, and where to read more."""
+    verdict at a glance, and where to read more. ``stopped`` is a line saying
+    why the run ended early, for one that did."""
     envs = ", ".join(env.upper() for env in sorted(queried_envs))
-    lines = [f"*{suite}* finished on *{envs}* · {_fmt_duration(duration)}"]
+    if stopped:
+        lines = [
+            f":hourglass: *{suite}* ran out of time on *{envs}* · "
+            f"{_fmt_duration(duration)}",
+            stopped,
+        ]
+    else:
+        lines = [f"*{suite}* finished on *{envs}* · {_fmt_duration(duration)}"]
     glance = [collector.acceptance_glance(), *headline, collector.performance_glance()]
     lines += [f"> {line}" for line in glance if line]
     return "\n".join(lines) + links
@@ -205,6 +236,7 @@ def post_report(
     results_name,
     logger,
     prefix="",
+    stopped=None,
 ):
     """A finished run's report: a message to read at a glance,
     with the radiator's history chart (with ``radiator``), and in its thread
@@ -238,7 +270,9 @@ def post_report(
         for filename, content, comment in collector.render_performance_artifacts():
             files.append(Attachment(f"{prefix}{filename}", content, comment))
     slacker.post_thread(
-        report_summary(suite, duration, queried_envs, links, collector, glance),
+        report_summary(
+            suite, duration, queried_envs, links, collector, glance, stopped
+        ),
         image=charts[0] if charts else None,
         details=thread,
         files=files,
@@ -285,6 +319,9 @@ def history_charts(radiator, collector, suite, prefix) -> List[Attachment]:
 
 def main(args):
     """Main Test Harness entrypoint."""
+    # the time limit counts from here, so a cycle's budget covers setup too
+    started = time.time()
+    limit_minutes = args.get("time_limit")
     qid = str(uuid4())[:8]
     logger = get_logger(qid, args["log_level"])
     if bool(args.get("target_url")) != bool(args.get("target")):
@@ -440,8 +477,13 @@ def main(args):
     # names the result files: the suite and when it started
     results_name = f"{args['suite']}: {datetime.now().strftime('%Y_%m_%d_%H_%M')}"
     start_time = time.time()
+    stopped = None
+    remaining = limit_minutes * 60 - (time.time() - started) if limit_minutes else None
     try:
-        run_tests(tests, collector, logger, args, query_runner=query_runner)
+        with time_limit(remaining):
+            run_tests(tests, collector, logger, args, query_runner=query_runner)
+    except TimeLimitReached:
+        stopped = "time_limit"
     except BaseException:
         # Keep what was collected, but leave the run open: a run that died
         # halfway must not read as finished.
@@ -450,9 +492,17 @@ def main(args):
         log_radiator_outcome(radiator, tests, logger)
         save_radiator_run(radiator, output_dir, target_prefix, logger, force=True)
         raise
+    stopped_line = None
+    if stopped:
+        done = len(radiator.payload.results) + len(radiator.payload.performance)
+        stopped_line = (
+            f"Stopped at its {limit_minutes:g} min time limit with {done} of "
+            f"{n_assets} tests done; the rest didn't run."
+        )
+        logger.warning(f"The run ran out of time. {stopped_line}")
     # Close out the radiator before Slack, whose failures below would
     # otherwise cost it the run.
-    radiator.finish_run(counts=collector.acceptance_report)
+    radiator.finish_run(counts=collector.acceptance_report, stopped=stopped)
     log_radiator_outcome(radiator, tests, logger)
     save_radiator_run(radiator, output_dir, target_prefix, logger)
 
@@ -468,6 +518,7 @@ def main(args):
         results_name,
         logger,
         prefix=target_prefix,
+        stopped=stopped_line,
     )
 
     if args["json_output"]:
@@ -477,6 +528,8 @@ def main(args):
         with open(report_path, "w") as f:
             json.dump(collector.acceptance_report, f)
 
+    if stopped:
+        return EXIT_TIME_LIMIT
     logger.info("All tests have completed!")
     return EXIT_OK
 
@@ -547,6 +600,16 @@ def _trapi_version(value: str) -> str:
     except ValueError as e:
         raise ArgumentTypeError(str(e))
     return value
+
+
+def _minutes(value: str) -> float:
+    try:
+        minutes = float(value)
+    except ValueError:
+        raise ArgumentTypeError(f"Not a number of minutes: {value!r}")
+    if minutes <= 0:
+        raise ArgumentTypeError("--time_limit must be more than 0 minutes")
+    return minutes
 
 
 def cli():
@@ -732,6 +795,20 @@ def cli():
             "top-level fields. Queries to CI always add bypass_cache: true "
             "unless it is given here. Defaults to $QUERY_PARAMETERS. Not used by "
             "performance tests, which send HelmsDeep's own queries."
+        ),
+    )
+
+    parser.add_argument(
+        "--time_limit",
+        type=_minutes,
+        default=None,
+        metavar="MINUTES",
+        help=(
+            "Stop the run after this many minutes, counted from the start, and "
+            "report what it got: Slack and the Information Radiator say it ran "
+            "out of time, and the harness exits with 124. test-harness-cycle "
+            "and test-harness-sweep pass each step what's left of their own "
+            "limit. No limit by default."
         ),
     )
 

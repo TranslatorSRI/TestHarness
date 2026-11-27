@@ -16,6 +16,7 @@ from unittest import mock
 import pytest
 
 from test_harness.sweep import (
+    EXIT_TIME_LIMIT,
     TARGETS_ENV,
     build_command,
     cli,
@@ -343,7 +344,7 @@ def test_the_sweep_tells_slack_which_target_was_cut_off(monkeypatch):
         built["what"] = what
 
     def fake_notifier(build):
-        built["build"] = build
+        built.setdefault("builds", []).append(build)
 
     def fake_run_sweep(targets, suite, results, **kwargs):
         results.append(("ars", 0, 600.0))
@@ -363,8 +364,65 @@ def test_the_sweep_tells_slack_which_target_was_cut_off(monkeypatch):
             "bte=http://c",
         ]
     )
-    text = built["build"](360)
+    at_sigterm, never_ran = built["builds"]
+    text = at_sigterm(360)
     assert "The `perf` sweep in `ci`" in text
     assert "*Done:* ars: finished, 10 min" in text
     assert "*Cut off:* aragorn" in text
     assert "*Never started:* bte" in text
+    # and since only ars ran, Slack hears which never did
+    assert "ran out of its 360 min time limit" in never_ran(0)
+    assert "Never started: aragorn, bte" in never_ran(0)
+
+
+def _fake_harness(codes):
+    """Stands in for subprocess.run: each call exits with the next code, and
+    the commands are kept."""
+    calls = []
+
+    def run(cmd):
+        calls.append(cmd)
+        return mock.Mock(returncode=codes[len(calls) - 1])
+
+    return run, calls
+
+
+def test_each_target_gets_whats_left_of_the_sweeps_time_limit(monkeypatch):
+    run, calls = _fake_harness([0, 0])
+    monkeypatch.setattr(subprocess, "run", run)
+    assert run_sweep(TARGETS[:2], "perf", time_limit=120) == 0
+    for cmd in calls:
+        # among the harness's own flags, in front of the subcommand
+        flag = cmd.index("--time_limit")
+        assert flag < cmd.index("load")
+        assert 119 < float(cmd[flag + 1]) <= 120
+
+
+def test_a_target_that_runs_out_of_time_ends_the_sweep(monkeypatch, capsys):
+    run, calls = _fake_harness([0, EXIT_TIME_LIMIT])
+    monkeypatch.setattr(subprocess, "run", run)
+    assert run_sweep(TARGETS, "perf", time_limit=120) == 1
+    assert len(calls) == 2  # arax and bte never started
+    out = capsys.readouterr().out
+    assert "ran out of time" in out
+    assert "not run: out of time" in out
+    assert "not run: arax, bte" in out
+
+
+def test_without_a_time_limit_nothing_is_passed(monkeypatch):
+    run, calls = _fake_harness([0])
+    monkeypatch.setattr(subprocess, "run", run)
+    run_sweep(TARGETS[:1], "perf")
+    assert "--time_limit" not in calls[0]
+
+
+def test_the_time_limit_belongs_to_the_sweep(capsys):
+    with pytest.raises(SystemExit):
+        cli(["--suite", "p", "--env", "ci", "ars=http://a", "--", "--time_limit", "5"])
+    assert "Pass --time_limit to the sweep" in capsys.readouterr().err
+
+
+def test_the_harness_and_the_sweep_agree_on_the_time_limit_exit_code():
+    from test_harness.main import EXIT_TIME_LIMIT as harness_code
+
+    assert EXIT_TIME_LIMIT == harness_code

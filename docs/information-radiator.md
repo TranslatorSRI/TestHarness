@@ -70,7 +70,10 @@ deploy/
   seconds, pause while the tab is hidden, and refetch only when something
   changed. An open run that hasn't uploaded anything for 2 hours is marked
   *didn't finish* and no longer polled. Performance runs have nothing to show
-  until HelmsDeep finishes.
+  until HelmsDeep finishes. A run the harness stopped at its `--time_limit` is
+  finished but marked *ran out of time*, with a flag on its cycle's board: its
+  results are partial, so later runs aren't compared against it, and it's left
+  out of the history charts.
 - **Runs**: every run, newest first, with its status breakdown, pass rate, and
   duration; filter by suite and environment.
 - **A run**: pass rate against the previous run, regressions and fixes, a

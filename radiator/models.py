@@ -72,6 +72,9 @@ class Run(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     counts: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    # why it ended before running every test (see radiator_schema.RunFinish),
+    # or None when it ran them all
+    stopped: Mapped[Optional[str]] = mapped_column(String(32))
     # Also touched by every results upload: an open run that hasn't changed
     # in a while is taken as one that died rather than one still going.
     updated_at: Mapped[datetime] = mapped_column(

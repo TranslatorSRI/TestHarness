@@ -390,6 +390,22 @@ def trapi_flag(previous: Optional[Run], run: Run) -> list[Flag]:
     ]
 
 
+def stopped_flag(run: Run) -> list[Flag]:
+    """A flag when the run was cut off at its time limit: its results are
+    partial, so missing tests aren't news about the services."""
+    if run.stopped != "time_limit":
+        return []
+    return [
+        Flag(
+            "out_of_time",
+            "Harness",
+            "Ran out of time: the run was stopped at its time limit before "
+            "every test ran, so these results are partial",
+            run.id,
+        )
+    ]
+
+
 def _changes_by_agent(diff: queries.Diff) -> list[AgentChanges]:
     by_agent: dict = {}
     for kind in ("regression", "fixed"):
@@ -456,6 +472,7 @@ def _result_row(session: Session, run: Run, kind: str) -> Row:
         row.fixed = diff.count("fixed")
         row.changes = _changes_by_agent(diff)
         row.flags = trapi_flag(base, run) + result_flags(base, run)
+    row.flags = stopped_flag(run) + row.flags
     row.verdict = _result_verdict(row)
     return row
 
@@ -478,8 +495,10 @@ def _perf_rows(session: Session, run: Run) -> list[Row]:
             history=[p.max_sustainable_concurrency for _, p in history],
             perf=perf,
         )
-        row.flags = trapi_flag(previous_run, run) + performance_flags(
-            run, perf, previous
+        row.flags = (
+            stopped_flag(run)
+            + trapi_flag(previous_run, run)
+            + performance_flags(run, perf, previous)
         )
         row.verdict = _perf_verdict(row, previous)
         rows.append(row)

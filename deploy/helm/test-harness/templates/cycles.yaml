@@ -3,7 +3,7 @@
 {{- range $env := .Values.cycles.environments }}
 {{- $name := required "each cycles.environments entry needs a name" $env.name }}
 {{- $pick := dict }}
-{{- range $field := list "acceptance" "pathfinder" "performance" "performanceProfile" "activeDeadlineSeconds" "resources" }}
+{{- range $field := list "acceptance" "pathfinder" "performance" "performanceProfile" "timeLimitMinutes" "activeDeadlineSeconds" "resources" }}
 {{- $_ := set $pick $field (ternary (get $env $field) (get $d $field) (hasKey $env $field)) }}
 {{- end }}
 {{- $targets := $env.performanceTargets | default list }}
@@ -46,10 +46,12 @@ spec:
             app.kubernetes.io/instance: {{ $.Release.Name }}
             app.kubernetes.io/component: cycle
         spec:
+          # Only a backstop: the cycle stops itself at its --time_limit and
+          # reports. This leaves 30 min after that for the last reports.
           # The deadline is the pod's, not the Job's: at a Job deadline
           # Kubernetes deletes the pod, and its logs with it. At a pod deadline
           # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
-          activeDeadlineSeconds: {{ $pick.activeDeadlineSeconds }}
+          activeDeadlineSeconds: {{ $pick.activeDeadlineSeconds | default (add (mul (required (printf "cycles.environments[%s]: timeLimitMinutes is required" $name) $pick.timeLimitMinutes) 60) 1800) }}
           terminationGracePeriodSeconds: 120
           {{- $container := include "harness.cycleContainer" (dict "root" $ "env" $env "testEnv" $testEnv "pick" $pick "targets" $targets) }}
           {{- include "harness.podSpec" (dict "root" $ "container" $container) | nindent 10 }}
@@ -66,6 +68,8 @@ spec:
     - --env
     - {{ .testEnv | quote }}
     {{- include "harness.testsArgs" $ | trim | nindent 4 }}
+    - --time_limit
+    - {{ .pick.timeLimitMinutes | quote }}
     {{- /* one suite, or a list of them, run in order */}}
     {{- $acceptance := .pick.acceptance }}
     {{- if not (kindIs "slice" $acceptance) }}

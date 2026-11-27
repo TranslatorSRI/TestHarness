@@ -93,7 +93,7 @@ def finish_run(session: Session, run_id: uuid.UUID, finish: schema.RunFinish) ->
     session.execute(
         update(Run)
         .where(Run.id == run_id)
-        .values(ended_at=finish.ended_at, counts=finish.counts)
+        .values(ended_at=finish.ended_at, counts=finish.counts, stopped=finish.stopped)
     )
 
 

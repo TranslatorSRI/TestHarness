@@ -44,12 +44,12 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          # A cycle takes ~2 h; 4 h leaves room without letting a wedged run
-          # hold the next day's environment. It's the pod's deadline, not the
-          # Job's: at a Job deadline Kubernetes deletes the pod, and its logs
-          # with it; at a pod deadline the pod stays, Failed
-          # (DeadlineExceeded), for `kubectl logs`.
-          activeDeadlineSeconds: 14400
+          # A backstop only: the cycle stops itself at its --time_limit (4 h,
+          # below) and reports; this leaves 30 min after that for the last
+          # reports. It's the pod's deadline, not the Job's: at a Job deadline
+          # Kubernetes deletes the pod, and its logs with it; at a pod deadline
+          # the pod stays, Failed (DeadlineExceeded), for `kubectl logs`.
+          activeDeadlineSeconds: 16200
           terminationGracePeriodSeconds: 120
           containers:
             - name: test-harness
@@ -59,6 +59,11 @@ spec:
               args:
                 - "--env"
                 - "dev"                             # CHANGE PER ENVIRONMENT
+                # A cycle takes ~2 h; 4 h leaves room without letting a wedged
+                # run hold the next day's environment. Each step gets what's
+                # left; one that runs out stops and reports what it got.
+                - "--time_limit"
+                - "240"
                 - "--download"
                 - "--acceptance"
                 - "mvp_tests"

@@ -73,7 +73,7 @@
         <td class="num">{{ pct(pass_rate(c)) }}</td>
         <td class="num">{{ c.values()|sum }}</td>
         {% endif %}
-        <td class="num nowrap">{% if run.ended_at %}{{ duration(run) }}{% else %}{{ run_badge(run) }}{% if run_state(run) == 'running' %}<br><span class="muted">{{ elapsed(run) }}</span>{% endif %}{% endif %}</td>
+        <td class="num nowrap">{% if run.ended_at %}{{ duration(run) }}{% if run.stopped %}<br>{{ run_badge(run) }}{% endif %}{% else %}{{ run_badge(run) }}{% if run_state(run) == 'running' %}<br><span class="muted">{{ elapsed(run) }}</span>{% endif %}{% endif %}</td>
         <td>{% if run.origin == 'zebrunner_import' %}<span class="badge" title="Imported from Zebrunner: result counts, response times and some ranks weren't recorded">imported</span>{% endif %}</td>
       </tr>
     {% endfor %}

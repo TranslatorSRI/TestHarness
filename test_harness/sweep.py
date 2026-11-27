@@ -36,7 +36,7 @@ import signal
 import subprocess
 import sys
 import time
-from argparse import ArgumentParser, RawDescriptionHelpFormatter
+from argparse import ArgumentParser, ArgumentTypeError, RawDescriptionHelpFormatter
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from test_harness.utils import TEST_ENVS
@@ -51,6 +51,19 @@ TARGETS_ENV = "PERFORMANCE_TARGETS"
 DEFAULT_OUTPUT_DIR = "test_results"
 
 HARNESS = "test-harness"
+
+# What the harness exits with when a run reached its --time_limit (see
+# test_harness.main.EXIT_TIME_LIMIT; not imported, as main monkey-patches).
+EXIT_TIME_LIMIT = 124
+# How long the sweep and the cycle may run by default, in minutes: the whole
+# run, every step included. Each step gets what's left, and stops and reports
+# when that runs out. A pod's activeDeadlineSeconds should leave room after
+# this for the last reports to go out; it's only the backstop.
+DEFAULT_SWEEP_TIME_LIMIT = 360
+DEFAULT_CYCLE_TIME_LIMIT = 240
+# A step isn't started with less time than this left: it would only open a
+# run in the radiator to close it again.
+MIN_STEP_MINUTES = 1.0
 
 # Flags that belong to a harness *subcommand* rather than to the harness
 # itself. The sweep passes everything after `--` in front of the subcommand,
@@ -129,6 +142,46 @@ def build_command(
         if tests_dir:
             cmd += ["--tests_dir", tests_dir]
     return cmd
+
+
+def with_time_limit(cmd: List[str], minutes: Optional[float]) -> List[str]:
+    """``cmd`` with ``--time_limit`` among the harness's own flags, in front
+    of the subcommand like the rest."""
+    if minutes is None:
+        return list(cmd)
+    return [cmd[0], "--time_limit", f"{minutes:.2f}", *cmd[1:]]
+
+
+def minutes_left(deadline: Optional[float]) -> Optional[float]:
+    """Minutes until ``deadline`` (a time.time()), or None without one."""
+    return None if deadline is None else (deadline - time.time()) / 60
+
+
+def step_status(code: Optional[int], out_of_time: bool) -> str:
+    """How a step went, for the logs and Slack."""
+    if code is None:
+        return "not run: out of time" if out_of_time else "not run"
+    if code == 0:
+        return "ok"
+    if code == EXIT_TIME_LIMIT:
+        return "ran out of time"
+    return f"FAILED (exit {code})"
+
+
+def _time_limit_type(value: str) -> float:
+    try:
+        minutes = float(value)
+    except ValueError:
+        raise ArgumentTypeError(f"Not a number of minutes: {value!r}")
+    if minutes <= 0:
+        raise ArgumentTypeError("--time_limit must be more than 0 minutes")
+    return minutes
+
+
+def _passes_time_limit(harness_args: Sequence[str]) -> bool:
+    return any(
+        arg == "--time_limit" or arg.startswith("--time_limit=") for arg in harness_args
+    )
 
 
 def _passes_env(harness_args: Sequence[str]) -> bool:
@@ -217,6 +270,17 @@ def stopped_message(
     return "\n".join(lines)
 
 
+def out_of_time_message(
+    what: str, env: str, time_limit: float, never_ran: Sequence[str]
+) -> str:
+    """The Slack message for a sweep or cycle that ran out of its time limit
+    with steps it never started."""
+    return (
+        f":hourglass: *{what} in `{env}` ran out of its {time_limit:g} min "
+        f"time limit.* Never started: {', '.join(never_ran)}"
+    )
+
+
 def slack_notifier(build: Callable[[float], str]) -> Optional[Callable[[float], None]]:
     """A ``notify`` for say_why_on_sigterm that posts ``build(minutes)`` to
     Slack, or None when Slack isn't configured."""
@@ -237,6 +301,7 @@ def run_sweep(
     tests_url: str = None,
     tests_dir: str = None,
     results: Optional[List[Tuple[str, int, float]]] = None,
+    time_limit: Optional[float] = None,
 ) -> int:
     """Run the suite against each target in turn. Returns a process exit code.
 
@@ -249,10 +314,19 @@ def run_sweep(
 
     ``results``, if given, is filled in with (target, exit code, seconds) as
     each target finishes, so a SIGTERM handler can say how far it got.
+
+    ``time_limit`` is minutes for the whole sweep: each target gets what's
+    left, and once it's gone the rest aren't started.
     """
     if results is None:
         results = []
+    deadline = time.time() + time_limit * 60 if time_limit else None
+    not_run = []
     for position, (target, url) in enumerate(targets, start=1):
+        left = minutes_left(deadline)
+        if not_run or (left is not None and left < MIN_STEP_MINUTES):
+            not_run.append(target)
+            continue
         cmd = build_command(
             target,
             url,
@@ -263,6 +337,7 @@ def run_sweep(
             tests_url,
             tests_dir,
         )
+        cmd = with_time_limit(cmd, left)
         _banner(f"[{position}/{len(targets)}] {target} -> {url}")
         print(f"$ {' '.join(cmd)}", flush=True)
         started = time.time()
@@ -280,18 +355,30 @@ def run_sweep(
             f"after {elapsed / 60:.1f} min",
             flush=True,
         )
+        if code == EXIT_TIME_LIMIT:
+            # its own report said so; the rest would get no time at all
+            not_run.extend(t for t, _ in targets[position:])
+            break
 
     _banner("SWEEP SUMMARY")
     for target, code, elapsed in results:
-        status = "ok" if code == 0 else f"FAILED (exit {code})"
+        status = step_status(code, False)
         print(f"  {target:<12} {status:<20} {elapsed / 60:>6.1f} min", flush=True)
-    failed = [target for target, code, _ in results if code != 0]
+    for target in not_run:
+        print(f"  {target:<12} {step_status(None, True):<20}", flush=True)
+    failed = [target for target, code, _ in results if code != 0] + not_run
     total = sum(elapsed for _, _, elapsed in results)
     print(
         f"\n{len(results) - len(failed)}/{len(results)} succeeded "
         f"in {total / 60:.1f} min total",
         flush=True,
     )
+    if not_run:
+        print(
+            f"The sweep ran out of its {time_limit:g} min time limit; not run: "
+            f"{', '.join(not_run)}",
+            flush=True,
+        )
     if failed:
         print(
             f"Targets whose run could not be carried out: {', '.join(failed)}",
@@ -388,6 +475,18 @@ def cli(argv: Sequence[str] = None) -> int:
         ),
     )
     parser.add_argument(
+        "--time_limit",
+        type=_time_limit_type,
+        default=DEFAULT_SWEEP_TIME_LIMIT,
+        metavar="MINUTES",
+        help=(
+            "How long the whole sweep may run (default: "
+            f"{DEFAULT_SWEEP_TIME_LIMIT}). Each target gets what's left: when "
+            "it runs out, the run stops and reports what it got, as having run "
+            "out of time, and the targets after it aren't started."
+        ),
+    )
+    parser.add_argument(
         "--output_dir",
         default=DEFAULT_OUTPUT_DIR,
         help=(
@@ -418,6 +517,11 @@ def cli(argv: Sequence[str] = None) -> int:
 
     if _passes_env(harness_args):
         parser.error("Pass --env to the sweep, before the `--`.")
+    if _passes_time_limit(harness_args):
+        parser.error(
+            "Pass --time_limit to the sweep, before the `--`: it's for the "
+            "whole sweep, and each target gets what's left of it."
+        )
 
     try:
         targets = parse_targets(args.targets)
@@ -444,7 +548,7 @@ def cli(argv: Sequence[str] = None) -> int:
         )
 
     say_why_on_sigterm("The sweep", slack_notifier(stopped))
-    return run_sweep(
+    code = run_sweep(
         targets,
         args.suite,
         output_dir=args.output_dir,
@@ -453,7 +557,23 @@ def cli(argv: Sequence[str] = None) -> int:
         tests_url=args.tests_url,
         tests_dir=args.tests_dir,
         results=results,
+        time_limit=args.time_limit,
     )
+    never_ran = [target for target, _ in targets[len(results) :]]
+    if never_ran:
+        # each target that ran posted its own report; nothing else says these
+        # didn't
+        notify = slack_notifier(
+            lambda _: out_of_time_message(
+                f"The `{args.suite}` sweep", env, args.time_limit, never_ran
+            )
+        )
+        if notify is not None:
+            try:
+                notify(0)
+            except Exception as e:
+                print(f"Couldn't tell Slack: {type(e).__name__}: {e}", flush=True)
+    return code
 
 
 if __name__ == "__main__":

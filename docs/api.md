@@ -62,8 +62,10 @@ df = pd.read_csv(f"{RADIATOR}/api/runs/{run_id}/results?format=csv")
 
 Each run has its `run_id` (use it in the requests below), `number` (the `#`
 on the dashboard), `suite`, `env`, `started_at`, `ended_at` (empty while the
-run is going), `counts` (assets by status), `zebrunner_launch` for imported
-runs, and the rest of what the harness recorded about it.
+run is going), `stopped` (`time_limit` for a run the harness stopped at its
+time limit, so its results are partial; empty for one that ran every test),
+`counts` (assets by status), `zebrunner_launch` for imported runs, and the
+rest of what the harness recorded about it.
 
 ### A run's results
 

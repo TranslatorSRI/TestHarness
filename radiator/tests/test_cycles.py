@@ -427,3 +427,54 @@ def test_runs_keep_their_cycle_id(app, api):
     with app.state.sessionmaker() as session:
         run = session.scalars(cycles.select(cycles.Run)).one()
         assert run.cycle_id == cycle_id
+
+
+def _stopped(payload):
+    payload.finish.stopped = "time_limit"
+    return payload
+
+
+def test_a_run_that_ran_out_of_time_is_flagged_and_is_no_baseline(app, browser):
+    first = _results_run(T0, [P, P, F, F])
+    # cut off after two assets: the two it never got to aren't news
+    cut_off = _stopped(_results_run(T0 + timedelta(days=7), [P, P]))
+    cycle_id = uuid.uuid4()
+    latest = _results_run(T0 + timedelta(days=14), [P, F, P, P], cycle_id=cycle_id)
+    _load(app, first, cut_off)
+    _load(app, latest)
+
+    with app.state.sessionmaker() as session:
+        from radiator import queries
+
+        stored = queries.get_run(session, cut_off.run.run_id)
+        assert stored.stopped == "time_limit"
+        assert queries.run_state(stored) == queries.OUT_OF_TIME
+        # the next run compares against the last complete one
+        newest = queries.get_run(session, latest.run.run_id)
+        assert queries.previous_run(session, newest).id == first.run.run_id
+        history = [r.id for r, _ in queries.series_history(session, newest)]
+        assert cut_off.run.run_id not in history
+
+    (row,) = _get_cycle(app, cycle_id).rows
+    assert row.previous == 0.5 and row.flags == []
+
+    page = browser.get(f"/runs/{cut_off.run.run_id}")
+    assert page.status_code == 200
+    assert "ran out of time" in page.text
+    assert "Ran out of time." in page.text
+    assert "ran out of time" in browser.get("/").text
+
+
+def test_a_cycle_step_that_ran_out_of_time_is_flagged_on_the_board(app):
+    cycle_id = uuid.uuid4()
+    _load(app, _stopped(_results_run(T0, [P, F], cycle_id=cycle_id)))
+    (row,) = _get_cycle(app, cycle_id).rows
+    assert [flag.kind for flag in row.flags] == ["out_of_time"]
+    assert "Ran out of time" in row.flags[0].text
+
+
+def test_the_read_api_says_a_run_was_stopped(app, api):
+    run = _stopped(_results_run(T0, [P]))
+    _load(app, run)
+    data = api.get(f"/api/runs/{run.run.run_id}").json()
+    assert data["stopped"] == "time_limit"
